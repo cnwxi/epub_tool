@@ -7,4 +7,4 @@ password:`i89p`<br>
 2. 重构epub并反文件名混淆.pyz<br>
 3. 重构epub并加入文件名混淆.pyz<br>
 ### THX
-thx for 遥遥心航、故里
+thx to 遥遥心航、故里
