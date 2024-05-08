@@ -11,7 +11,7 @@
 ### python执行<br>
 1. 下载python3.8<br>
 2. 使用`git clone https://github.com/cnwxi/epub_tool.git`克隆本仓库；或直接在网页下载源码压缩包，解压后得到py文件<br>
-3. 使用命令行执行 `python path_of_your_py_files/**.py`<br>
+3. 使用命令行执行 `python path_of_your_py_files/**.py` 或修改py为pyz双击运行<br>
 ### exe<br>
 1. 从[releases](https://github.com/cnwxi/epub_tool/releases)下载对应的exe文件<br>
 2. 双击运行<br>
