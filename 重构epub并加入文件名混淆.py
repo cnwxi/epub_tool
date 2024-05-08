@@ -116,9 +116,10 @@ class EpubTool:
         # opf item分类
         opf_dir = path.dirname(self.opfpath)
 
+        # 生成新的href
+        ############################################################
         def creatNewHerf(_id, _href):
             while True:
-                
                 _filename, _file_extension = _href.rsplit('.', 1)
                 _true_filename = _filename.rsplit('/', 1)[-1]
                 if _true_filename.endswith("~slim"):
@@ -139,6 +140,7 @@ class EpubTool:
                 else:
                     continue     
             return new_href
+        ############################################################
 
         for id, href, mime, properties in self.manifest_list:
             bkpath = opf_dir + '/' + href if opf_dir else href
@@ -302,9 +304,9 @@ class EpubTool:
             del self.id_to_h_m_p[id]
 
     def create_tgt_epub(self):
-        if not path.exists("重构EPUB"):
-            mkdir("重构EPUB")
-        return zipfile.ZipFile('./重构EPUB/' + self.epub_name, 'w',
+        if not path.exists("混淆EPUB"):
+            mkdir("混淆EPUB")
+        return zipfile.ZipFile('./混淆EPUB/' + self.epub_name, 'w',
                                zipfile.ZIP_STORED)
 
     # 重构

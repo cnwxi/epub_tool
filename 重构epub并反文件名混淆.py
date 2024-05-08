@@ -116,15 +116,25 @@ class EpubTool:
         # opf item分类
         opf_dir = path.dirname(self.opfpath)
 
+        # 生成新的href
+        ############################################################
         def creatNewHerf(_id, _href):
             file_parts = _href.rsplit('.', 1)
             if len(_id.split('.')) == 1:
                 new_href = f"{_id}.{file_parts[-1].lower()}"
             else:
                 _id_name, _id_extension = _id.rsplit('.', 1)
-                new_href = f"{_id_name}.{_id_extension.lower()}"    
+                # 如果id或者href中有slim，则为多看处理~slim
+                if _href.rsplit('.', 1)[-1].lower().endswith('slim') or _id_name.rsplit('.', 1)[-1].lower().endswith('slim'):
+                    image_silm='~slim'
+                    # 如果id中有slim，去掉
+                    _id_name=_id_name.lower().replace('~slim','').replace('slim','')
+                else:
+                    image_silm=''
+                new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"  
+                print(f"unmixed href: {_id}:{_href} -> {new_href}")  
             return new_href
-
+        ############################################################
         for id, href, mime, properties in self.manifest_list:
             bkpath = opf_dir + '/' + href if opf_dir else href
             if mime == 'application/xhtml+xml':
@@ -289,9 +299,9 @@ class EpubTool:
             del self.id_to_h_m_p[id]
 
     def create_tgt_epub(self):
-        if not path.exists("重构EPUB"):
-            mkdir("重构EPUB")
-        return zipfile.ZipFile('./重构EPUB/' + self.epub_name, 'w',
+        if not path.exists("反混淆EPUB"):
+            mkdir("反混淆EPUB")
+        return zipfile.ZipFile('./反混淆EPUB/' + self.epub_name, 'w',
                                zipfile.ZIP_STORED)
 
     # 重构
