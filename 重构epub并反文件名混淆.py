@@ -829,13 +829,6 @@ def main():
     return 0
 
 
-# 测试模式
-def test_main():
-    print('【测试模式】\n')
-    epub_src = r'D:\【EPUB处理】\脚本\重构EPUB\test.epub'
-    run(epub_src)
-
-
 if __name__ == "__main__":
     print('【脚本功能】\n' + '1、 将epub目录结构规范化至sigil规范格式。\n' +
           '2、 将没有列入manifest项的epub有效文件自动列入manifest项。\n' +
@@ -846,6 +839,5 @@ if __name__ == "__main__":
           '6、 自动检测并纠正实际文件名与对应的引用链接大小写不一致的问题。\n' + '7、 自动检测并提醒找不到对应文件的链接。\n' +
           '8、 反名称混淆，使sigil可以打开修改。')
     while True:
-        # test_main()
         main()
         input("\n请按回车键继续")
