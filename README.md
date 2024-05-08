@@ -13,5 +13,8 @@ password:`i89p`<br>
 ## exe
 1. 从[releases](https://github.com/cnwxi/epub_tool/releases)下载对应的exe文件
 2. 双击运行
+
+---
+
 ### THX
 thx to 遥遥心航、故里
