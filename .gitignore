@@ -1,7 +1,9 @@
 重构EPUB
+反混淆EPUB
+混淆EPUB
 build
 dist
 demo.epub
-重构epub并反文件名混淆.spec
-重构epub并加入文件名混淆.spec
-重构epub为规范格式_v2.8.3.spec
+decrypt_epub.spec
+encrypt_epub.spec
+rebuild_epub_v2.8.3.spec
