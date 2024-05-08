@@ -5,6 +5,9 @@
 遥遥心航提供的原始[蓝奏云链接](https://wwb.lanzoub.com/b01k016hg) 密码：`i89p`<br>
 3. 重构epub并反文件名混淆.py<br>
 4. 重构epub并加入文件名混淆.py<br>
+# 更新日志
+## 2024.05.09
+针对多看~slim文件进行修改
 # 怎么使用？
 ## python执行
 1. 下载python3.8
