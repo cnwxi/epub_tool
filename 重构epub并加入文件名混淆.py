@@ -710,6 +710,12 @@ class EpubTool:
             basename = path.basename(href)
             filename = unquote(basename)
             if not basename.endswith('.ncx'):
+                if href.startswith("/"):
+                    href = href[1:]
+                elif href.startswith("./") :
+                    href = href[2:]
+                elif href.startswith("../"):
+                    href = href[3:]
                 return match.group(
                     1) + 'Text/' + self.toc_rn[href] + match.group(4)
             else:
