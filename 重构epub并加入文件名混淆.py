@@ -675,7 +675,7 @@ class EpubTool:
             elif 'font/' in mime or href.lower().endswith(
                 ('.ttf', '.otf', '.woff')):
                 filename = re_path_map['font'][bkpath]
-                manifest_text += f'\n    <item id="{id}" href="Fonts{filename}" media-type="{mime}"{prop_}/>'
+                manifest_text += f'\n    <item id="{id}" href="Fonts/{filename}" media-type="{mime}"{prop_}/>'
             elif 'audio/' in mime:
                 filename = re_path_map['audio'][bkpath]
                 manifest_text += f'\n    <item id="{id}" href="Audio/{filename}" media-type="{mime}"{prop_}/>'
