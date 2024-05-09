@@ -10,6 +10,7 @@ from os import path, mkdir, getcwd
 from urllib.parse import unquote
 from xml.etree import ElementTree
 import copy
+import os
 
 class EpubTool:
 
@@ -310,11 +311,11 @@ class EpubTool:
 
     def create_tgt_epub(self):
         now_path = getcwd()
-        output_path = f"{now_path}/反混淆EPUB/"
+        output_path = path.join(now_path, "反混淆EPUB")
         if not path.exists(output_path):
             mkdir(output_path)
         print(f"输出路径：{output_path}")
-        return zipfile.ZipFile(output_path + self.epub_name, 'w',
+        return zipfile.ZipFile(path.join(output_path , self.epub_name), 'w',
                                zipfile.ZIP_STORED)
 
     # 重构
