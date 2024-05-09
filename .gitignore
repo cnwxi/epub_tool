@@ -6,4 +6,4 @@ dist
 demo.epub
 decrypt_epub.spec
 encrypt_epub.spec
-rebuild_epub_v2.8.3.spec
+rebuild_epub.spec

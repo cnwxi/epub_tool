@@ -4,7 +4,7 @@
 
 import zipfile
 import re,sys
-from os import path,mkdir
+from os import path,mkdir,getcwd
 from urllib.parse import unquote
 from xml.etree import ElementTree
 
@@ -28,14 +28,14 @@ class EpubTool:
         self.font_list = []     #(id,opf_href,properties)
         self.audio_list = []     #(id,opf_href,properties)
         self.video_list = []     #(id,opf_href,properties)
-        self.spine_list = []    #(sid, linear, properties) 
+        self.spine_list = []    #(sid, linear, properties)
         self.other_list = []    #(id,opf_href,mime,properties)
         self.errorOPF_log = [] # (error_type,error_value)
         self.errorLink_log = {} #{filepath:[(error_link,correct_link || None),...]}
         self._parse_opf()
     def _init_namelist(self):
         self.namelist = self.epub.namelist()
-    
+
     def _init_mime_map(self):
         self.mime_map = {
             '.html':'application/xhtml+xml',
@@ -87,7 +87,7 @@ class EpubTool:
         self._clear_duplicate_id_href()
         self._parse_hrefs_not_in_epub()
         self._add_files_not_in_opf()
-        
+
 
         self.manifest_list = [] #(id,opf_href,mime,properties)
         for id in self.id_to_h_m_p:
@@ -106,7 +106,7 @@ class EpubTool:
         self.tocid = ''
         tocid = self.etree_opf['spine'].get('toc')
         self.tocid = tocid if tocid is not None else ''
-        
+
         # opf item分类
         opf_dir = path.dirname(self.opfpath)
         for id,href,mime,properties in self.manifest_list:
@@ -144,7 +144,7 @@ class EpubTool:
             elif tag == 'meta':
                 if meta.get('name') and meta.get('content'):
                     self.metadata['cover'] = meta.get('content')
-        
+
     def _parse_manifest(self):
         self.id_to_h_m_p = {} # { id : (href,mime,properties) , ... }
         self.id_to_href = {} # { id : href.lower, ... }
@@ -252,9 +252,14 @@ class EpubTool:
             del self.id_to_h_m_p[id]
 
     def create_tgt_epub(self):
-        if not path.exists("重构EPUB"):
-            mkdir("重构EPUB")
-        return zipfile.ZipFile('重构EPUB\\' + self.epub_name, 'w', zipfile.ZIP_STORED)
+        now_path = getcwd()
+        output_path = f"{now_path}/重构EPUB/"
+        if not path.exists(output_path):
+            mkdir(output_path)
+        print(f"输出路径：{output_path}")
+        return zipfile.ZipFile(output_path + self.epub_name, 'w',
+                               zipfile.ZIP_STORED)
+
 
     # 重构
     def restructure(self):
@@ -376,7 +381,7 @@ class EpubTool:
                 text = '<?xml version="1.0" encoding="utf-8"?>\n'+ text
             if not re.match(r'(?s).*<!DOCTYPE html',text):
                 text = re.sub(r'(<\?xml.*?>)\n*',r'\1\n<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"\n  "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">\n',text,1)
-             #修改a[href]
+            #修改a[href]
 
             def re_href(match):
                 href = match.group(3)
@@ -386,7 +391,7 @@ class EpubTool:
                     target_id = '#' + target_id
                 else:
                     target_id = ''
-                
+
                 bkpath = get_bookpath(href, xhtml_bkpath)
                 bkpath = check_link(xhtml_bkpath, bkpath, href, self, target_id)
                 if not bkpath:
@@ -403,7 +408,7 @@ class EpubTool:
                     return match.group(1) + filename + target_id + match.group(4)
                 else:
                     return match.group()
-                
+
             text = re.sub(r'(<[^>]*href=([\'\"]))(.*?)(\2[^>]*>)',re_href,text)
 
             #修改src
@@ -430,7 +435,7 @@ class EpubTool:
                 else:
                     return match.group()
             text = re.sub(r'(<[^>]* src=([\'\"]))(.*?)(\2[^>]*>)',re_src,text)
-            
+
             #修改 url
             def re_url(match):
                 url = match.group(2)
@@ -456,7 +461,7 @@ class EpubTool:
                 css = self.epub.read(css_bkpath).decode('utf-8')
             except:
                 continue
-            #修改 @import 
+            #修改 @import
             def re_import(match):
                 if match.group(2):
                     href = match.group(2)
@@ -523,7 +528,7 @@ class EpubTool:
             self.tgt_epub.writestr('OEBPS/Misc/'+new_name, other, zipfile.ZIP_DEFLATED)
         #OPF
         manifest_text = '<manifest>'
-        
+
         for id,href,mime,prop in self.manifest_list:
             bkpath = get_bookpath(href, self.opfpath)
             prop_ = ' properties="' + prop +'"' if prop else ''
@@ -553,7 +558,7 @@ class EpubTool:
 
         manifest_text += '  </manifest>'
         opf = re.sub(r'(?s)<manifest.*?>.*?</manifest>',manifest_text,self.opf,1)
-        
+
         def re_refer(match):
             href = match.group(3)
             href = unquote(href).strip()
@@ -577,7 +582,7 @@ def get_relpath(from_path,to_path):
     while from_path[0] == to_path[0]:
         from_path.pop(0),to_path.pop(0)
     to_path = '../' * (len(from_path) - 1) + '/'.join(to_path)
-    return to_path            
+    return to_path
 
 #计算bookpath
 def get_bookpath(relative_path,refer_bkpath):
@@ -586,11 +591,11 @@ def get_bookpath(relative_path,refer_bkpath):
 
     relative_ = re.split(r'[\\/]',relative_path)
     refer_ = re.split(r'[\\/]',refer_bkpath)
-    
+
     back_step = 0
     while relative_[0] == '..':
         back_step += 1
-        relative_.pop(0) 
+        relative_.pop(0)
 
     if len(refer_) <= 1:
         return '/'.join(relative_)
@@ -606,7 +611,7 @@ def get_bookpath(relative_path,refer_bkpath):
     while back_step > 0 and len(refer_) > 0:
         refer_.pop(-1)
         back_step -= 1
-    
+
     return '/'.join(refer_ + relative_)
 
 
@@ -637,7 +642,7 @@ def run(epub_src):
                 del_keys.append(file_path)
     for key in del_keys:
         del el[key]
-    
+
     if epub.errorOPF_log:
         print("\n-------在 OPF文件 发现问题------:")
         for error_type,error_value in epub.errorOPF_log:
@@ -651,7 +656,7 @@ def run(epub_src):
             elif error_type == "xhtml_not_in_spine":
                 print("\n问题：发现ID为 %s 的文件manifest中登记为application/xhtml+xml类型，但不被spine节点的项所引用" %error_value)
                 print("措施：自行检查该文件是否需要被spine引用。部分阅读器中，如果存在xhtml文件不被spine引用，可能导致epub无法打开。\n")
-            
+
     if el:
         for file_path,log in el.items():
             basename = path.basename(file_path)

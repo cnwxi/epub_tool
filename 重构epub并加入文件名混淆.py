@@ -5,9 +5,10 @@
 
 import zipfile
 import re, sys
-from os import path, mkdir
+from os import path, mkdir,getcwd
 from urllib.parse import unquote
 from xml.etree import ElementTree
+
 
 class EpubTool:
 
@@ -119,20 +120,23 @@ class EpubTool:
         # 生成新的href
         ############################################################
         def creatNewHerf(_id, _href):
-            _id_name=_id.split(".")[0]
+            _id_name = _id.split(".")[0]
             _filename, _file_extension = _href.rsplit('.', 1)
             _true_filename = _filename.rsplit('/', 1)[-1]
             if _true_filename.endswith("slim") or _id_name.endswith("slim"):
                 image_slim = "~slim"
                 # _true_filename=_true_filename.rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
-                _id_name=_id_name.rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
+                _id_name = _id_name.rstrip("~slim").rstrip("-slim").rstrip(
+                    "_slim").rstrip("slim")
                 # :*:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*.webp
-                # :*:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*~slim.webp      
+                # :*:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*~slim.webp
             else:
                 image_slim = ""
-            _href_hash=hash(_id_name)
-            bin_hash=bin(_href_hash)[2:]
-            new_href = bin_hash.replace("1","*").replace("0",":").replace("b","*")
+            _href_hash = hash(_id_name)
+            bin_hash = bin(_href_hash)[2:]
+            new_href = bin_hash.replace("1",
+                                        "*").replace("0",
+                                                     ":").replace("b", "*")
             new_href = f"_{new_href}{image_slim}.{_file_extension.lower()}"
             if new_href not in self.toc_rn.values():
                 self.toc_rn[href] = new_href
@@ -141,6 +145,7 @@ class EpubTool:
                 self.toc_rn[href] = new_href
                 print(f"mixed href: {_id}:{_href} -> {new_href} 重复")
             return new_href
+
         ############################################################
 
         for id, href, mime, properties in self.manifest_list:
@@ -305,9 +310,12 @@ class EpubTool:
             del self.id_to_h_m_p[id]
 
     def create_tgt_epub(self):
-        if not path.exists("混淆EPUB"):
-            mkdir("混淆EPUB")
-        return zipfile.ZipFile('./混淆EPUB/' + self.epub_name, 'w',
+        now_path = getcwd()
+        output_path = f"{now_path}/混淆EPUB/"
+        if not path.exists(output_path):
+            mkdir(output_path)
+        print(f"输出路径：{output_path}")
+        return zipfile.ZipFile(output_path + self.epub_name, 'w',
                                zipfile.ZIP_STORED)
 
     # 重构
@@ -512,8 +520,10 @@ class EpubTool:
                 else:
                     return match.group()
 
-            text = re.sub(r'(<[^>]* src=([\'\"]))(.*?)(\2[^>]*>)', re_src,text)
-            text = re.sub(r'(<[^>]* poster=([\'\"]))(.*?)(\2[^>]*>)',re_poster, text)
+            text = re.sub(r'(<[^>]* src=([\'\"]))(.*?)(\2[^>]*>)', re_src,
+                          text)
+            text = re.sub(r'(<[^>]* poster=([\'\"]))(.*?)(\2[^>]*>)',
+                          re_poster, text)
 
             # 修改 text
             def re_url(match):
@@ -557,16 +567,17 @@ class EpubTool:
                 bkpath = check_link(css_bkpath, bkpath, href, self)
                 if not bkpath:
                     return match.group()
-                filename = re_path_map.get('css', {}).get(bkpath, path.basename(href))
+                filename = re_path_map.get('css',
+                                           {}).get(bkpath, path.basename(href))
                 if match.group(2):
                     return '@import "{}"'.format(filename)
-                else: 
+                else:
                     return '@import url("{}")'.format(filename)
-                    
+
             css = re.sub(
                 r'@import +([\'\"])(.*?)\1|@import +url\([\'\"]?(.*?)[\'\"]?\)',
                 re_import, css)
-                          
+
             # 修改 css的url
             def re_css_url(match):
                 url = match.group(2)
@@ -644,13 +655,14 @@ class EpubTool:
                 parts = href.split('#', 1)
                 href_base = parts[0]
                 target_id = '#' + parts[1] if len(parts) > 1 else ''
-                href_base = self.toc_rn[href_base] if href_base in self.toc_rn else href_base
+                href_base = self.toc_rn[
+                    href_base] if href_base in self.toc_rn else href_base
                 bkpath = get_bookpath(href_base, self.tocpath)
 
                 if not bkpath:
                     return match.group()
                 filename = path.basename(bkpath)
-                return 'src="Text/' + filename + target_id + '"' 
+                return 'src="Text/' + filename + target_id + '"'
 
             toc = re.sub(r'src=([\'\"])(.*?)\1', re_toc_href, toc)
             self.tgt_epub.writestr('OEBPS/toc.ncx', bytes(toc,
@@ -698,13 +710,15 @@ class EpubTool:
             basename = path.basename(href)
             filename = unquote(basename)
             if not basename.endswith('.ncx'):
-                return match.group(1) + 'Text/' + self.toc_rn[href] + match.group(4)
+                return match.group(
+                    1) + 'Text/' + self.toc_rn[href] + match.group(4)
             else:
                 return match.group()
 
         opf = re.sub(r'(<reference[^>]*href=([\'\"]))(.*?)(\2[^>]*/>)',
                      re_refer, opf)
-        self.tgt_epub.writestr('OEBPS/content.opf', bytes(opf,encoding='utf-8'),
+        self.tgt_epub.writestr('OEBPS/content.opf', bytes(opf,
+                                                          encoding='utf-8'),
                                zipfile.ZIP_DEFLATED)
         self.tgt_epub.close()
         self.epub.close()

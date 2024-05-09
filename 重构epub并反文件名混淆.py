@@ -6,7 +6,7 @@
 
 import zipfile
 import re, sys
-from os import path, mkdir, system
+from os import path, mkdir, getcwd
 from urllib.parse import unquote
 from xml.etree import ElementTree
 import copy
@@ -141,8 +141,8 @@ class EpubTool:
                     _id_name=_id_name.lower().rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
                 else:
                     image_silm=''
-                new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"  
-            print(f"unmixed href: {_id}:{_href} -> {new_href}")  
+                new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"
+            print(f"unmixed href: {_id}:{_href} -> {new_href}")
             return new_href
         ############################################################
         for id, href, mime, properties in self.manifest_list:
@@ -309,9 +309,12 @@ class EpubTool:
             del self.id_to_h_m_p[id]
 
     def create_tgt_epub(self):
-        if not path.exists("反混淆EPUB"):
-            mkdir("反混淆EPUB")
-        return zipfile.ZipFile('./反混淆EPUB/' + self.epub_name, 'w',
+        now_path = getcwd()
+        output_path = f"{now_path}/反混淆EPUB/"
+        if not path.exists(output_path):
+            mkdir(output_path)
+        print(f"输出路径：{output_path}")
+        return zipfile.ZipFile(output_path + self.epub_name, 'w',
                                zipfile.ZIP_STORED)
 
     # 重构
@@ -564,13 +567,13 @@ class EpubTool:
                 filename = re_path_map.get('css', {}).get(bkpath, path.basename(href))
                 if match.group(2):
                     return '@import "{}"'.format(filename)
-                else: 
+                else:
                     return '@import url("{}")'.format(filename)
-                    
+
             css = re.sub(
                 r'@import +([\'\"])(.*?)\1|@import +url\([\'\"]?(.*?)[\'\"]?\)',
                 re_import, css)
-                          
+
             # 修改 css的url
             def re_css_url(match):
                 url = match.group(2)
@@ -654,7 +657,7 @@ class EpubTool:
                 if not bkpath:
                     return match.group()
                 filename = path.basename(bkpath)
-                return 'src="Text/' + filename + target_id + '"' 
+                return 'src="Text/' + filename + target_id + '"'
 
             toc = re.sub(r'src=([\'\"])(.*?)\1', re_toc_href, toc)
             self.tgt_epub.writestr('OEBPS/toc.ncx', bytes(toc,
