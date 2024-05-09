@@ -125,14 +125,14 @@ class EpubTool:
                 if _true_filename.endswith("~slim"):
                     image_slim = "~slim"
                     _true_filename=_true_filename.rstrip("~slim")
-                    # *_*_**__**____******__***__***_*_**__***__*_*______**____**_*.webp
-                    # *_*_**__**____******__***__***_*_**__***__*_*______**____**_*~slim.webp      
+                    # *:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*.webp
+                    # *:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*~slim.webp      
                 else:
                     image_slim = ""
                 _href_hash=hash(_true_filename)
                 bin_hash=bin(_href_hash)[2:]
-                new_href = bin_hash.replace("1","*").replace("0","_").replace("b","*")
-                new_href = f"_{new_href}{image_slim}.{_file_extension.lower()}"
+                new_href = bin_hash.replace("1","*").replace("0",":").replace("b",":")
+                new_href = f":{new_href}{image_slim}.{_file_extension.lower()}"
                 if new_href not in self.toc_rn.values():
                     print(f"mixed href: {_id}:{_href} -> {new_href}")
                     self.toc_rn[href] = new_href
