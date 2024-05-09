@@ -119,26 +119,27 @@ class EpubTool:
         # 生成新的href
         ############################################################
         def creatNewHerf(_id, _href):
-            while True:
-                _filename, _file_extension = _href.rsplit('.', 1)
-                _true_filename = _filename.rsplit('/', 1)[-1]
-                if _true_filename.endswith("slim"):
-                    image_slim = "~slim"
-                    _true_filename=_true_filename.rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
-                    # *:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*.webp
-                    # *:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*~slim.webp      
-                else:
-                    image_slim = ""
-                _href_hash=hash(_true_filename)
-                bin_hash=bin(_href_hash)[2:]
-                new_href = bin_hash.replace("1","*").replace("0",":").replace("b",":")
-                new_href = f":{new_href}{image_slim}.{_file_extension.lower()}"
-                if new_href not in self.toc_rn.values():
-                    print(f"mixed href: {_id}:{_href} -> {new_href}")
-                    self.toc_rn[href] = new_href
-                    break
-                else:
-                    continue     
+            _id_name=_id.split(".")[0]
+            _filename, _file_extension = _href.rsplit('.', 1)
+            _true_filename = _filename.rsplit('/', 1)[-1]
+            if _true_filename.endswith("slim") or _id_name.endswith("slim"):
+                image_slim = "~slim"
+                # _true_filename=_true_filename.rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
+                _id_name=_id_name.rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
+                # :*:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*.webp
+                # :*:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*~slim.webp      
+            else:
+                image_slim = ""
+            _href_hash=hash(_id_name)
+            bin_hash=bin(_href_hash)[2:]
+            new_href = bin_hash.replace("1","*").replace("0",":").replace("b","*")
+            new_href = f"_{new_href}{image_slim}.{_file_extension.lower()}"
+            if new_href not in self.toc_rn.values():
+                self.toc_rn[href] = new_href
+                print(f"mixed href: {_id}:{_href} -> {self.toc_rn[href]}")
+            else:
+                self.toc_rn[href] = new_href
+                print(f"mixed href: {_id}:{_href} -> {new_href} 重复")
             return new_href
         ############################################################
 
@@ -514,7 +515,7 @@ class EpubTool:
             text = re.sub(r'(<[^>]* src=([\'\"]))(.*?)(\2[^>]*>)', re_src,text)
             text = re.sub(r'(<[^>]* poster=([\'\"]))(.*?)(\2[^>]*>)',re_poster, text)
 
-            # 修改 url
+            # 修改 text
             def re_url(match):
                 url = match.group(2)
                 url = unquote(url).strip()
@@ -664,36 +665,28 @@ class EpubTool:
             prop_ = ' properties="' + prop + '"' if prop else ''
             if mime == 'application/xhtml+xml':
                 filename = re_path_map['text'][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href='Text/' + filename, mime=mime, prop=prop_)
+                manifest_text += f'\n    <item id="{id}" href="Text/{filename}" media-type="{mime}"{prop_}/>'
             elif mime == 'text/css':
                 filename = re_path_map['css'][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href='Styles/' + filename, mime=mime, prop=prop_)
+                manifest_text += f'\n    <item id="{id}" href="Styles/{filename}" media-type="{mime}"{prop_}/>'
             elif 'image/' in mime:
                 filename = re_path_map['image'][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href='Images/' + filename, mime=mime, prop=prop_)
+                manifest_text += f'\n    <item id="{id}" href="Images/{filename}" media-type="{mime}"{prop_}/>'
             elif 'font/' in mime or href.lower().endswith(
                 ('.ttf', '.otf', '.woff')):
                 filename = re_path_map['font'][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href='Fonts/' + filename, mime=mime, prop=prop_)
+                manifest_text += f'\n    <item id="{id}" href="Fonts{filename}" media-type="{mime}"{prop_}/>'
             elif 'audio/' in mime:
                 filename = re_path_map['audio'][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href='Audio/' + filename, mime=mime, prop=prop_)
+                manifest_text += f'\n    <item id="{id}" href="Audio/{filename}" media-type="{mime}"{prop_}/>'
             elif 'video/' in mime:
                 filename = re_path_map['video'][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href='Video/' + filename, mime=mime, prop=prop_)
+                manifest_text += f'\n    <item id="{id}" href="Video/{filename}" media-type="{mime}"{prop_}/>'
             elif id == self.tocid:
-                manifest_text += '\n    <item id="{id}" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'.format(
-                    id=id)
+                manifest_text += f'\n    <item id="{id}" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'
             else:
                 filename = re_path_map['other'][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href='Misc/' + filename, mime=mime, prop=prop_)
+                manifest_text += f'\n    <item id="{id}" href="Misc/{filename}" media-type="{mime}"{prop_}/>'
 
         manifest_text += '\n  </manifest>'
         opf = re.sub(r'(?s)<manifest.*?>.*?</manifest>', manifest_text,
@@ -711,8 +704,7 @@ class EpubTool:
 
         opf = re.sub(r'(<reference[^>]*href=([\'\"]))(.*?)(\2[^>]*/>)',
                      re_refer, opf)
-        self.tgt_epub.writestr('OEBPS/content.opf', bytes(opf,
-                                                          encoding='utf-8'),
+        self.tgt_epub.writestr('OEBPS/content.opf', bytes(opf,encoding='utf-8'),
                                zipfile.ZIP_DEFLATED)
         self.tgt_epub.close()
         self.epub.close()
