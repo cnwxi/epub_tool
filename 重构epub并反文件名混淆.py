@@ -9,6 +9,7 @@ import re, sys
 from os import path, mkdir, system
 from urllib.parse import unquote
 from xml.etree import ElementTree
+import copy
 
 class EpubTool:
 
@@ -121,18 +122,27 @@ class EpubTool:
         def creatNewHerf(_id, _href):
             file_parts = _href.rsplit('.', 1)
             if len(_id.split('.')) == 1:
-                new_href = f"{_id}.{file_parts[-1].lower()}"
+                _id_name=copy.deepcopy(_id)
+                if _id.rsplit('.', 1)[-1].lower().endswith('slim'):
+                    image_silm='~slim'
+                    # 如果_id_name中有slim，去掉
+                    _id_name=_id_name.lower().rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
+                else:
+                    image_silm=''
+                new_href = f"{_id_name}{image_silm}.{file_parts[-1].lower()}"
             else:
                 _id_name, _id_extension = _id.rsplit('.', 1)
+                if _id_extension.lower() != file_parts[-1].lower():
+                    _id_extension = file_parts[-1]
                 # 如果id或者href中有slim，则为多看处理~slim
                 if _href.rsplit('.', 1)[-1].lower().endswith('slim') or _id_name.rsplit('.', 1)[-1].lower().endswith('slim'):
                     image_silm='~slim'
                     # 如果id中有slim，去掉
-                    _id_name=_id_name.lower().replace('~slim','').replace('slim','')
+                    _id_name=_id_name.lower().rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
                 else:
                     image_silm=''
                 new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"  
-                print(f"unmixed href: {_id}:{_href} -> {new_href}")  
+            print(f"unmixed href: {_id}:{_href} -> {new_href}")  
             return new_href
         ############################################################
         for id, href, mime, properties in self.manifest_list:

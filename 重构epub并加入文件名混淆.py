@@ -122,9 +122,9 @@ class EpubTool:
             while True:
                 _filename, _file_extension = _href.rsplit('.', 1)
                 _true_filename = _filename.rsplit('/', 1)[-1]
-                if _true_filename.endswith("~slim"):
+                if _true_filename.endswith("slim"):
                     image_slim = "~slim"
-                    _true_filename=_true_filename.rstrip("~slim")
+                    _true_filename=_true_filename.rstrip("~slim").rstrip("-slim").rstrip("_slim").rstrip("slim")
                     # *:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*.webp
                     # *:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*~slim.webp      
                 else:
