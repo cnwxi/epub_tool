@@ -253,8 +253,7 @@ class EpubTool:
             del self.id_to_h_m_p[id]
 
     def create_tgt_epub(self):
-        now_path = getcwd()
-        output_path = path.join(now_path, "重构EPUB")
+        output_path = path.join(self.ebook_root, "重构EPUB")
         if not path.exists(output_path):
             mkdir(output_path)
         print(f"输出路径：{output_path}")
