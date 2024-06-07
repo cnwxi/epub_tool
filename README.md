@@ -38,4 +38,4 @@
 ---
 
 ### THX<br>
-thx to [遥遥心航](https://tieba.baidu.com/home/main?id=tb.1.7f262ae1.5_dXQ2Jp0F0MH9YJtgM2Ew)、故里、[lgernier](https://github.com/lgernierO)<br>
+thx to [遥遥心航](https://tieba.baidu.com/home/main?id=tb.1.7f262ae1.5_dXQ2Jp0F0MH9YJtgM2Ew)、[lgernier](https://github.com/lgernierO)<br>
