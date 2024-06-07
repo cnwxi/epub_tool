@@ -34,8 +34,8 @@
 修正`重构epub为规范格式_v2.8.3.py`中生成的content.opf文件内容格式，由[lgernier](https://github.com/lgernierO)提交。<br>
 ### 2024.06.07<br>
 修改主函数逻辑，防止epub文件不存在导致的程序崩溃，由[lgernier](https://github.com/lgernierO)提交。<br>
-加入CI自动构建，由[lgernier](https://github.com/lgernierO)提交
-加入CI自动发布，由[No Response](https://github.com/cnwxi)提交
+加入CI自动构建，由[lgernier](https://github.com/lgernierO)提交<br>
+加入CI自动发布，由[No Response](https://github.com/cnwxi)提交<br>
 
 ---
 
