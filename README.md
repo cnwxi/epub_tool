@@ -20,7 +20,7 @@
 2. 双击运行<br>
 ### 自行编译
 1. 执行`pip install pyinstaller`，下载安装依赖库
-2. 参考`pyinstall.*`文件自行打包成可执行文件
+2. 参考`pyinstaller.*`文件自行打包成可执行文件
 
 ## 更新日志<br>
 ### 2024.04.23<br>
