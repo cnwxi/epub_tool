@@ -40,20 +40,42 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
+        tag_name: 2024.06.07v1
+        release_name: Release 2024.06.07v1
         draft: false
         prerelease: false
 
     - name: Upload Release Asset
-      id: upload-release-asset
+      id: upload-release-asset-decrypt_epub
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_name: decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+        asset_name: ${{ runner.os }}-decrypt_epub
+        asset_content_type: application/octet-stream
+
+    - name: Upload Release Asset
+      id: upload-release-asset-encrypt_epub
+      uses: actions/upload-release-asset@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: dist/encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+        asset_name: ${{ runner.os }}-encrypt_epub
+        asset_content_type: application/octet-stream
+
+    - name: Upload Release Asset
+      id: upload-release-asset-rebuild_epub
+      uses: actions/upload-release-asset@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+        asset_name: ${{ runner.os }}-rebuild_epub
         asset_content_type: application/octet-stream
 
     # - name: Upload the decrypt_epub executable
