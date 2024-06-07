@@ -21,10 +21,7 @@ jobs:
     - name: prepare tag
       id: prepare_tag
       run: |
-        TAGSTAMP=$(date +'%Y.%m.%dv2')-${RUNNER_OS}
-        echo "TAG=$TAGSTAMP" >> $GITHUB_OUTPUT
-      env:
-        RUNNER_OS: ${{ runner.os }}
+        echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')-${{ runner.os }}
 
     - name: Create Release
       id: create_release
