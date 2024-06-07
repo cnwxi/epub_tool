@@ -21,7 +21,7 @@ jobs:
     - name: prepare tag
       id: prepare_tag
       run: |
-        echo ::set-output name=TAG::$(date +'%Y.%m.%dv2')-${{ runner.os }}
+        echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')-${{ runner.os }}
 
     - name: Create Release
       id: create_release
@@ -91,30 +91,3 @@ jobs:
         asset_path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
         asset_name: ${{ runner.os }}_rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
         asset_content_type: application/octet-stream
-
-    # - name: Upload the decrypt_epub executable
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: ${{ runner.os }}-decrypt_epub
-    #     path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-    #     if-no-files-found: warn
-
-    # - name: Upload the encrypt_epub executable
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: ${{ runner.os }}-encrypt_epub
-    #     path: dist/encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-    #     if-no-files-found: warn
-
-    # - name: Upload the rebuild_epub executable
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: ${{ runner.os }}-rebuild_epub
-    #     path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-    #     if-no-files-found: warn
-        
-    # - name: Upload all executables
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: ${{ runner.os }}-all
-    #     path: dist/*
