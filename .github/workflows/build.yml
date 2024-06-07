@@ -21,8 +21,8 @@ jobs:
     - name: prepare tag
       id: prepare_tag
       run: |
-        TAGSTAMP=$(date +'%Y.%m.%dv2')-${RUNNER_OS}
-        echo "TAG=$TAGSTAMP" >> $GITHUB_OUTPUT
+        TAGSTAMP=$(date +'%Y.%m.%dv3')-${RUNNER_OS}
+        echo "TAG=$TAGSTAMP" >> $$GITHUB_ENV
       env:
         RUNNER_OS: ${{ runner.os }}
 
@@ -32,8 +32,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{  steps.prepare_tag.outputs.TAG }}
-        release_name: Release ${{  steps.prepare_tag.outputs.TAG }}
+        tag_name: $TAG
+        release_name: Release $TAG
         draft: false
         prerelease: false
 
