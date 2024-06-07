@@ -34,29 +34,51 @@ jobs:
       run: |
         pyinstaller --onefile --name rebuild_epub 重构epub为规范格式_v2.8.3.py
 
-    - name: Upload the decrypt_epub executable
-      uses: actions/upload-artifact@v4
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: ${{ runner.os }}-decrypt_epub
-        path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        if-no-files-found: warn
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
 
-    - name: Upload the encrypt_epub executable
-      uses: actions/upload-artifact@v4
+    - name: Upload Release Asset
+      id: upload-release-asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: ${{ runner.os }}-encrypt_epub
-        path: dist/encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        if-no-files-found: warn
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+        asset_name: decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+        asset_content_type: application/octet-stream
 
-    - name: Upload the rebuild_epub executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ runner.os }}-rebuild_epub
-        path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        if-no-files-found: warn
+    # - name: Upload the decrypt_epub executable
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: ${{ runner.os }}-decrypt_epub
+    #     path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+    #     if-no-files-found: warn
+
+    # - name: Upload the encrypt_epub executable
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: ${{ runner.os }}-encrypt_epub
+    #     path: dist/encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+    #     if-no-files-found: warn
+
+    # - name: Upload the rebuild_epub executable
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: ${{ runner.os }}-rebuild_epub
+    #     path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+    #     if-no-files-found: warn
         
-    - name: Upload all executables
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ runner.os }}-all
-        path: dist/*
+    # - name: Upload all executables
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: ${{ runner.os }}-all
+    #     path: dist/*
