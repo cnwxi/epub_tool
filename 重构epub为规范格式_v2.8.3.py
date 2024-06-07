@@ -670,14 +670,20 @@ def run(epub_src):
     return 0
 
 def main():
-    #epub_srcs = epub_sources()
-    #if len(epub_srcs) <= 1:
-    #    print('Error：找不到epub文件，请将有效的epub文件拖曳到pyz文件上！')
+    while True:
+        epub_src = input("\n【使用说明】请把EPUB文件拖曳到本窗口上（输入'e'退出）：")
+        epub_src = epub_src.strip("\'").strip('\"').strip()
 
-    epub_src = input("\n【使用说明】请把EPUB文件拖曳到本窗口上：")
-    epub_src = epub_src.strip("\'").strip('\"').strip()
+        if epub_src.lower() == 'e':
+            print("程序已退出")
+            sys.exit()
 
-    run(epub_src)
+        if not os.path.isfile(epub_src):
+            print("错误：找不到指定的EPUB文件，请确认文件路径是否正确并重新输入！")
+            continue
+
+        run(epub_src)
+        break
 
     return 0
 
@@ -693,4 +699,6 @@ if __name__ == "__main__":
             '7、 自动检测并提醒找不到对应文件的链接。')
     while True:
         main()
-        input("\n请按回车键继续")
+        if input("\n请按回车键继续，或输入'e'退出：").strip().lower() == 'e':
+            print("程序已退出")
+            break
