@@ -42,6 +42,7 @@ jobs:
 
     - name: Check if release exists
       id: check_release
+      shell: bash
       run: |
         response=$(curl --silent --show-error --header 'Authorization: token ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.prepare_tag.outputs.TAG }})
         exists=$(echo $response | jq '.url != null')
