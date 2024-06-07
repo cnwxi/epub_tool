@@ -36,13 +36,14 @@ jobs:
     
     # 准备发布的tag
     - name: prepare tag
+      shell: bash
       id: prepare_tag
       run: |
-        echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')-${{ runner.os }}
+        echo ::set-output name=TAG::$(date +'%Y.%m.%dv2')-${{ runner.os }}
 
     - name: Check if release exists
       id: check_release
-      shell: bash
+      
       run: |
         response=$(curl --silent --show-error --header 'Authorization: token ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.prepare_tag.outputs.TAG }})
         exists=$(echo $response | jq '.url != null')
