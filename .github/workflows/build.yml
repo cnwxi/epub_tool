@@ -4,6 +4,10 @@ on:
   push:
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -36,7 +40,6 @@ jobs:
     
     # 准备发布的tag
     - name: prepare tag
-      shell: bash
       id: prepare_tag
       run: |
         echo ::set-output name=TAG::$(date +'%Y.%m.%dv2')-${{ runner.os }}
