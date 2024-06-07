@@ -38,7 +38,8 @@ jobs:
     - name: prepare tag
       id: prepare_tag
       run: |
-        echo ::set-output name=TAG::$(date +'%Y.%m.%dv2')
+        plt=${{runner.os}}
+        echo ::set-output name=TAG::$(date +'%Y.%m.%dv1-$plt')
 
     - name: Check if release exists
       id: check_release
