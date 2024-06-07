@@ -38,7 +38,7 @@ jobs:
     - name: prepare tag
       id: prepare_tag
       run: |
-        echo ::set-env name=TAG::$(date +'%Y.%m.%dv2')
+        echo ::set-output name=TAG::$(date +'%Y.%m.%dv2')
 
     - name: Check if release exists
       id: check_release
