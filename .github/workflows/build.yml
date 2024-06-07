@@ -1,4 +1,4 @@
-name: Build Epub Tool
+name: Build And Release
 
 on:
   push:
@@ -33,6 +33,21 @@ jobs:
     - name: Build the executable for rebuild_epub
       run: |
         pyinstaller --onefile --name rebuild_epub 重构epub为规范格式_v2.8.3.py
+    
+    # 准备发布的tag
+    - name: prepare tag
+      id: prepare_tag
+      run: |
+        echo ::set-env name=TAG::$(date +'%Y.%m.%dv1')
+
+    - name: Check if release exists
+      id: check_release
+      run: |
+        response=$(curl --silent --show-error --header 'Authorization: token ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.prepare_tag.outputs.TAG }})
+        exists=$(echo $response | jq '.url != null')
+        echo "::set-output name=exists::$exists"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Create Release
       id: create_release
@@ -40,10 +55,11 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: 2024.06.07v1
-        release_name: Release 2024.06.07v1
+        tag_name: ${{  steps.prepare_tag.outputs.TAG }}
+        release_name: Release ${{  steps.prepare_tag.outputs.TAG }}
         draft: false
         prerelease: false
+      if : steps.check_release.outputs.exists == 'false'
 
     - name: Upload Release Asset
       id: upload-release-asset-decrypt_epub
