@@ -21,7 +21,7 @@ jobs:
     - name: prepare tag
       id: prepare_tag
       run: |
-        echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')-${{ runner.os }}
+        echo ::set-output name=TAG::$(date +'%Y.%m.%dv2')-${{ runner.os }}
 
     - name: Create Release
       id: create_release
@@ -55,6 +55,9 @@ jobs:
       run: |
         pyinstaller --onefile --name rebuild_epub 重构epub为规范格式_v2.8.3.py
     
+
+
+
     # 上传到release
     - name: Upload Release Asset
       id: upload-release-asset-decrypt_epub
@@ -64,7 +67,7 @@ jobs:
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_name: ${{ runner.os }}-decrypt_epub
+        asset_name: ${{ runner.os }}_decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
         asset_content_type: application/octet-stream
 
     - name: Upload Release Asset
@@ -75,7 +78,7 @@ jobs:
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: dist/encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_name: ${{ runner.os }}-encrypt_epub
+        asset_name: ${{ runner.os }}_encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
         asset_content_type: application/octet-stream
 
     - name: Upload Release Asset
@@ -86,7 +89,7 @@ jobs:
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_name: ${{ runner.os }}-rebuild_epub
+        asset_name: ${{ runner.os }}_rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
         asset_content_type: application/octet-stream
 
     # - name: Upload the decrypt_epub executable
