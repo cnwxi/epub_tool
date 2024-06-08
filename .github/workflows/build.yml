@@ -2,6 +2,9 @@ name: Build And Release
 
 on:
   push:
+    paths:
+      - '**.py'
+      - '**.yml'
   workflow_dispatch:
     inputs:
       release:
@@ -11,7 +14,7 @@ on:
       version:
         description: 'Release version'
         required: false
-        default: '20240608v1'
+        default: '2024.06.08v1'
       body:
         description: 'Release body text'
         required: false
