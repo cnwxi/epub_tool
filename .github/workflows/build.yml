@@ -3,10 +3,19 @@ name: Build And Release
 on:
   push:
   workflow_dispatch:
-
-defaults:
-  run:
-    shell: bash
+    inputs:
+      release:
+        description: 'Create a new release'
+        required: false
+        default: 'false'
+      version:
+        description: 'Release version'
+        required: false
+        default: '20240608v1'
+      body:
+        description: 'Release body text'
+        required: false
+        default: '详情请查看更新日志'
 
 jobs:
   build:
@@ -16,23 +25,6 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
     - uses: actions/checkout@v4
-
-    # 准备发布的tag
-    - name: prepare tag
-      id: prepare_tag
-      run: |
-        echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')-${{ runner.os }}
-
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{  steps.prepare_tag.outputs.TAG }}
-        release_name: Release ${{  steps.prepare_tag.outputs.TAG }}
-        draft: false
-        prerelease: false
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -54,40 +46,59 @@ jobs:
     - name: Build the executable for rebuild_epub
       run: |
         pyinstaller --onefile --name rebuild_epub 重构epub为规范格式_v2.8.3.py
-    
 
-
-
-    # 上传到release
-    - name: Upload Release Asset
-      id: upload-release-asset-decrypt_epub
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload the decrypt_epub executable
+      if: github.event.inputs.release != 'true'
+      uses: actions/upload-artifact@v4
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_name: ${{ runner.os }}_decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_content_type: application/octet-stream
+        name: ${{ runner.os }}-decrypt_epub
+        path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+        if-no-files-found: warn
 
-    - name: Upload Release Asset
-      id: upload-release-asset-encrypt_epub
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload the encrypt_epub executable
+      if: github.event.inputs.release != 'true'
+      uses: actions/upload-artifact@v4
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: dist/encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_name: ${{ runner.os }}_encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_content_type: application/octet-stream
+        name: ${{ runner.os }}-encrypt_epub
+        path: dist/encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+        if-no-files-found: warn
 
-    - name: Upload Release Asset
-      id: upload-release-asset-rebuild_epub
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload the rebuild_epub executable
+      if: github.event.inputs.release != 'true'
+      uses: actions/upload-artifact@v4
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_name: ${{ runner.os }}_rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        asset_content_type: application/octet-stream
+        name: ${{ runner.os }}-rebuild_epub
+        path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
+        if-no-files-found: warn
+
+    - name: Upload all executables
+      if: github.event.inputs.release != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ runner.os }}-all
+        path: dist/*
+
+    - name: Rename artifacts with OS prefix (Linux and macOS)
+      if: github.event.inputs.release == 'true' && matrix.os != 'windows-latest'
+      run: |
+        for file in dist/*; do
+          mv "$file" "dist/${{ runner.os }}_$(basename "$file")"
+        done
+      shell: bash
+
+    - name: Rename artifacts with OS prefix (Windows)
+      if: github.event.inputs.release == 'true' && matrix.os == 'windows-latest'
+      run: |
+        Get-ChildItem -Path dist | Rename-Item -NewName { '${{ runner.os }}_' + $_.Name }
+      shell: pwsh
+
+    - name: Create Release
+      if: github.event.inputs.release == 'true'
+      uses: ncipollo/release-action@v1
+      with:
+        tag: ${{ github.event.inputs.version }}
+        name: ${{ github.event.inputs.version }}
+        body: ${{ github.event.inputs.body }}
+        artifacts: 'dist/*'
+        allowUpdates: true
+        makeLatest: true
