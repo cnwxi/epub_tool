@@ -54,6 +54,7 @@ jobs:
       if : github.event.inputs.release is empty
       id: release_tag
       run: 
+        echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')-${{ runner.os }}
       shell: bash
 
     - name: Set up Python
