@@ -7,6 +7,11 @@ on:
       - '**.yml'
   workflow_dispatch:
     inputs:
+      release:
+        description: 'Create a new release'
+        required: false
+        default: 'false'
+        type: boolean
       version:
         description: 'Release version'
         required: true
@@ -24,6 +29,11 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
     - uses: actions/checkout@v4
+
+    - name: prepare version
+      id: version
+      run: echo ${{ github.event.inputs.version }}
+      shell: bash
 
     - name: Set up Python
       uses: actions/setup-python@v5
