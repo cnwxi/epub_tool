@@ -9,7 +9,7 @@ on:
     inputs:
       release:
         description: 'Create a new release'
-        required: false
+        required: true
         default: 'false'
       version:
         description: 'Release version'
