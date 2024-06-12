@@ -36,7 +36,7 @@ jobs:
       run: |
         if [[ -z "${{ github.event.inputs.release }}" ]]; then
           echo "Release is empty"
-          echo ::set-output name=flag::false)
+          echo ::set-output name=flag::false
         else
           echo "Release is not empty"
           echo ::set-output name=flag::true
