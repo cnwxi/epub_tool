@@ -31,29 +31,47 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Check if release is empty unix
+      id: chech_unix
       if: matrix.os != 'windows-latest'
       run: |
         if [[ -z "${{ github.event.inputs.release }}" ]]; then
           echo "Release is empty"
+          echo ::set-output name=flag::false)
         else
           echo "Release is not empty"
+          echo ::set-output name=flag::true
         fi
       shell: bash
 
+             # echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
+          # echo ::set-output name=BODY::详情请查看更新日志}
     - name: Check if release is empty windows
+      id: chech_windows
       if: matrix.os == 'windows-latest'
       run: |
         if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
           Write-Host "Release is empty"
+          echo ::set-output name=flag::false)
+   
         } else {
           Write-Host "Release is not empty"
+          echo ::set-output name=flag::true
         }
       shell: pwsh
+    
+    - name
 
     - name: prepare version
       id: release_tag
-      run: 
-        echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')-${{ runner.os }}
+      run:
+        if [ ${{ steps.chech_unix.outputs.flag }} == 'true' or ${{steps.chech_windows.outputs.flag}} == 'true']; then
+          echo ::set-output name=TAG::${{ github.event.inputs.version }}
+          echo ::set-output name=BODY::${{ github.event.inputs.body }}
+        else
+          echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
+          echo ::set-output name=BODY::详情请查看更新日志
+        fi
+        
       shell: bash
 
     - name: Set up Python
@@ -121,10 +139,9 @@ jobs:
     - name: Create Release
       uses: ncipollo/release-action@v1
       with:
-        tag: ${{ github.event.inputs.version }}
-        name: ${{ github.event.inputs.version }}
-        body: ${{ github.event.inputs.body }}
+        tag: ${{ steps.release_tag.outputs.TAG }}
+        name: ${{ steps.release_tag.outputs.TAG }}
+        body: ${{ steps.release_tag.outputs.BODY }}
         artifacts: 'dist/*'
         allowUpdates: true
         makeLatest: true
-
