@@ -40,7 +40,7 @@
 CI配置文件更新，由[lgernier](https://github.com/lgernierO)提交<br>
 ### 2024.06.12<br>
 针对cover页面未混淆的情况做更改<br>
-修改自动发布逻辑，修改py文件不触发CI，仅修改yml后触发。
+修改自动发布逻辑，修改py文件不触发CI，仅修改yml后触发。修改yml，无需手动执行才执行发布。<br>
 
 ---
 
