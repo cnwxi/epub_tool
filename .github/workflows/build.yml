@@ -10,12 +10,12 @@ on:
       release:
         description: 'Create a new release'
         required: true
-        default: 'false'
+        default: 'true'
         type: boolean
       version:
         description: 'Release version'
         required: true
-        default: '2024.06.12v2'
+        default: '2024.06.12v1'
       body:
         description: 'Release body text'
         required: true
@@ -36,7 +36,7 @@ jobs:
       run: |
         if [[ -z "${{ github.event.inputs.release }}" ]]; then
           echo "Release is empty"
-          echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
+          echo ::set-output name=TAG::$(date +'%Y.%m.%dv2')
           echo ::set-output name=BODY::详情请查看更新日志
         else
           echo ::set-output name=TAG::${{ github.event.inputs.version }}
@@ -44,16 +44,13 @@ jobs:
         fi
       shell: bash
 
-             # echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
-          # echo ::set-output name=BODY::详情请查看更新日志}
-
     - name: Check if release is empty windows
       id: chech_windows
       if: matrix.os == 'windows-latest'
       run: |
         if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
           Write-Host "Release is empty"
-          echo "::set-output name=TAG::$(Get-Date -Format 'yyyy.MM.ddv1')"
+          echo "::set-output name=TAG::$(Get-Date -Format 'yyyy.MM.ddv2')"
           echo "::set-output name=BODY::详情请查看更新日志"
         } else {
           Write-Host "Release is not empty"
