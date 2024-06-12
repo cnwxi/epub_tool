@@ -53,12 +53,12 @@ jobs:
       run: |
         if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
           Write-Host "Release is empty"
-          echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
-          echo ::set-output name=BODY::详情请查看更新日志
+          echo "::set-output name=TAG::$(Get-Date -Format 'yyyy.MM.ddv1')"
+          echo "::set-output name=BODY::详情请查看更新日志"
         } else {
           Write-Host "Release is not empty"
-          echo ::set-output name=TAG::${{ github.event.inputs.version }}
-          echo ::set-output name=BODY::${{ github.event.inputs.body }}
+          echo "::set-output name=TAG::${{ github.event.inputs.version }}"
+          echo "::set-output name=BODY::${{ github.event.inputs.body }}"
         }
       shell: pwsh
     
@@ -124,7 +124,7 @@ jobs:
         Get-ChildItem -Path dist | Rename-Item -NewName { '${{ runner.os }}_' + $_.Name }
       shell: pwsh
 
-    - name: Create Release
+    - name: Create Release windows
       if: matrix.os == 'windows-latest'
       uses: ncipollo/release-action@v1
       with:
@@ -134,8 +134,9 @@ jobs:
         artifacts: 'dist/*'
         allowUpdates: true
         makeLatest: true
+      shell: pwsh
     
-    - name: Create Release
+    - name: Create Release unix
       if: matrix.os != 'windows-latest'
       uses: ncipollo/release-action@v1
       with:
@@ -145,3 +146,4 @@ jobs:
         artifacts: 'dist/*'
         allowUpdates: true
         makeLatest: true
+      shell: bash
