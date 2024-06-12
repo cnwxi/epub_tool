@@ -36,10 +36,11 @@ jobs:
       run: |
         if [[ -z "${{ github.event.inputs.release }}" ]]; then
           echo "Release is empty"
-          echo ::set-output name=flag::false
+          echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
+          echo ::set-output name=BODY::详情请查看更新日志
         else
-          echo "Release is not empty"
-          echo ::set-output name=flag::true
+          echo ::set-output name=TAG::${{ github.event.inputs.version }}
+          echo ::set-output name=BODY::${{ github.event.inputs.body }}
         fi
       shell: bash
 
@@ -51,26 +52,16 @@ jobs:
       run: |
         if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
           Write-Host "Release is empty"
-          echo ::set-output name=flag::false
+          echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
+          echo ::set-output name=BODY::详情请查看更新日志
         } else {
           Write-Host "Release is not empty"
-          echo ::set-output name=flag::true
+          echo ::set-output name=TAG::${{ github.event.inputs.version }}
+          echo ::set-output name=BODY::${{ github.event.inputs.body }}
         }
         fi
       shell: pwsh
     
-    - name: prepare version
-      id: release_tag
-      run:
-        if { [ -z "${{ steps.chech_unix.outputs.flag }}" ] || [ "${{ steps.chech_unix.outputs.flag }}" == "true" ]; } || { [ -z "${{ steps.chech_windows.outputs.flag }}" ] || [ "${{ steps.chech_windows.outputs.flag }}" == "true" ]; }; then
-          echo ::set-output name=TAG::${{ github.event.inputs.version }}
-          echo ::set-output name=BODY::${{ github.event.inputs.body }}
-        else
-          echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
-          echo ::set-output name=BODY::详情请查看更新日志
-        fi
-      shell: bash
-
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -134,11 +125,23 @@ jobs:
       shell: pwsh
 
     - name: Create Release
+      if: matrix.os == 'windows-latest'
       uses: ncipollo/release-action@v1
       with:
-        tag: ${{ steps.release_tag.outputs.TAG }}
-        name: ${{ steps.release_tag.outputs.TAG }}
-        body: ${{ steps.release_tag.outputs.BODY }}
+        tag: ${{ steps.chech_windows.outputs.TAG }}
+        name: ${{ steps.chech_windows.outputs.TAG }}
+        body: ${{ steps.chech_windows.outputs.BODY }}
+        artifacts: 'dist/*'
+        allowUpdates: true
+        makeLatest: true
+    
+    - name: Create Release
+      if: matrix.os != 'windows-latest'
+      uses: ncipollo/release-action@v1
+      with:
+        tag: ${{ steps.chech_unix.outputs.TAG }}
+        name: ${{ steps.chech_unix.outputs.TAG }}
+        body: ${{ steps.chech_unix.outputs.BODY }}
         artifacts: 'dist/*'
         allowUpdates: true
         makeLatest: true
