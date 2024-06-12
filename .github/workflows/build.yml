@@ -29,10 +29,31 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Check if release is empty unix
+      if: matrix.os != 'windows-latest'
+      run: |
+        if [[ -z "${{ github.event.inputs.release }}" ]]; then
+          echo "Release is empty"
+        else
+          echo "Release is not empty"
+        fi
+      shell: bash
+
+    - name: Check if release is empty windows
+      if: matrix.os == 'windows-latest'
+      run: |
+        if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
+          Write-Host "Release is empty"
+        } else {
+          Write-Host "Release is not empty"
+        }
+      shell: pwsh
 
     - name: prepare version
-      id: version
-      run: echo ${{ github.event.inputs.version }}
+      if : github.event.inputs.release is empty
+      id: release_tag
+      run: 
       shell: bash
 
     - name: Set up Python
