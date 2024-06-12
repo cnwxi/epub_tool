@@ -36,6 +36,11 @@
 修改主函数逻辑，防止epub文件不存在导致的程序崩溃，由[lgernier](https://github.com/lgernierO)提交。<br>
 加入CI自动构建，由[lgernier](https://github.com/lgernierO)提交<br>
 加入CI自动发布，由[No Response](https://github.com/cnwxi)提交<br>
+### 2024.06.08<br>
+CI配置文件更新，由[lgernier](https://github.com/lgernierO)提交<br>
+### 2024.06.12<br>
+针对cover页面未混淆的情况做更改<br>
+修改自动发布逻辑，修改py文件不触发CI，仅修改yml后触发。
 
 ---
 
