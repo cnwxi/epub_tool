@@ -51,7 +51,7 @@ jobs:
       run: |
         if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
           Write-Host "Release is empty"
-          echo ::set-output name=flag::false)
+          echo ::set-output name=flag::false
    
         } else {
           Write-Host "Release is not empty"
