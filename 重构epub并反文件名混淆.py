@@ -713,6 +713,15 @@ class EpubTool:
             basename = path.basename(href)
             filename = unquote(basename)
             if not basename.endswith('.ncx'):
+                if 'cover' not in href:
+                   pass
+                else:
+                     for i in self.text_list:
+                        if 'cover' in i[0]:
+                            print('存在文件未混淆',href)
+                            print('已自动纠正链接',i)
+                            href = i[1]
+                            break
                 return match.group(1) + 'Text/' + self.toc_rn[href] + match.group(4)
             else:
                 return match.group()
