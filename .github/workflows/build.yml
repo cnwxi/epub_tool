@@ -10,7 +10,7 @@ on:
       release:
         description: 'Create a new release'
         required: false
-        default: 'ture'
+        default: 'true'
       version:
         description: 'Release version'
         required: false
