@@ -9,8 +9,8 @@ on:
     inputs:
       release:
         description: 'Create a new release'
-        required: true
-        default: 'false'
+        required: false
+        default: 'ture'
       version:
         description: 'Release version'
         required: false
