@@ -52,24 +52,23 @@ jobs:
         if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
           Write-Host "Release is empty"
           echo ::set-output name=flag::false
-   
         } else {
           Write-Host "Release is not empty"
           echo ::set-output name=flag::true
         }
+        fi
       shell: pwsh
     
     - name: prepare version
       id: release_tag
       run:
-        if [ ${{ steps.chech_unix.outputs.flag }} == 'true' or ${{steps.chech_windows.outputs.flag}} == 'true']; then
+        if { [ -z "${{ steps.chech_unix.outputs.flag }}" ] || [ "${{ steps.chech_unix.outputs.flag }}" == "true" ]; } || { [ -z "${{ steps.chech_windows.outputs.flag }}" ] || [ "${{ steps.chech_windows.outputs.flag }}" == "true" ]; }; then
           echo ::set-output name=TAG::${{ github.event.inputs.version }}
           echo ::set-output name=BODY::${{ github.event.inputs.body }}
         else
           echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
           echo ::set-output name=BODY::详情请查看更新日志
         fi
-        
       shell: bash
 
     - name: Set up Python
