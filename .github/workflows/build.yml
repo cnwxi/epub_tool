@@ -15,7 +15,7 @@ on:
       version:
         description: 'Release version'
         required: true
-        default: '2024.06.12v1'
+        default: '2024.06.12.v1'
       body:
         description: 'Release body text'
         required: true
@@ -36,7 +36,7 @@ jobs:
       run: |
         if [[ -z "${{ github.event.inputs.release }}" ]]; then
           echo "Release is empty"
-          echo ::set-output name=TAG::$(date +'%Y.%m.%dv2')
+          echo ::set-output name=TAG::$(date +'%Y.%m.%d.v1')
           echo ::set-output name=BODY::详情请查看更新日志
         else
           echo ::set-output name=TAG::${{ github.event.inputs.version }}
@@ -50,7 +50,7 @@ jobs:
       run: |
         if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
           Write-Host "Release is empty"
-          echo "::set-output name=TAG::$(Get-Date -Format 'yyyy.MM.ddv2')"
+          echo "::set-output name=TAG::$(Get-Date -Format 'yyyy.MM.dd.v1')"
           echo "::set-output name=BODY::详情请查看更新日志"
         } else {
           Write-Host "Release is not empty"
