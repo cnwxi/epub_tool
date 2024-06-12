@@ -9,11 +9,11 @@ on:
     inputs:
       version:
         description: 'Release version'
-        required: false
-        default: '2024.06.12v1'
+        required: true
+        default: '2024.06.12v2'
       body:
         description: 'Release body text'
-        required: false
+        required: true
         default: '详情请查看更新日志'
 
 jobs:
