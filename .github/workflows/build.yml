@@ -46,6 +46,7 @@ jobs:
 
              # echo ::set-output name=TAG::$(date +'%Y.%m.%dv1')
           # echo ::set-output name=BODY::详情请查看更新日志}
+
     - name: Check if release is empty windows
       id: chech_windows
       if: matrix.os == 'windows-latest'
@@ -59,7 +60,6 @@ jobs:
           echo ::set-output name=TAG::${{ github.event.inputs.version }}
           echo ::set-output name=BODY::${{ github.event.inputs.body }}
         }
-        fi
       shell: pwsh
     
     - name: Set up Python
