@@ -3,7 +3,6 @@ name: Build And Release
 on:
   push:
     paths:
-      # - '**.py'
       - '**.yml'
   workflow_dispatch:
     inputs:
@@ -15,7 +14,7 @@ on:
       version:
         description: 'Release version'
         required: true
-        default: '2024.06.12.v1'
+        default: '2024.06.13.v1'
       body:
         description: 'Release body text'
         required: true
@@ -30,35 +29,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Check if release is empty unix
-      id: chech_unix
-      if: matrix.os != 'windows-latest'
+    - name: Set release outputs
+      id: set_release_outputs
       run: |
-        if [[ -z "${{ github.event.inputs.release }}" ]]; then
-          echo "Release is empty"
-          echo ::set-output name=TAG::$(date +'%Y.%m.%d.v1')
-          echo ::set-output name=BODY::详情请查看更新日志
+        if [ "${{ github.event.inputs.release }}" == "true" ]; then
+          echo "TAG=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "BODY=${{ github.event.inputs.body }}" >> $GITHUB_ENV
         else
-          echo ::set-output name=TAG::${{ github.event.inputs.version }}
-          echo ::set-output name=BODY::${{ github.event.inputs.body }}
+          echo "TAG=$(date +'%Y.%m.%d.v1')" >> $GITHUB_ENV
+          echo "BODY=详情请查看更新日志" >> $GITHUB_ENV
         fi
       shell: bash
 
-    - name: Check if release is empty windows
-      id: chech_windows
-      if: matrix.os == 'windows-latest'
-      run: |
-        if ([string]::IsNullOrEmpty("${{ github.event.inputs.release }}")) {
-          Write-Host "Release is empty"
-          echo "::set-output name=TAG::$(Get-Date -Format 'yyyy.MM.dd.v1')"
-          echo "::set-output name=BODY::详情请查看更新日志"
-        } else {
-          Write-Host "Release is not empty"
-          echo "::set-output name=TAG::${{ github.event.inputs.version }}"
-          echo "::set-output name=BODY::${{ github.event.inputs.body }}"
-        }
-      shell: pwsh
-    
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -68,44 +50,11 @@ jobs:
       run: |
         python -m pip install pyinstaller
 
-    - name: Build the executable for decrypt_epub
+    - name: Build the executables
       run: |
         pyinstaller --onefile --name decrypt_epub 重构epub并反文件名混淆.py
-
-    - name: Build the executable for encrypt_epub
-      run: |
         pyinstaller --onefile --name encrypt_epub 重构epub并加入文件名混淆.py
-
-    - name: Build the executable for rebuild_epub
-      run: |
         pyinstaller --onefile --name rebuild_epub 重构epub为规范格式_v2.8.3.py
-
-    - name: Upload the decrypt_epub executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ runner.os }}-decrypt_epub
-        path: dist/decrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        if-no-files-found: warn
-
-    - name: Upload the encrypt_epub executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ runner.os }}-encrypt_epub
-        path: dist/encrypt_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        if-no-files-found: warn
-
-    - name: Upload the rebuild_epub executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ runner.os }}-rebuild_epub
-        path: dist/rebuild_epub${{ endsWith(matrix.os, 'windows-latest') && '.exe' || '' }}
-        if-no-files-found: warn
-
-    - name: Upload all executables
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ runner.os }}-all
-        path: dist/*
 
     - name: Rename artifacts with OS prefix (Linux and macOS)
       if: matrix.os != 'windows-latest'
@@ -121,24 +70,25 @@ jobs:
         Get-ChildItem -Path dist | Rename-Item -NewName { '${{ runner.os }}_' + $_.Name }
       shell: pwsh
 
-    - name: Create Release windows
+    - name: Create zip archive (Windows)
       if: matrix.os == 'windows-latest'
-      uses: ncipollo/release-action@v1
-      with:
-        tag: ${{ steps.chech_windows.outputs.TAG }}
-        name: ${{ steps.chech_windows.outputs.TAG }}
-        body: ${{ steps.chech_windows.outputs.BODY }}
-        artifacts: 'dist/*'
-        allowUpdates: true
-        makeLatest: true
-    
-    - name: Create Release unix
+      run: |
+        Compress-Archive -Path dist\* -DestinationPath "dist\${{ runner.os }}_all.zip"
+      shell: pwsh
+
+    - name: Create tar.gz archive (Linux and macOS)
       if: matrix.os != 'windows-latest'
+      run: |
+        tar -czvf "${{ runner.os }}_all.tar.gz" -C dist $(ls dist)
+        mv "${{ runner.os }}_all.tar.gz" dist/
+      shell: bash
+
+    - name: Create Release
       uses: ncipollo/release-action@v1
       with:
-        tag: ${{ steps.chech_unix.outputs.TAG }}
-        name: ${{ steps.chech_unix.outputs.TAG }}
-        body: ${{ steps.chech_unix.outputs.BODY }}
+        tag: ${{ env.TAG }}
+        name: ${{ env.TAG }}
+        body: ${{ env.BODY }}
         artifacts: 'dist/*'
         allowUpdates: true
         makeLatest: true
