@@ -43,6 +43,8 @@ CI配置文件更新，由[lgernier](https://github.com/lgernierO)提交<br>
 修改自动发布逻辑，修改py文件不触发CI，仅修改yml后触发。修改yml，无需手动执行才执行发布。<br>
 ### 2024.06.13<br>
 更新yml文件，由[lgernier](https://github.com/lgernierO)提交。<br>
+### 2024.06.19<br>
+代码更新，使用相似度计算覆盖opf文件中未混淆的其他文件名情况。<br>
 
 ---
 
