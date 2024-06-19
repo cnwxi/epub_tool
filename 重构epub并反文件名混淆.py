@@ -11,6 +11,7 @@ from urllib.parse import unquote
 from xml.etree import ElementTree
 import copy
 import os
+import difflib
 
 class EpubTool:
 
@@ -713,16 +714,19 @@ class EpubTool:
             basename = path.basename(href)
             filename = unquote(basename)
             if not basename.endswith('.ncx'):
-                if 'cover' not in href:
-                   pass
-                else:
-                     for i in self.text_list:
-                        if 'cover' in i[0]:
-                            print('存在文件未混淆',href)
-                            print('已自动纠正链接',i)
-                            href = i[1]
-                            break
-                return match.group(1) + 'Text/' + self.toc_rn[href] + match.group(4)
+                try:
+                    return match.group(1) + 'Text/' + self.toc_rn[href] + match.group(4)
+                except:
+                    print('写入content.opf时，文件链接出错：', href)
+                    similar_list=[]
+                    for i in self.text_list:
+                        similar=difflib.SequenceMatcher(None, i[0].rsplit('/',1)[-1].split('.')[0], href.rsplit('/',1)[-1].split('.')[0]).quick_ratio()
+                        similar_list.append(similar)
+                    sorted_id = sorted(range(len(similar_list)), key=lambda k: similar_list[k], reverse=True)
+                    tmp=href
+                    href = self.text_list[sorted_id[0]][1]
+                    print("已自动替换为相似度最高文件：",tmp,'<->',self.text_list[sorted_id[0]])
+                    return match.group(1) + 'Text/' + self.toc_rn[href] + match.group(4)
             else:
                 return match.group()
 
