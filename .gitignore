@@ -1,9 +1,6 @@
-重构EPUB
-反混淆EPUB
-混淆EPUB
 build
 dist
-demo.epub
+test
 decrypt_epub.spec
 encrypt_epub.spec
 rebuild_epub.spec
