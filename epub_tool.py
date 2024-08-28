@@ -54,6 +54,7 @@ def main():
             tmp_run_result.append(f'{file} Success')
         else:
             tmp_run_result.append(f'{file} Fail')
+    print('\nResult:')
     for result in tmp_run_result:
         print(result)
 
