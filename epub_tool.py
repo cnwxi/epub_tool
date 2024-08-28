@@ -18,13 +18,14 @@ def check_args(args):
     if not args.i:
         print('Please specify the input file/folder')
         sys.exit(1)
-    if not os.path.exists(args.i):
-        print('Input file/folder does not exist')
-        sys.exit(1)
     # 判断输入文件是否为文件夹
     if os.path.isdir(args.i):
-        file_list = sorted(os.listdir(args.i))
-        args.i = [os.path.join(args.i, file) for file in file_list if file.endswith('.epub')]
+        file_list = []
+        for root, dirs, files in os.walk(args.i):
+            for file in files:
+                if file.endswith('.epub'):
+                    file_list.append(os.path.join(root, file))
+        args.i = file_list
     else:
         args.i = [args.i]
     for i in args.i:
@@ -55,6 +56,6 @@ def main():
             tmp_run_result.append(f'{file} Fail')
     for result in tmp_run_result:
         print(result)
-        
+
 if __name__ == '__main__':
     main()

@@ -311,11 +311,9 @@ class EpubTool:
             del self.id_to_h_m_p[id]
 
     def create_tgt_epub(self):
-        output_path = path.join(self.ebook_root, "反混淆EPUB")
-        if not path.exists(output_path):
-            mkdir(output_path)
+        output_path = self.ebook_root
         print(f"输出路径：{output_path}")
-        return zipfile.ZipFile(path.join(output_path , self.epub_name), 'w',
+        return zipfile.ZipFile(path.join(output_path , self.epub_name.replace('.epub','_decrypt.epub')), 'w',
                                zipfile.ZIP_STORED)
 
     # 重构
