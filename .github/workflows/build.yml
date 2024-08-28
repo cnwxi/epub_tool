@@ -68,18 +68,18 @@ jobs:
         Get-ChildItem -Path dist | Rename-Item -NewName { '${{ runner.os }}_' + $_.Name }
       shell: pwsh
 
-    - name: Create zip archive (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        Compress-Archive -Path dist\* -DestinationPath "dist\${{ runner.os }}_all.zip"
-      shell: pwsh
+    # - name: Create zip archive (Windows)
+    #   if: matrix.os == 'windows-latest'
+    #   run: |
+    #     Compress-Archive -Path dist\* -DestinationPath "dist\${{ runner.os }}_all.zip"
+    #   shell: pwsh
 
-    - name: Create tar.gz archive (Linux and macOS)
-      if: matrix.os != 'windows-latest'
-      run: |
-        tar -czvf "${{ runner.os }}_all.tar.gz" -C dist $(ls dist)
-        mv "${{ runner.os }}_all.tar.gz" dist/
-      shell: bash
+    # - name: Create tar.gz archive (Linux and macOS)
+    #   if: matrix.os != 'windows-latest'
+    #   run: |
+    #     tar -czvf "${{ runner.os }}_all.tar.gz" -C dist $(ls dist)
+    #     mv "${{ runner.os }}_all.tar.gz" dist/
+    #   shell: bash
 
     - name: Create Release
       uses: ncipollo/release-action@v1
