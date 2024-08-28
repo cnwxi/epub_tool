@@ -1,6 +1,4 @@
 build
 dist
 test
-decrypt_epub.spec
-encrypt_epub.spec
-rebuild_epub.spec
+epub_tool.spec
