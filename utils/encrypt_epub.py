@@ -140,10 +140,10 @@ class EpubTool:
             new_href = f"_{new_href}{image_slim}.{_file_extension.lower()}"
             if new_href not in self.toc_rn.values():
                 self.toc_rn[href] = new_href
-                print(f"mixed href: {_id}:{_href} -> {self.toc_rn[href]}")
+                print(f"encrypt href: {_id}:{_href} -> {self.toc_rn[href]}")
             else:
                 self.toc_rn[href] = new_href
-                print(f"mixed href: {_id}:{_href} -> {new_href} 重复")
+                print(f"encrypt href: {_id}:{_href} -> {new_href} 重复")
             return new_href
 
         ############################################################

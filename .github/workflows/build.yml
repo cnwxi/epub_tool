@@ -9,7 +9,7 @@ on:
       release:
         description: 'Create a new release'
         required: true
-        default: 'true'
+        default: true
         type: boolean
       version:
         description: 'Release version'
@@ -52,9 +52,7 @@ jobs:
 
     - name: Build the executables
       run: |
-        pyinstaller --onefile --name decrypt_epub 重构epub并反文件名混淆.py
-        pyinstaller --onefile --name encrypt_epub 重构epub并加入文件名混淆.py
-        pyinstaller --onefile --name rebuild_epub 重构epub为规范格式_v2.8.3.py
+        pyinstaller --onefile --name epub_tool epub_tool.py
 
     - name: Rename artifacts with OS prefix (Linux and macOS)
       if: matrix.os != 'windows-latest'

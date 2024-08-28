@@ -144,7 +144,7 @@ class EpubTool:
                 else:
                     image_silm=''
                 new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"
-            print(f"unmixed href: {_id}:{_href} -> {new_href}")
+            print(f"decrypt href: {_id}:{_href} -> {new_href}")
             return new_href
         ############################################################
         for id, href, mime, properties in self.manifest_list:
