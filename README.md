@@ -15,7 +15,7 @@
 - python执行<br>
 1. 下载python3.8；<br> 
 2. 使用`git clone https://github.com/cnwxi/epub_tool.git`克隆本仓库；或直接在网页下载源码压缩包，解压后得到py文件；<br>
-3. 执行py文件
+3. 执行py文件。
     - 单个工具执行：
     1. 使用命令行执行 `python 解压目标文件夹/epub_tool/utils/**.py` 或修改py为pyz双击运行。<br>
     - 整合工具执行：
