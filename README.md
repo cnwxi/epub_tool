@@ -44,6 +44,7 @@
 ### 2024.08.28<br>
 整合代码，使用命令行批量处理epub文件。<br>
 支持输入单个epub文件或epub文件所在文件夹，支持子目录遍历。<br>
+修改输出路径，现为原epub文件同级路径，通过添加不同后缀`encrypt\decrypt\reformat`区分原文件和处理后文件。<br>
 更新README。<br>
 ### 2024.08.11<br>
 更新README。<br>
