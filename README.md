@@ -3,8 +3,10 @@
 1. `重构epub为规范格式_v2.8.3.py`->`utils\reformat_epub.py`<br>
 原始的百度贴吧帖子链接：[遥遥心航的帖子](https://jump2.bdimg.com/p/8090221625)<br>
 遥遥心航提供的原始文件：[蓝奏云网盘链接](https://wwb.lanzoub.com/b01k016hg) 密码：`i89p`<br>
-3. `重构epub并反文件名混淆.py`->`utils\decrypt_epub.py`<br>
-4. `重构epub并加入文件名混淆.py`->`utils\encrypt_epub.py`<br>
+2. `重构epub并反文件名混淆.py`->`utils\decrypt_epub.py`<br>
+3. `重构epub并加入文件名混淆.py`->`utils\encrypt_epub.py`<br>
+4. `epub_tool.py`<br>
+对上述工具的整合。<br>
 
 ## Ⅱ 怎么使用？（仅针对最新版本）<br>
 - python执行<br>
