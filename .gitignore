@@ -2,3 +2,5 @@ build
 dist
 test
 epub_tool.spec
+log.txt
+result.txt
