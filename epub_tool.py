@@ -42,9 +42,7 @@ def main():
     with open(log_file, "w",encoding='utf-8') as f:
         sys.stdout = f
         args = prepare_args()
-
         args = check_args(args)
-
         if args.e:
             func = encrypt_run
         elif args.d:

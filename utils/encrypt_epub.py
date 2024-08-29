@@ -203,7 +203,7 @@ class EpubTool:
         self.id_to_h_m_p = {}  # { id : (href,mime,properties) , ... }
         self.id_to_href = {}  # { id : href.lower, ... }
         self.href_to_id = {}  # { href.lower : id, ...}
-
+        if_error = False
         for item in self.etree_opf["manifest"]:
             # 检查opf文件中是否存在错误
             try:
@@ -216,14 +216,17 @@ class EpubTool:
                     .replace("\r", "")
                     .replace("\t", "")
                 )
-                print(f"item:{str_item} error:{e}\n")
-                exit(1)
+                print(f"item:{str_item} error:{e}")
+                if_error = True
+                continue
             mime = item.get("media-type")
             properties = item.get("properties") if item.get("properties") else ""
 
             self.id_to_h_m_p[id] = (href, mime, properties)
             self.id_to_href[id] = href.lower()
             self.href_to_id[href.lower()] = id
+        if if_error:
+            print("opf文件中存在错误，请检查！")
 
     def _parse_spine(self):
         self.spine_list = []  # [ (sid, linear, properties) , ... ]
@@ -826,59 +829,63 @@ def epub_sources():
 
 
 def run(epub_src):
-    print("%s 正在尝试重构EPUB" % epub_src)
-    epub = EpubTool(epub_src)
-    epub.restructure()  # 重构
-    el = epub.errorLink_log.copy()
-    del_keys = []
-    for file_path, log in epub.errorLink_log.items():
-        if file_path.lower().endswith(".css"):
-            el[file_path] = list(filter(lambda x: x[1] is not None, log))
-            if el[file_path] == []:
-                del_keys.append(file_path)
-    for key in del_keys:
-        del el[key]
+    try:
+        print("%s 正在尝试重构EPUB" % epub_src)
+        epub = EpubTool(epub_src)
+        epub.restructure()  # 重构
+        el = epub.errorLink_log.copy()
+        del_keys = []
+        for file_path, log in epub.errorLink_log.items():
+            if file_path.lower().endswith(".css"):
+                el[file_path] = list(filter(lambda x: x[1] is not None, log))
+                if el[file_path] == []:
+                    del_keys.append(file_path)
+        for key in del_keys:
+            del el[key]
 
-    if epub.errorOPF_log:
-        print("\n-------在 OPF文件 发现问题------:")
-        for error_type, error_value in epub.errorOPF_log:
-            if error_type == "duplicate_id":
-                print("\n问题：发现manifest节点内部存在重复ID %s !!!" % error_value)
-                print("措施：已自动清除重复ID对应的manifest项。")
-            elif error_type == "invalid_idref":
-                print("\n问题：发现spine节点内部存在无效引用ID %s !!!" % error_value)
-                print(
-                    "措施：请自行检查spine内的itemref节点并手动修改，确保引用的ID存在于manifest的item项。\n"
-                    + "      （大小写不一致也会导致引用无效。）\n"
-                )
-            elif error_type == "xhtml_not_in_spine":
-                print(
-                    "\n问题：发现ID为 %s 的文件manifest中登记为application/xhtml+xml类型，但不被spine节点的项所引用"
-                    % error_value
-                )
-                print(
-                    "措施：自行检查该文件是否需要被spine引用。部分阅读器中，如果存在xhtml文件不被spine引用，可能导致epub无法打开。\n"
-                )
-
-    if el:
-        for file_path, log in el.items():
-            basename = path.basename(file_path)
-            print("\n-----在 %s 发现问题链接-----:\n" % basename)
-            for href, correct_path in log:
-                if correct_path is not None:
+        if epub.errorOPF_log:
+            print("-------在 OPF文件 发现问题------:")
+            for error_type, error_value in epub.errorOPF_log:
+                if error_type == "duplicate_id":
+                    print("问题：发现manifest节点内部存在重复ID %s !!!" % error_value)
+                    print("措施：已自动清除重复ID对应的manifest项。")
+                elif error_type == "invalid_idref":
+                    print("问题：发现spine节点内部存在无效引用ID %s !!!" % error_value)
                     print(
-                        "链接：%s\n问题：与实际文件名大小写不一致！\n措施：程序已自动纠正链接。\n"
-                        % href
+                        "措施：请自行检查spine内的itemref节点并手动修改，确保引用的ID存在于manifest的item项。\n"
+                        + "      （大小写不一致也会导致引用无效。）"
                     )
-                else:
-                    print("链接：%s\n问题：未能找到对应文件！！！\n" % href)
-    print("%s 重构EPUB成功" % epub_src)
+                elif error_type == "xhtml_not_in_spine":
+                    print(
+                        "问题：发现ID为 %s 的文件manifest中登记为application/xhtml+xml类型，但不被spine节点的项所引用"
+                        % error_value
+                    )
+                    print(
+                        "措施：自行检查该文件是否需要被spine引用。部分阅读器中，如果存在xhtml文件不被spine引用，可能导致epub无法打开。"
+                    )
+
+        if el:
+            for file_path, log in el.items():
+                basename = path.basename(file_path)
+                print("-----在 %s 发现问题链接-----:" % basename)
+                for href, correct_path in log:
+                    if correct_path is not None:
+                        print(
+                            "链接：%s\n问题：与实际文件名大小写不一致！\n措施：程序已自动纠正链接。"
+                            % href
+                        )
+                    else:
+                        print("链接：%s\n问题：未能找到对应文件！！！" % href)
+    except Exception as e:
+        print("%s 重构EPUB失败：%s" % (epub_src, e))
+    else:
+        print("%s 重构EPUB成功" % epub_src)
     return 0
 
 
 def main():
     while True:
-        epub_src = input("\n【使用说明】请把EPUB文件拖曳到本窗口上（输入'e'退出）：")
+        epub_src = input("【使用说明】请把EPUB文件拖曳到本窗口上（输入'e'退出）：")
         epub_src = epub_src.strip("'").strip('"').strip()
 
         if epub_src.lower() == "e":
@@ -910,6 +917,6 @@ if __name__ == "__main__":
     )
     while True:
         main()
-        if input("\n请按回车键继续，或输入'e'退出：").strip().lower() == "e":
+        if input("请按回车键继续，或输入'e'退出：").strip().lower() == "e":
             print("程序已退出")
             break
