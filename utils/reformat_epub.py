@@ -189,7 +189,6 @@ class EpubTool:
             self.href_to_id[href.lower()] = id
         if if_error:
             print("opf文件中存在错误，请检查！")
-            exit(1)
 
     def _parse_spine(self):
         self.spine_list = []  # [ (sid, linear, properties) , ... ]
@@ -830,6 +829,7 @@ def run(epub_src):
         print("%s 重构EPUB成功" % epub_src)
     except Exception as e:
         print("%s 重构EPUB失败：%s" % (epub_src, e))
+        return e
     else:
         print("%s 重构EPUB成功" % epub_src)
     return 0

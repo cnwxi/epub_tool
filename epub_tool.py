@@ -54,12 +54,11 @@ def main():
             sys.exit(1)
         tmp_run_result = []
         for file in args.i:
-            try:
-                func(file)
-            except Exception as e:
-                tmp_run_result.append(f"process {file} Fail: {e}")
-            else:
+            ret=func(file)
+            if ret==0:
                 tmp_run_result.append(f"process {file} Success")
+            else:
+                tmp_run_result.append(f"process {file} Fail: {ret}")
     sys.stdout = sys.__stdout__
     print("Result:")
     for result in tmp_run_result:

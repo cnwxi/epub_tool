@@ -878,8 +878,9 @@ def run(epub_src):
                         print("链接：%s\n问题：未能找到对应文件！！！" % href)
     except Exception as e:
         print("%s 重构EPUB失败：%s" % (epub_src, e))
+        return e
     else:
-        print("%s 重构EPUB成功" % epub_src)
+        print("%s 重构EPUB成功" % epub_src)   
     return 0
 
 
