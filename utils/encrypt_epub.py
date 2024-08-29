@@ -9,7 +9,7 @@ from os import path, mkdir, getcwd
 from urllib.parse import unquote
 from xml.etree import ElementTree
 import os
-
+import hashlib
 
 class EpubTool:
 
@@ -134,9 +134,11 @@ class EpubTool:
                 # :*:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*~slim.webp
             else:
                 image_slim = ""
-            _href_hash = hash(_id_name)
-            bin_hash = bin(_href_hash)[2:]
-            new_href = bin_hash.replace("1", "*").replace("0", ":").replace("b", "*")
+            _href_hash = hashlib.md5(_id_name.encode()).digest()
+            _href_hash = int.from_bytes(_href_hash, byteorder="big")
+            bin_hash = bin(_href_hash)
+            new_href = bin_hash.replace("-", "*").replace("0b", "").replace("1", "*").replace("0", ":")
+            # 加_为了防止Windows系统异常
             new_href = f"_{new_href}{image_slim}.{_file_extension.lower()}"
             if new_href not in self.toc_rn.values():
                 self.toc_rn[href] = new_href

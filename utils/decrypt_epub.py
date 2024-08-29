@@ -12,7 +12,7 @@ from xml.etree import ElementTree
 import copy
 import os
 import difflib
-
+import hashlib
 
 class EpubTool:
 
@@ -155,7 +155,11 @@ class EpubTool:
                     )
                 else:
                     image_silm = ""
-                _id_name = re.sub(r'[\\/:*?%"<>|]', '_', _id_name)
+                # 判断_id_name是否合法
+                if re.search(r'[\\/:*?"<>|]', _id_name):
+                    print(f"ID:{_id}中包含非法字符")
+                    _id_name = hashlib.md5(_id_name.encode()).hexdigest()
+                    print(f"ID:{_id}替换为{_id_name}")
                 new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"
             print(f"decrypt href: {_id}:{_href} -> {new_href}")
             return new_href
