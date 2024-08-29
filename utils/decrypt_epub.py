@@ -155,6 +155,7 @@ class EpubTool:
                     )
                 else:
                     image_silm = ""
+                _id_name = re.sub(r'[\\/:*?%"<>|]', '_', _id_name)
                 new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"
             print(f"decrypt href: {_id}:{_href} -> {new_href}")
             return new_href
