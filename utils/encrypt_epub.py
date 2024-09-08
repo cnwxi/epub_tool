@@ -11,6 +11,7 @@ from xml.etree import ElementTree
 import os
 import hashlib
 
+
 class EpubTool:
 
     def __init__(self, epub_src):
@@ -137,7 +138,12 @@ class EpubTool:
             _href_hash = hashlib.md5(_id_name.encode()).digest()
             _href_hash = int.from_bytes(_href_hash, byteorder="big")
             bin_hash = bin(_href_hash)
-            new_href = bin_hash.replace("-", "*").replace("0b", "").replace("1", "*").replace("0", ":")
+            new_href = (
+                bin_hash.replace("-", "*")
+                .replace("0b", "")
+                .replace("1", "*")
+                .replace("0", ":")
+            )
             # 加_为了防止Windows系统异常
             new_href = f"_{new_href}{image_slim}.{_file_extension.lower()}"
             if new_href not in self.toc_rn.values():
@@ -834,6 +840,9 @@ def run(epub_src):
     try:
         print("%s 正在尝试重构EPUB" % epub_src)
         epub = EpubTool(epub_src)
+        if epub.epub_name.lower().endswith("_encrypt.epub"):
+            print("警告：该文件已经加密，无需再次处理！")
+            return "skip"
         epub.restructure()  # 重构
         el = epub.errorLink_log.copy()
         del_keys = []
@@ -882,7 +891,7 @@ def run(epub_src):
         print("%s 重构EPUB失败：%s" % (epub_src, e))
         return e
     else:
-        print("%s 重构EPUB成功" % epub_src)   
+        print("%s 重构EPUB成功" % epub_src)
     return 0
 
 

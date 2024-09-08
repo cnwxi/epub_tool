@@ -14,6 +14,7 @@ import os
 import difflib
 import hashlib
 
+
 class EpubTool:
 
     def __init__(self, epub_src):
@@ -886,6 +887,9 @@ def run(epub_src):
     try:
         print("%s 正在尝试重构EPUB" % epub_src)
         epub = EpubTool(epub_src)
+        if epub.epub_name.lower().endswith("_decrypt.epub"):
+            print("警告：该文件已经解密，无需再次处理！")
+            return "skip"
         epub.restructure()  # 重构
         el = epub.errorLink_log.copy()
         del_keys = []
