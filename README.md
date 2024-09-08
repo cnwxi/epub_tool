@@ -23,28 +23,33 @@
     2. 也可使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -m 处理模式`，处理模式为e、d、r。
 - 可执行文件<br>
 1. 从[releases](https://github.com/cnwxi/epub_tool/releases)下载对应的可执行文件；<br>
-2. 使用命令行工具执行。<br>
+2. 现在也可以直接双击可执行文件了。<br>
+![image](https://github.com/user-attachments/assets/53ed7c69-3f59-44fd-9c59-b754ada6c5a8)
+3. 使用命令行工具执行。<br>
 参数列表参考如下：<br>
 \-i  后面接需要处理的epub文件或所在文件夹；<br>
 \-e  无需后接任何参数，指定程序对epub进行混淆处理；<br>
 \-d  无需后接任何参数，指定程序对epub进行反混淆处理；<br>
 \-r  无需后接任何参数，指定程序对epub进行格式化处理。<br>
-\-m  后接指定的处理模式，e、d、r。（可选）
+\-m  后接指定的处理模式，e、d、r。（可选，效果同上-e、-d、-r）
 - 举例：<br>
 在可执行文件所在文件夹打开命令行工具（或打开命令行工具后切换到可执行文件所在文件夹）。<br>
 可使用的命令行工具如cmd/powershell/terminal等。<br>
-输入`Windows_epub_tool.exe -i ./test -d`并回车（注意不同平台可执行文件后缀不一致）。<br>
-此命令行指定程序读取当前cmd所在目录下test文件夹中的所有epub文件，并对这些文件进行反混淆。<br>
+输入`Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -d`或`Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -m d`
+并回车（注意不同平台可执行文件名不一致）。<br>
+此命令行指定程序读取指定目录下所有epub文件，并对这些文件进行反混淆。<br>
 <details>
-  <summary>Windows系统操作演示(点击以展开)</summary>
+  <summary>Windows系统CMD命令行操作演示(点击以展开)</summary>
   <p>1. 可执行文件已下载至C:\Users\Administrator\Downloads\Programs位置，打开文件管理器，进入对应目录。如图：</p>
   <p align="center"><img src="https://github.com/user-attachments/assets/0cd71e92-714b-4f44-8060-ad5d353ebb7a" width="600"></p>
   <p>2. 在最上方地址输入框输入cmd并回车，则可以直接在此目录下打开cmd。如图：</p>
   <p align="center"><img src="https://github.com/user-attachments/assets/2f23826d-480a-4526-9dbe-f3fb06f5fa35" width="600"></p>
   <p align="center"><img src="https://github.com/user-attachments/assets/8def1166-f7f6-4738-bed8-0b3057e1d81b" width="600"></p>
-  <p>3. 输入`Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -d`（注：此为演示命令行，具体的输入文件/文件夹和执行模式需要你自行指定）。如图：</p>
+  <p>3. 输入 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -d （注：此为演示命令行，具体的输入文件/文件夹和执行模式需要你自行指定）
+  <p>或 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -m d 。如图：</p>
   <p align="center"><img src="https://github.com/user-attachments/assets/0e1c703f-1c78-4242-9dce-480219805005" width="600"></p>
 </details>
+
 
 ## Ⅲ 执行遇到错误？
 - epub无法正常规范/混淆/反混淆<br>
