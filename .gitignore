@@ -4,4 +4,4 @@ test
 epub_tool.spec
 log.txt
 result.txt
-ultils/__pycache__
+utils/__pycache__/
