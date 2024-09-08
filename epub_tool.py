@@ -59,12 +59,14 @@ def check_mode(args):
 def main():
     prepare_args()
     log_file = "log.txt"
+    print("-欢迎使用Epub Tool-")
+    print("-此程序由cnwxi提供-")
     with open(log_file, "w", encoding="utf-8") as f:
         args = prepare_args()
         args = check_args(args)
         process, func = check_mode(args)
         tmp_run_result = []
-        with tqdm(total=len(args.i),ncols=100,desc=f'{process}文件') as pbar:
+        with tqdm(total=len(args.i), ncols=100, desc=f"{process}文件") as pbar:
             for file in args.i:
                 sys.stdout = f
                 ret = func(file)
