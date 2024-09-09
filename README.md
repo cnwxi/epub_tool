@@ -15,7 +15,8 @@
 - python执行<br>
 1. 下载python3.8；<br> 
 2. 使用`git clone https://github.com/cnwxi/epub_tool.git`克隆本仓库；或直接在网页下载源码压缩包，解压后得到py文件；<br>
-3. 执行py文件。
+3. 准备依赖库，在终端输入`python -m pip install -r requirements.txt`;<br>
+4. 执行py文件。
     - 单个工具执行：
     1. 使用命令行执行 `python 解压目标文件夹/epub_tool/utils/**.py` 或修改py为pyz双击运行。<br>
     - 整合工具执行：
@@ -62,6 +63,7 @@
 
 ### 2024.09.09<br>
 因额外依赖库未打包到可执行文件，重新打包可执行文件。<br>
+更新相关使用教程。<br>
 ### 2024.09.08<br>
 为避免有人不会使用命令行工具，更新Windows系统下相关操作的基础流程。<br>
 程序允许直接双击执行，后续再输入参数。<br>
