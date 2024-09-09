@@ -886,10 +886,11 @@ def epub_sources():
 def run(epub_src):
     try:
         print("%s 正在尝试重构EPUB" % epub_src)
-        epub = EpubTool(epub_src)
-        if epub.epub_name.lower().endswith("_decrypt.epub"):
+        if epub_src.lower().endswith("_decrypt.epub"):
             print("警告：该文件已经解密，无需再次处理！")
             return "skip"
+        epub = EpubTool(epub_src)
+        
         epub.restructure()  # 重构
         el = epub.errorLink_log.copy()
         del_keys = []
