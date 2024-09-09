@@ -19,7 +19,6 @@ def prepare_args():
 
 def check_args(args):
     if not args.i:
-        print("未指定epub文件路径或文件夹路径")
         args.i = input("请输入epub文件路径或文件夹路径：")
     # 判断输入文件是否为文件夹
     if os.path.isdir(args.i):
@@ -74,7 +73,7 @@ def main():
                 if ret == 0:
                     result = f"^_^ {file} 成功"
                 elif ret == "skip":
-                    result = f"O_O {file} 跳过"
+                    result = f"O_O {file} 跳过：已{process}"
                 else:
                     result = f"T_T {file} 失败: {ret}"
                 tmp_run_result.append(result)

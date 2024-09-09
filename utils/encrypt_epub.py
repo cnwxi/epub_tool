@@ -15,6 +15,7 @@ import hashlib
 class EpubTool:
 
     def __init__(self, epub_src):
+        self.encrypted = False
         self.epub = zipfile.ZipFile(epub_src)
         self.epub_src = epub_src
         self.epub_name = path.basename(epub_src)
@@ -40,6 +41,7 @@ class EpubTool:
         self.errorOPF_log = []  # (error_type,error_value)
         self.errorLink_log = {}  # {filepath:[(error_link,correct_link || None),...]}
         self._parse_opf()
+        
 
     def _init_namelist(self):
         self.namelist = self.epub.namelist()
@@ -158,6 +160,8 @@ class EpubTool:
 
         for id, href, mime, properties in self.manifest_list:
             bkpath = opf_dir + "/" + href if opf_dir else href
+            if re.search(r'[\\/:*?"<>|]', href.rsplit("/")[-1]):
+                self.encrypted = True
             if mime == "application/xhtml+xml":
                 self.text_list.append((id, href, properties, creatNewHerf(id, href)))
             elif mime == "text/css":
@@ -840,9 +844,12 @@ def run(epub_src):
     try:
         print("%s 正在尝试重构EPUB" % epub_src)
         if epub_src.lower().endswith("_encrypt.epub"):
-            print("警告：该文件已经加密，无需再次处理！")
+            print("警告：该文件已加密，无需再次处理！")
             return "skip"
         epub = EpubTool(epub_src)
+        if epub.encrypted == True:
+            print("警告：该文件已加密，无需再次处理！")
+            return "skip"
         epub.restructure()  # 重构
         el = epub.errorLink_log.copy()
         del_keys = []
