@@ -51,7 +51,7 @@ def check_mode(args):
     else:
         print("未指定处理模式。e：加密，d：解密，r：重排")
         args.m = input("请输入操作：")
-        func = check_mode(args)
+        process, func = check_mode(args)
     print(f"处理模式：{process}")
     return process, func
 
