@@ -27,7 +27,11 @@
 2. 现在也可以直接双击可执行文件了。<br>
 ![image](https://github.com/user-attachments/assets/53ed7c69-3f59-44fd-9c59-b754ada6c5a8)
 3. 使用命令行工具执行。<br>
-参数列表参考如下：<br>
+4. 如提示无权限运行，可在终端输入 `chmod +x /可执行文件所在路径` （macOS：还需进入“设置-安全性与隐私-通用-允许从以下位置下载的APP”点击“仍要打开”）<br>
+参考如图：<br>
+![image](https://github.com/user-attachments/assets/18dd97fb-cc39-47d4-b5eb-fb48b01a28cd)
+![image](https://github.com/user-attachments/assets/e0f7e997-6912-4792-a72d-f415e0525e34)
+5. 参数列表参考如下：<br>
 \-i  后面接需要处理的epub文件或所在文件夹；<br>
 \-e  无需后接任何参数，指定程序对epub进行混淆处理；<br>
 \-d  无需后接任何参数，指定程序对epub进行反混淆处理；<br>
@@ -63,6 +67,7 @@
 
 ### 2024.10.24<br>
 修复未处理输入时拖入文件带引号导致的文件路径检查错误。<br>
+更新README<br>
 ### 2024.09.09<br>
 因额外依赖库未打包到可执行文件，重新打包可执行文件。<br>
 更新相关使用教程。<br>
