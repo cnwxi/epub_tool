@@ -20,6 +20,7 @@ def prepare_args():
 def check_args(args):
     if not args.i:
         args.i = input("请输入epub文件路径或文件夹路径：")
+    args.i = args.i.strip("'").strip('"').strip()
     # 判断输入文件是否为文件夹
     if os.path.isdir(args.i):
         file_list = []
