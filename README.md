@@ -24,9 +24,9 @@
     2. 也可使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -m 处理模式`，处理模式为e、d、r。
 - 可执行文件<br>
 1. 从[releases](https://github.com/cnwxi/epub_tool/releases)下载对应的可执行文件；<br>
-2. 现在也可以直接双击可执行文件了。<br>
+2. Windows可以直接双击可执行文件；<br>
 ![image](https://github.com/user-attachments/assets/53ed7c69-3f59-44fd-9c59-b754ada6c5a8)
-3. 使用命令行工具执行。<br>
+3. 或使用命令行工具`CMD、Power Shell、Terminal`执行；<br>
 4. 如提示无权限运行，可在终端输入 `chmod +x /可执行文件所在路径` （macOS：还需进入“设置-安全性与隐私-通用-允许从以下位置下载的APP”点击“仍要打开”）<br>
 参考如图：<br>
 ![image](https://github.com/user-attachments/assets/18dd97fb-cc39-47d4-b5eb-fb48b01a28cd)
@@ -37,6 +37,9 @@
 \-d  无需后接任何参数，指定程序对epub进行反混淆处理；<br>
 \-r  无需后接任何参数，指定程序对epub进行格式化处理。<br>
 \-m  后接指定的处理模式，e、d、r。（可选，效果同上-e、-d、-r）
+6. 现在输入为文件夹路径时会提醒选择文件执行edr操作或所有文件执行edr操作。
+ ![image](https://github.com/user-attachments/assets/4c5d6a6e-2e6e-427d-9251-8d9e4c2a3a68)
+
 - 举例：<br>
 在可执行文件所在文件夹打开命令行工具（或打开命令行工具后切换到可执行文件所在文件夹）。<br>
 可使用的命令行工具如cmd/powershell/terminal等。<br>
@@ -65,6 +68,10 @@
   <summary>点击以展开</summary>
   <p>
 
+### 2024.11.28<br>
+更新README<br>
+### 2024.11.17<br>
+添加文件夹手动选择需要处理文件，输入文件序号进行选择，不再是默认处理文件夹内全部epub文件 添加了输入检测提示，错误后会返回重新输入。由[lgernier](https://github.com/lgernierO)提交。<br>
 ### 2024.10.24<br>
 修复未处理输入时拖入文件带引号导致的文件路径检查错误。<br>
 更新README<br>
