@@ -14,11 +14,11 @@ on:
       version:
         description: 'Release version'
         required: true
-        default: '2024.12.16.Beta'
+        default: '2024.12.17.Beta'
       body:
         description: 'Release body text'
         required: true
-        default: '详情请查看更新日志'
+        default: '修复UI显示问题'
 
 jobs:
   build:
