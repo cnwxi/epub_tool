@@ -14,7 +14,9 @@ UI操作
 <details>
   <summary>点击以展开</summary>
   <p>
-
+  
+### 2024.12.17<br>
+修复UI显示问题。<br>
 ### 2024.12.16<br>
 基本UI DEMO，功能已整合。<br>
 
