@@ -2,6 +2,8 @@ name: Build And Release
 
 on:
   push:
+    branches:
+      - TKUI
     paths:
       - '**.yml'
   workflow_dispatch:
@@ -14,7 +16,7 @@ on:
       version:
         description: 'Release version'
         required: true
-        default: '2024.12.17.Beta'
+        default: '2024.12.17.beta'
       body:
         description: 'Release body text'
         required: true
@@ -36,7 +38,7 @@ jobs:
           echo "TAG=${{ github.event.inputs.version }}" >> $GITHUB_ENV
           echo "BODY=${{ github.event.inputs.body }}" >> $GITHUB_ENV
         else
-          echo "TAG=$(date +'%Y.%m.%d.v1')" >> $GITHUB_ENV
+          echo "TAG=$(date +'%Y.%m.%d.beta')" >> $GITHUB_ENV
           echo "BODY=详情请查看更新日志" >> $GITHUB_ENV
         fi
       shell: bash
