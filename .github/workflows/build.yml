@@ -14,7 +14,7 @@ on:
       version:
         description: 'Release version'
         required: true
-        default: '2024.10.24.v1'
+        default: '2024.12.16.Beta'
       body:
         description: 'Release body text'
         required: true
@@ -53,7 +53,7 @@ jobs:
 
     - name: Build the executables
       run: |
-        pyinstaller --onefile --name epub_tool epub_tool.py
+        pyinstaller -w --onefile --name epub_tool_TKUI epub_tool_TKUI.py
 
     - name: Rename artifacts with OS prefix (Linux and macOS)
       if: matrix.os != 'windows-latest'

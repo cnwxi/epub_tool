@@ -23,6 +23,7 @@ class EpubTool:
         self.epub_src = epub_src
         self.epub_name = path.basename(epub_src)
         self.ebook_root = path.dirname(epub_src)
+        self.output_path = self.ebook_root
         self.epub_type = ""
         self.temp_dir = ""
         self._init_namelist()
@@ -44,7 +45,10 @@ class EpubTool:
         self.errorLink_log = {}  # {filepath:[(error_link,correct_link || None),...]}
         self._parse_opf()
         
-        
+    def set_output_path(self, output_path):
+        if output_path is not None:
+            self.output_path = output_path
+
     def _init_namelist(self):
         self.namelist = self.epub.namelist()
 
@@ -888,13 +892,14 @@ def epub_sources():
     return epub_srcs
 
 
-def run(epub_src):
+def run(epub_src,output_path=None):
     try:
         print("%s 正在尝试重构EPUB" % epub_src)
         if epub_src.lower().endswith("_decrypt.epub"):
             print("警告：该文件已解密，无需再次处理！")
             return "skip"
         epub = EpubTool(epub_src)
+        epub.set_output_path(output_path)
         if not epub.encrypted:
             print("警告：该文件未加密，无需处理！")
             return "skip"
