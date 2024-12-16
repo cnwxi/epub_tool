@@ -10,7 +10,7 @@ import threading
 
 root = tk.Tk()
 root.title("Epub Tool")
-root.minsize(600, 600)
+root.minsize(480, 640)
 root.resizable(True, True)
 tmp_files_dic = {}
 defalut_output_dir = None
@@ -209,6 +209,7 @@ progress.pack(fill=tk.X, padx=5, pady=5)
 listbox_frame = tk.Frame(root)
 listbox_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 listbox_label = tk.Label(listbox_frame, text="输入文件列表")
+# listbox_label.pack(side=tk.LEFT, padx=5)
 listbox_label.grid(row=0, column=0, sticky=tk.W, padx=5)
 # 创建 Listbox
 file_list = tk.Listbox(listbox_frame, selectmode=tk.EXTENDED)
@@ -226,7 +227,7 @@ h_scrollbar.grid(row=2, column=0, sticky=tk.EW)
 file_list.config(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
 
 # 配置 grid 行列权重
-listbox_frame.grid_rowconfigure(0, weight=1)
+listbox_frame.grid_rowconfigure(1, weight=1)
 listbox_frame.grid_columnconfigure(0, weight=1)
 
 
@@ -259,7 +260,7 @@ h_scrollbar.grid(row=2, column=0, sticky=tk.EW)
 result_list.config(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
 
 # 配置 grid 行列权重
-result_box_frame.grid_rowconfigure(0, weight=1)
+result_box_frame.grid_rowconfigure(1, weight=1)
 result_box_frame.grid_columnconfigure(0, weight=1)
 
 root.mainloop()
