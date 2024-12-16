@@ -16,7 +16,7 @@ UI操作
   <p>
 
 ### 2024.12.16<br>
-基本UI DEMO，功能未整合。<br>
+基本UI DEMO，功能已整合。<br>
 
    </p>
 </details>
