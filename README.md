@@ -3,6 +3,7 @@
 <details>
   <summary>一些可用的epub工具介绍</summary>
   <p>
+
 一些可用的epub工具<br>
 1. `重构epub为规范格式_v2.8.3.py`->`utils\reformat_epub.py`<br>
 作用：见原文件名。<br>
@@ -16,10 +17,12 @@
 作用：对上述工具的整合的命令行程序。<br>
 5. `epub_tool_TKUI.py`<br>
 作用：对上述工具的整合的带操作界面的程序。<br>
+
   </p>
 </details>
 
 ## Ⅱ 怎么使用？（仅针对最新版本）<br>
+
 <details>
   <summary>python源码执行</summary>
   <p>
@@ -27,12 +30,12 @@
 1. 下载python3.8；<br> 
 2. 使用`git clone https://github.com/cnwxi/epub_tool.git`克隆本仓库；或直接在网页下载源码压缩包，解压后得到py文件；<br>
 3. 准备依赖库，在终端输入`python -m pip install -r requirements.txt`;<br>
-4. 执行py文件。
-    - 单个工具执行：
+4. 执行py文件。<br> 
+    - 单个工具执行：<br> 
     1. 使用命令行执行 `python 解压目标文件夹/epub_tool/utils/**.py` 或修改py为pyz双击运行。<br>
-    - 整合工具执行：
-    1. 使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -e/d/r` 其中e、d、r为不同的处理模式，分别是混淆`-e`、反混淆`-d`、重新格式化`-r`。
-    2. 也可使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -m 处理模式`，处理模式为e、d、r。
+    - 整合工具执行：<br> 
+    1. 使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -e/d/r` 其中e、d、r为不同的处理模式，分别是混淆`-e`、反混淆`-d`、重新格式化`-r`。<br> 
+    2. 也可使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -m 处理模式`，处理模式为e、d、r。<br> 
 
   </p>
 </details>
@@ -55,7 +58,7 @@
 \-d  无需后接任何参数，指定程序对epub进行反混淆处理；<br>
 \-r  无需后接任何参数，指定程序对epub进行格式化处理。<br>
 \-m  后接指定的处理模式，e、d、r。（可选，效果同上-e、-d、-r）
-6. 现在输入为文件夹路径时会提醒选择文件执行edr操作或所有文件执行edr操作。
+6. 现在输入为文件夹路径时会提醒选择文件执行edr操作或所有文件执行edr操作。<br> 
  ![image](https://github.com/user-attachments/assets/4c5d6a6e-2e6e-427d-9251-8d9e4c2a3a68)
 
 - 举例：<br>
@@ -100,7 +103,7 @@
   <summary>epub无法正常规范/混淆/反混淆</summary>
   <p>
 
-优先解压文件，查看其中content.opf文件，检查是否存在问题。若无法解决，在Issues区提交issue并附带原文件。
+优先解压文件，查看其中content.opf文件，检查是否存在问题。若无法解决，在Issues区提交issue并附带原文件。<br> 
 
 </p>
 </details>
