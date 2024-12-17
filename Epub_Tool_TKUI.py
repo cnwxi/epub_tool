@@ -310,19 +310,19 @@ result_list = tk.Listbox(result_box_frame, selectmode=tk.EXTENDED)
 result_list.grid(row=1, column=0, sticky=tk.NSEW)
 
 # 创建垂直 Scrollbar
-v_scrollbar = tk.Scrollbar(
-    result_box_frame, orient=tk.VERTICAL, command=file_list.yview
+v_scrollbar_result = tk.Scrollbar(
+    result_box_frame, orient=tk.VERTICAL, command=result_list.yview
 )
-v_scrollbar.grid(row=1, column=1, sticky=tk.NS)
+v_scrollbar_result.grid(row=1, column=1, sticky=tk.NS)
 
 # 创建水平 Scrollbar
-h_scrollbar = tk.Scrollbar(
-    result_box_frame, orient=tk.HORIZONTAL, command=file_list.xview
+h_scrollbar_result = tk.Scrollbar(
+    result_box_frame, orient=tk.HORIZONTAL, command=result_list.xview
 )
-h_scrollbar.grid(row=2, column=0, sticky=tk.EW)
+h_scrollbar_result.grid(row=2, column=0, sticky=tk.EW)
 
 # 将 Scrollbar 绑定到 Listbox
-result_list.config(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+result_list.config(yscrollcommand=v_scrollbar_result.set, xscrollcommand=h_scrollbar_result.set)
 
 # 配置 grid 行列权重
 result_box_frame.grid_rowconfigure(1, weight=1)
