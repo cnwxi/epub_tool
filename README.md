@@ -91,7 +91,7 @@
   <p>
 
 - UI预览<br>
-<img width="624" alt="截屏2024-12-17 18 06 21" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" />
+<img width="624" alt="截屏2024-12-17 18 06 21" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" /><br> 
 （注：同样会在程序所在路径生成log日志文件）<br>
 （Mac参考命令行程序中教程授予权限；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
   </p>
