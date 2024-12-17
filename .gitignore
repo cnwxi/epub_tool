@@ -5,3 +5,5 @@ epub_tool.spec
 log.txt
 result.txt
 utils/__pycache__/
+log_file
+epub_tool_TKUI.spec

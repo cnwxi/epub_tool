@@ -1,5 +1,5 @@
 # for mac
-pyinstaller -F epub_tool.py -n epub_tool;
+pyinstaller -F epub_tool_TKUI.py -n epub_tool_TKUI;
 echo "------finished------";
 rm -rf ./build;
-rm ./epub_tool.spec;
+rm ./epub_tool_TKUI.spec;

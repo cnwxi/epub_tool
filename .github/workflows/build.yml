@@ -2,6 +2,8 @@ name: Build And Release
 
 on:
   push:
+    branches:
+      - TKUI
     paths:
       - '**.yml'
   workflow_dispatch:
@@ -14,11 +16,11 @@ on:
       version:
         description: 'Release version'
         required: true
-        default: '2024.10.24.v1'
+        default: '2024.12.17.beta'
       body:
         description: 'Release body text'
         required: true
-        default: '详情请查看更新日志'
+        default: '修复UI显示问题'
 
 jobs:
   build:
@@ -36,7 +38,7 @@ jobs:
           echo "TAG=${{ github.event.inputs.version }}" >> $GITHUB_ENV
           echo "BODY=${{ github.event.inputs.body }}" >> $GITHUB_ENV
         else
-          echo "TAG=$(date +'%Y.%m.%d.v1')" >> $GITHUB_ENV
+          echo "TAG=$(date +'%Y.%m.%d.beta')" >> $GITHUB_ENV
           echo "BODY=详情请查看更新日志" >> $GITHUB_ENV
         fi
       shell: bash
@@ -53,7 +55,7 @@ jobs:
 
     - name: Build the executables
       run: |
-        pyinstaller --onefile --name epub_tool epub_tool.py
+        pyinstaller -w --onefile --name epub_tool_TKUI epub_tool_TKUI.py
 
     - name: Rename artifacts with OS prefix (Linux and macOS)
       if: matrix.os != 'windows-latest'
