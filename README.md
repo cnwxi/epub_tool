@@ -89,11 +89,15 @@
 <details>
   <summary>可视化界面程序</summary>
   <p>
-
-- UI预览<br>
-<img width="624" alt="截屏2024-12-17 18 06 21" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" /><br> 
+    
 （注：同样会在程序所在路径生成log日志文件）<br>
 （Mac参考命令行程序中教程授予权限；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
+- UI预览<br>
+mac<br>
+<img width="300" alt="mac" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" /><br> 
+windows<br> 
+<img width="300" alt="windows" src="https://github.com/user-attachments/assets/99acedf7-2f41-44bb-9059-6de9d36dd1d0" /><br> 
+
   </p>
 </details>
 
