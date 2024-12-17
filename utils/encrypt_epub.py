@@ -44,7 +44,7 @@ class EpubTool:
         self._parse_opf()
 
     def set_output_path(self, output_path):
-        if output_path is not None:
+        if output_path is not None and os.path.isdir(output_path):
             self.output_path = output_path
 
     def _init_namelist(self):
