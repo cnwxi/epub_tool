@@ -20,7 +20,7 @@ on:
       body:
         description: 'Release body text'
         required: true
-        default: '修复UI显示问题'
+        default: '详情请查看更新日志；Epub_Tool_TKUI为可视化程序，Epub_Tool_Console为命令行程序。'
 
 jobs:
   build:
