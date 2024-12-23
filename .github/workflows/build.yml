@@ -1,11 +1,11 @@
 name: Build And Release
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '**.yml'
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - '**.yml'
   workflow_dispatch:
     inputs:
       release:

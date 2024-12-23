@@ -12,7 +12,10 @@ import webbrowser
 
 root = tk.Tk()
 root.title("Epub Tool")
-root.minsize(512, 768)
+min_width = 432
+min_height = 768
+root.geometry(f"{min_width}x{min_height}")
+root.minsize(432, 768)
 root.resizable(True, True)
 tmp_files_dic = {}
 defalut_output_dir = None
@@ -24,11 +27,11 @@ intro_frame.pack(padx=10, pady=10)
 intro_label = tk.Label(
     intro_frame,
     text="欢迎使用 Epub Tool\n此工具可帮助您处理电子书文件",
-    font=("Arial", 14),
+    font=("Arial", 14 , "bold"),
     fg="#333",
     justify="center",
 )
-intro_label.pack(side=tk.TOP, padx=10, pady=0)
+intro_label.pack(side=tk.TOP)
 
 
 def open_link(event):
@@ -38,18 +41,18 @@ def open_link(event):
 link_label = tk.Label(
     intro_frame,
     text="访问本项目GITHUB仓库",
-    font=("Arial", 10, "underline"),
-    fg="CornflowerBlue",
+    font=("Arial", 12, "underline"),
+    fg="royalblue",
 )
-link_label.pack()
+link_label.pack(side=tk.TOP)
 link_label.bind("<Button-1>", open_link)
 
 # 添加分界线
 separator = ttk.Separator(root, orient="horizontal")  # 创建水平分界线
-separator.pack(fill="x", pady=10, padx=10)
+separator.pack(fill="x", padx=5, pady=5)
 
-frame1 = tk.Frame(root)
-frame1.pack(padx=10, pady=5)
+add_frame = tk.Frame(root)
+add_frame.pack(padx=10, pady=5)
 
 
 # 刷新文件列表显示
@@ -113,38 +116,38 @@ def delete_all():
     tmp_files_dic.clear()
 
 
-add_files_btn = tk.Button(frame1, text="添加文件", command=add_file, fg="green")
+add_files_btn = tk.Button(add_frame, text="添加文件", command=add_file, fg="green")
 add_files_btn.pack(side=tk.LEFT, padx=5)
 
-select_dir_btn = tk.Button(frame1, text="添加文件夹", command=add_dir, fg="royalblue")
+select_dir_btn = tk.Button(add_frame, text="添加文件夹", command=add_dir, fg="royalblue")
 select_dir_btn.pack(side=tk.LEFT, padx=5)
 
 
-delete_button = tk.Button(frame1, text="删除所选", command=delete_selected, fg="orange")
+delete_button = tk.Button(add_frame, text="删除所选", command=delete_selected, fg="orange")
 delete_button.pack(side=tk.LEFT, padx=5)
 
 
-delete_all_button = tk.Button(frame1, text="删除全部", command=delete_all, fg="red")
+delete_all_button = tk.Button(add_frame, text="删除全部", command=delete_all, fg="red")
 delete_all_button.pack(side=tk.LEFT, padx=5)
 
 # 创建一个 Frame 用于放置 Listbox 和 Scrollbar
 listbox_frame = tk.Frame(root)
 listbox_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 listbox_label = tk.Label(
-    listbox_frame, text="输入文件列表", font=("Arial", 14), fg="DimGray"
+    listbox_frame, text="输入文件列表", font=("Arial", 12,"bold"), fg="DimGray"
 )
 # listbox_label.pack(side=tk.LEFT, padx=5)
-listbox_label.grid(row=0, column=0, sticky=tk.W, padx=5)
+listbox_label.grid(row=0, column=0, sticky=tk.W, padx=0, pady=(0,5))
 # 创建 Listbox
-file_list = tk.Listbox(listbox_frame, selectmode=tk.EXTENDED)
+file_list = tk.Listbox(listbox_frame, selectmode=tk.EXTENDED,bd=3,relief="sunken")
 file_list.grid(row=1, column=0, sticky=tk.NSEW)
 
 # 创建垂直 Scrollbar
-v_scrollbar = tk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=file_list.yview)
+v_scrollbar = tk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=file_list.yview,width=5)
 v_scrollbar.grid(row=1, column=1, sticky=tk.NS)
 
 # 创建水平 Scrollbar
-h_scrollbar = tk.Scrollbar(listbox_frame, orient=tk.HORIZONTAL, command=file_list.xview)
+h_scrollbar = tk.Scrollbar(listbox_frame, orient=tk.HORIZONTAL, command=file_list.xview,width=5)
 h_scrollbar.grid(row=2, column=0, sticky=tk.EW)
 
 # 将 Scrollbar 绑定到 Listbox
@@ -156,7 +159,7 @@ listbox_frame.grid_columnconfigure(0, weight=1)
 
 # 添加分界线
 separator = ttk.Separator(root, orient="horizontal")  # 创建水平分界线
-separator.pack(fill="x", pady=10, padx=10)
+separator.pack(fill="x", padx=5, pady=5)
 
 
 def select_output_dir():
@@ -164,13 +167,15 @@ def select_output_dir():
     output_dir = os.path.normpath(filedialog.askdirectory(title="选择输出文件夹"))
     if output_dir and os.path.exists(output_dir):
         output_dir_label.config(text=f"输出路径: {output_dir}")
+        output_dir_label.config(fg="royalblue")
+        output_dir_label.update()
         defalut_output_dir = output_dir
         print(defalut_output_dir)
 
 
-def open_output_dir():
+def open_output_dir(event):
     path = defalut_output_dir
-    if path and os.path.exists(path):
+    if path is not None and os.path.exists(path):
         try:
             if sys.platform.startswith("darwin"):  # macOS
                 subprocess.run(["open", path])
@@ -183,37 +188,39 @@ def open_output_dir():
         except Exception as e:
             messagebox.showerror("Warning", f"无法打开路径: {e}")
     else:
-        messagebox.showwarning("Warning", "未指定输出路径")
+        # messagebox.showwarning("Warning", "未指定输出路径")
+        pass
 
 
 def reset_output_dir():
     global defalut_output_dir
     defalut_output_dir = None
     output_dir_label.config(text=f"输出路径: 默认文件所在路径")
+    output_dir_label.config(fg="DimGray")
+    output_dir_label.update()
 
 
-frame3 = tk.Frame(root)
-frame3.pack(pady=5)
+outdir_frame = tk.Frame(root)
+outdir_frame.pack(padx=10,pady=5)
 # 创建一个标签用于显示输出路径
 show_btn = tk.Button(
-    frame3, text="选择输出路径", command=select_output_dir, fg="royalblue"
+    outdir_frame, text="选择输出路径", command=select_output_dir, fg="green"
 )
 show_btn.pack(side=tk.LEFT, padx=5)
 
-open_btn = tk.Button(frame3, text="打开输出路径", command=open_output_dir, fg="orange")
-open_btn.pack(side=tk.LEFT, padx=5)
-
-reset_btn = tk.Button(frame3, text="重置输出路径", command=reset_output_dir, fg="red")
+reset_btn = tk.Button(outdir_frame, text="重置输出路径", command=reset_output_dir, fg="red")
 reset_btn.pack(side=tk.LEFT, padx=5)
 frame4 = tk.Frame(root)
 frame4.pack(pady=5)
 output_dir_label = tk.Label(
-    frame4, text="输出路径: 默认文件所在路径", font=("Arial", 12), fg="DimGray"
+    frame4, text="输出路径: 默认文件所在路径", font=("Arial", 12,"underline"), fg="DimGray", cursor="hand2"
 )
 output_dir_label.pack(side=tk.LEFT, padx=5)
+output_dir_label.bind("<Button-1>", open_output_dir)
+
 # 添加分界线
 separator = ttk.Separator(root, orient="horizontal")  # 创建水平分界线
-separator.pack(fill="x", pady=10, padx=10)
+separator.pack(fill="x", pady=5, padx=5)
 
 
 def start_progress(func, func_name, output_dir, *args):
@@ -261,63 +268,63 @@ def run_in_thread(func, func_name, output_dir, *args):
         root.update_idletasks()
 
 
-frame2 = tk.Frame(root)
-frame2.pack(pady=5)
+op_frame = tk.Frame(root)
+op_frame.pack(padx=10,pady=5)
 reformat_btn = tk.Button(
-    frame2,
+    op_frame,
     text="格式化",
     command=lambda: start_progress(reformat_run, "格式化", defalut_output_dir),
     fg="green",
 )
 reformat_btn.pack(side=tk.LEFT, padx=5)
 
-encrypt_btn = tk.Button(
-    frame2,
-    text="加密",
-    command=lambda: start_progress(encrypt_run, "加密", defalut_output_dir),
-    fg="red",
-)
-encrypt_btn.pack(side=tk.LEFT, padx=5)
-
 decrypt_btn = tk.Button(
-    frame2,
+    op_frame,
     text="解密",
     command=lambda: start_progress(decrypt_run, "解密", defalut_output_dir),
     fg="royalblue",
 )
 decrypt_btn.pack(side=tk.LEFT, padx=5)
 
+encrypt_btn = tk.Button(
+    op_frame,
+    text="加密",
+    command=lambda: start_progress(encrypt_run, "加密", defalut_output_dir),
+    fg="red",
+)
+encrypt_btn.pack(side=tk.LEFT, padx=5)
+
 # 创建一个 Frame 用于放置进度条
 progress_frame = tk.Frame(root)
-progress_frame.pack(fill=tk.X, padx=10, pady=5)
+progress_frame.pack(fill=tk.X, padx=10, pady=0)
 
 # 创建进度条
 progress = ttk.Progressbar(
     progress_frame, orient=tk.HORIZONTAL, length=400, mode="determinate"
 )
-progress.pack(fill=tk.X, padx=5, pady=5)
+progress.pack(fill=tk.X, padx=5, pady=0)
 
 
 # 创建一个 Frame 用于放置 Listbox 和 Scrollbar
 result_box_frame = tk.Frame(root)
 result_box_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 result_box_lable = tk.Label(
-    result_box_frame, text="执行结果", font=("Arial", 14), fg="DimGray"
+    result_box_frame, text="执行结果", font=("Arial", 12,"bold"), fg="DimGray"
 )
-result_box_lable.grid(row=0, column=0, sticky=tk.W, padx=5)
+result_box_lable.grid(row=0, column=0, sticky=tk.W, padx=5,pady=(0,5))
 # 创建 Listbox
-result_list = tk.Listbox(result_box_frame, selectmode=tk.EXTENDED)
+result_list = tk.Listbox(result_box_frame, selectmode=tk.EXTENDED,bd=3,relief="sunken")
 result_list.grid(row=1, column=0, sticky=tk.NSEW)
 
 # 创建垂直 Scrollbar
 v_scrollbar_result = tk.Scrollbar(
-    result_box_frame, orient=tk.VERTICAL, command=result_list.yview
+    result_box_frame, orient=tk.VERTICAL, command=result_list.yview,width=5
 )
 v_scrollbar_result.grid(row=1, column=1, sticky=tk.NS)
 
 # 创建水平 Scrollbar
 h_scrollbar_result = tk.Scrollbar(
-    result_box_frame, orient=tk.HORIZONTAL, command=result_list.xview
+    result_box_frame, orient=tk.HORIZONTAL, command=result_list.xview,width=5
 )
 h_scrollbar_result.grid(row=2, column=0, sticky=tk.EW)
 

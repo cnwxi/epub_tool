@@ -92,7 +92,7 @@
     
 （注：同样会在程序所在路径生成log日志文件）<br>
 （Mac参考命令行程序中教程授予权限；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
-- UI预览<br>
+- UI预览，具体界面可能随后续更新改动<br>
 mac<br>
 <img width="300" alt="mac" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" /><br> 
 windows<br> 
@@ -117,6 +117,8 @@ windows<br>
   <summary>点击以展开</summary>
   <p>
 
+### 2024.12.23<br>
+调整UI、取消push自动构建,更新README。<br>
 ### 2024.12.17<br>
 修复UI显示问题,分支整合。更新README<br>
 ### 2024.12.16<br>
