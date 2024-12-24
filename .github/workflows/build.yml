@@ -58,6 +58,23 @@ jobs:
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
           pyinstaller -w --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
           pyinstaller --onefile --name Epub_Tool_Console Epub_Tool_Console.py
+        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+          pyinstaller --windowed --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
+          brew install create-dmg
+
+          create-dmg \
+          --volname "Epub_Tool_TKUI" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon "Epub_Tool_TKUI.app" 200 190 \
+          --hide-extension "Epub_Tool_TKUI.app" \
+          --app-drop-link 600 185 \
+          "Epub_Tool_TKUI.dmg" \
+          "dist/Epub_Tool_TKUI.app"
+
+          hdiutil convert "Epub_Tool_TKUI.dmg" -format UDZO -o "dist/Epub_Tool_TKUI.dmg"
+
+          pyinstaller --onefile --name Epub_Tool_Console Epub_Tool_Console.py
         else
           pyinstaller --windowed --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
           pyinstaller --onefile --name Epub_Tool_Console Epub_Tool_Console.py
