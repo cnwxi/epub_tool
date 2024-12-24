@@ -55,11 +55,11 @@ jobs:
 
     - name: Build the executables
       run: |
-        if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
-          pyinstaller --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          pyinstaller -w --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
           pyinstaller --onefile --name Epub_Tool_Console Epub_Tool_Console.py
         else
-          pyinstaller -w --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
+          pyinstaller --windowed --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
           pyinstaller --onefile --name Epub_Tool_Console Epub_Tool_Console.py
         fi
       shell: bash
