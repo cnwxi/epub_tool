@@ -117,8 +117,10 @@ windows<br>
   <summary>点击以展开</summary>
   <p>
 
+### 2024.12.25<br>
+修复在mac上的日志文件写入位置，更改日志写入方式，更新README。<br>
 ### 2024.12.23<br>
-调整UI、取消push自动构建,更新README。<br>
+调整UI、取消push自动构建，更新README。<br>
 ### 2024.12.17<br>
 修复UI显示问题,分支整合。更新README<br>
 ### 2024.12.16<br>
