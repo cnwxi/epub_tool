@@ -290,21 +290,16 @@ def run_in_thread(func, func_name, output_dir, *args):
         file_list.delete(0)
         tmp_files_dic.pop(file_path)
         # 执行操作
-        with open("./log_file", "w", encoding="utf-8") as f:
-            try:
-                sys.stdout = f
-                ret = func(file_path, output_dir, *args)
-                sys.stdout = sys.__stdout__
-
-                if ret == 0:
-                    result = f"^_^ {file_path} {func_name}成功"
-                elif ret == "skip":
-                    result = f"O_O {file_path} 跳过：{func_name}已处理"
-                else:
-                    result = f"T_T {file_path} 失败：{ret}"
-            except Exception as e:
-                sys.stdout = sys.__stdout__
-                result = f"X_X {file_path} {func_name}处理时发生错误：{e}"
+        try:
+            ret = func(file_path, output_dir, *args)
+            if ret == 0:
+                result = f"^_^ {file_path} {func_name}成功"
+            elif ret == "skip":
+                result = f"O_O {file_path} 跳过：{func_name}已处理"
+            else:
+                result = f"T_T {file_path} 失败：{ret}"
+        except Exception as e:
+            result = f"X_X {file_path} {func_name}处理时发生错误：{e}"
 
         # 显示处理结果
         result_list.insert(tk.END, f"{result}")
