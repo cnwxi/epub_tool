@@ -18,6 +18,7 @@
 5. `epub_tool_TKUI.py`<br>
 作用：对上述工具的整合的带操作界面的程序。<br>
 
+注：重构会严格保证文件夹分类和文件名后缀。[https://github.com/cnwxi/epub_tool/issues/13]
   </p>
 </details>
 
@@ -74,14 +75,16 @@
 
 <details>
   <summary>Windows系统CMD命令行操作演示(点击以展开)</summary>
-  <p>1. 可执行文件已下载至C:\Users\Administrator\Downloads\Programs位置，打开文件管理器，进入对应目录。如图：</p>
-  <p align="center"><img src="https://github.com/user-attachments/assets/0cd71e92-714b-4f44-8060-ad5d353ebb7a" width="600"></p>
-  <p>2. 在最上方地址输入框输入cmd并回车，则可以直接在此目录下打开cmd。如图：</p>
-  <p align="center"><img src="https://github.com/user-attachments/assets/2f23826d-480a-4526-9dbe-f3fb06f5fa35" width="600"></p>
-  <p align="center"><img src="https://github.com/user-attachments/assets/8def1166-f7f6-4738-bed8-0b3057e1d81b" width="600"></p>
-  <p>3. 输入 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -d （注：此为演示命令行，具体的输入文件/文件夹和执行模式需要你自行指定）
-  <p>或 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -m d 。如图：</p>
-  <p align="center"><img src="https://github.com/user-attachments/assets/0e1c703f-1c78-4242-9dce-480219805005" width="600">
+  <p>
+    
+1. 可执行文件已下载至C:\Users\Administrator\Downloads\Programs位置，打开文件管理器，进入对应目录。如图：<br>
+<img src="https://github.com/user-attachments/assets/0cd71e92-714b-4f44-8060-ad5d353ebb7a" width="600"><br>
+2. 在最上方地址输入框输入cmd并回车，则可以直接在此目录下打开cmd。如图：<br>
+<img src="https://github.com/user-attachments/assets/2f23826d-480a-4526-9dbe-f3fb06f5fa35" width="600"><br>
+<img src="https://github.com/user-attachments/assets/8def1166-f7f6-4738-bed8-0b3057e1d81b" width="600"><br>
+3. 输入 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -d （注：此为演示命令行，具体的输入文件/文件夹和执行模式需要你自行指定）<br>
+或 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -m d 。如图：<br>
+<img src="https://github.com/user-attachments/assets/0e1c703f-1c78-4242-9dce-480219805005" width="600">
   
   </p>
 </details>
@@ -104,12 +107,15 @@ windows<br>
 ## Ⅲ 执行遇到错误？
 
 <details>
-  <summary>epub无法正常规范/混淆/反混淆</summary>
+  <summary>epub无法正常规范/混淆/反混淆</summary><br>
   <p>
+    1、优先解压文件，查看其中content.opf文件，检查是否存在问题。若无法解决，在Issues区提交issue并附带原文件。[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10]<br>
+  </p>
+  <p>
+    2、若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。<br>
+    若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。[https://github.com/cnwxi/epub_tool/issues/19]<br> 
+  </p>
 
-优先解压文件，查看其中content.opf文件，检查是否存在问题。若无法解决，在Issues区提交issue并附带原文件。<br> 
-
-</p>
 </details>
 
 ## Ⅳ 更新日志<br>
@@ -117,6 +123,8 @@ windows<br>
   <summary>点击以展开</summary>
   <p>
 
+### 2025.02.05<br>
+更新README。<br>
 ### 2024.12.25<br>
 修复在mac上的日志文件写入位置，更改日志写入方式，清理原始脚本中重复的无效循环，更新README。<br>
 ### 2024.12.23<br>
