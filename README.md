@@ -1,10 +1,11 @@
-## Ⅰ epub_tool仓库介绍<br>
+## Ⅰ epub_tool仓库<br>
+[![Compile and publish the release](https://github.com/cnwxi/epub_tool/actions/workflows/build.yml/badge.svg)](https://github.com/cnwxi/epub_tool/actions/workflows/main.yml) [![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest) [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers) [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
 
 <details>
-  <summary>一些可用的epub工具介绍</summary>
+  <summary>一些可用的epub工具</summary>
   <p>
 
-一些可用的epub工具<br>
+
 1. `重构epub为规范格式_v2.8.3.py`->`utils\reformat_epub.py`<br>
 作用：见原文件名。<br>
 原始的百度贴吧帖子链接：[遥遥心航的帖子](https://jump2.bdimg.com/p/8090221625)。<br>
@@ -41,7 +42,7 @@
   </p>
 </details>
 
-<details>
+<details> 
   <summary>命令行程序</summary>
   <p>
 
@@ -74,7 +75,7 @@
 
 
 <details>
-  <summary>Windows系统CMD命令行操作演示(点击以展开)</summary>
+  <summary>Windows系统CMD命令行操作演示</summary>
   <p>
     
 1. 可执行文件已下载至C:\Users\Administrator\Downloads\Programs位置，打开文件管理器，进入对应目录。如图：<br>
@@ -84,7 +85,7 @@
 <img src="https://github.com/user-attachments/assets/8def1166-f7f6-4738-bed8-0b3057e1d81b" width="600"><br>
 3. 输入 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -d （注：此为演示命令行，具体的输入文件/文件夹和执行模式需要你自行指定）<br>
 或 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -m d 。如图：<br>
-<img src="https://github.com/user-attachments/assets/0e1c703f-1c78-4242-9dce-480219805005" width="600">
+<img src="https://github.com/user-attachments/assets/0e1c703f-1c78-4242-9dce-480219805005" width="600"><br>
   
   </p>
 </details>
@@ -92,9 +93,12 @@
 <details>
   <summary>可视化界面程序</summary>
   <p>
+
     
-（注：同样会在程序所在路径生成log日志文件）<br>
-（Mac参考命令行程序中教程授予权限；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
+
+>（注：同样会在程序所在路径生成log日志文件）<br>
+> （Mac参考命令行程序教程授予权限；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
+
 - UI预览，具体界面可能随后续更新改动<br>
 mac<br>
 <img width="300" alt="mac" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" /><br> 
