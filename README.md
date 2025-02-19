@@ -1,5 +1,5 @@
 <div>
-<img src="./img/icon.png" alt="图片名称" style="width:35%">
+<img src="./img/icon.jpeg" alt="图片名称" style="width:35%">
 </div>
 
 [![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest) [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers) [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
@@ -134,23 +134,20 @@ windows<br>
   <summary>点击以展开</summary>
   <p>
 
-### 2025.02.05<br>
-更新README。<br>
+### 2025.02.20<br>
+更新图标。<br>
 ### 2024.12.25<br>
 修复在mac上的日志文件写入位置，更改日志写入方式，清理原始脚本中重复的无效循环，更新README。<br>
 ### 2024.12.23<br>
-调整UI、取消push自动构建，更新README。<br>
+调整UI、取消push自动构建。<br>
 ### 2024.12.17<br>
-修复UI显示问题,分支整合。更新README<br>
+修复UI显示问题,分支整合。<br>
 ### 2024.12.16<br>
 创建新分支TKUI，实现基本UI DEMO，功能已整合。<br>
-### 2024.11.28<br>
-更新README<br>
 ### 2024.11.17<br>
-添加文件夹手动选择需要处理文件，输入文件序号进行选择，不再是默认处理文件夹内全部epub文件 添加了输入检测提示，错误后会返回重新输入。由[lgernier](https://github.com/lgernierO)提交。<br>
+添加文件夹手动选择需要处理文件，输入文件序号进行选择，不再是默认处理文件夹内全部epub文件，添加了输入检测提示，错误后会返回重新输入。由[lgernier](https://github.com/lgernierO)提交。<br>
 ### 2024.10.24<br>
 修复未处理输入时拖入文件带引号导致的文件路径检查错误。<br>
-更新README<br>
 ### 2024.09.09<br>
 因额外依赖库未打包到可执行文件，重新打包可执行文件。<br>
 更新相关使用教程。<br>
@@ -166,9 +163,6 @@ windows<br>
 整合代码，使用命令行批量处理epub文件。<br>
 支持输入单个epub文件或epub文件所在文件夹，支持子目录遍历。<br>
 修改输出路径，现为原epub文件同级路径，通过添加不同后缀`encrypt\decrypt\reformat`区分原文件和处理后文件。<br>
-更新README。<br>
-### 2024.08.11<br>
-更新README。<br>
 ### 2024.06.19<br>
 代码更新，使用相似度计算覆盖opf文件中未混淆的其他文件名情况。<br>
 ### 2024.06.13<br>
