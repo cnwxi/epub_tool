@@ -1,8 +1,15 @@
-## Ⅰ epub_tool仓库<br>
-[![Compile and publish the release](https://github.com/cnwxi/epub_tool/actions/workflows/build.yml/badge.svg)](https://github.com/cnwxi/epub_tool/actions/workflows/main.yml) [![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest) [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers) [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
+<div>
+<img src="./img/icon.png" alt="图片名称" style="width:35%">
+</div>
+
+[![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest) [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers) [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
+
+## Ⅰ epub_tool介绍<br>
+
+
 
 <details>
-  <summary>一些可用的epub工具</summary>
+  <summary>包含一些可用的epub工具，用于epub文件的重构、解密、加密。</summary>
   <p>
 
 
