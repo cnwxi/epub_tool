@@ -137,7 +137,9 @@ windows<br>
 ### 2025.02.20<br>
 更新图标。<br>
 ### 2024.12.25<br>
-修复在mac上的日志文件写入位置，更改日志写入方式，清理原始脚本中重复的无效循环，更新README。<br>
+修复在mac上的日志文件写入位置，更改日志写入方式，清理原始脚本中重复的无效循环。<br>
+### 2024.12.24<br>
+Update build.yml。https://github.com/cnwxi/epub_tool/pull/17<br>
 ### 2024.12.23<br>
 调整UI、取消push自动构建。<br>
 ### 2024.12.17<br>
@@ -145,7 +147,7 @@ windows<br>
 ### 2024.12.16<br>
 创建新分支TKUI，实现基本UI DEMO，功能已整合。<br>
 ### 2024.11.17<br>
-添加文件夹手动选择需要处理文件，输入文件序号进行选择，不再是默认处理文件夹内全部epub文件，添加了输入检测提示，错误后会返回重新输入。由[lgernier](https://github.com/lgernierO)提交。<br>
+添加文件夹手动选择需要处理文件，输入文件序号进行选择，不再是默认处理文件夹内全部epub文件，添加了输入检测提示，错误后会返回重新输入。https://github.com/cnwxi/epub_tool/pull/15<br>
 ### 2024.10.24<br>
 修复未处理输入时拖入文件带引号导致的文件路径检查错误。<br>
 ### 2024.09.09<br>
@@ -166,20 +168,20 @@ windows<br>
 ### 2024.06.19<br>
 代码更新，使用相似度计算覆盖opf文件中未混淆的其他文件名情况。<br>
 ### 2024.06.13<br>
-更新yml文件，由[lgernier](https://github.com/lgernierO)提交。<br>
+更新yml文件。https://github.com/cnwxi/epub_tool/pull/9<br>
 ### 2024.06.12<br>
 针对cover页面未混淆的情况做更改。<br>
 修改自动发布逻辑，修改py文件不触发CI，仅修改yml后触发。修改yml，无需手动执行才执行发布。<br>
 ### 2024.06.08<br>
-CI配置文件更新，由[lgernier](https://github.com/lgernierO)提交。<br>
+CI配置文件更新。https://github.com/cnwxi/epub_tool/pull/6 https://github.com/cnwxi/epub_tool/pull/7<br>
 ### 2024.06.07<br>
-修改主函数逻辑，防止epub文件不存在导致的程序崩溃，由[lgernier](https://github.com/lgernierO)提交。<br>
-加入CI自动构建，由[lgernier](https://github.com/lgernierO)提交。<br>
-加入CI自动发布，由[No Response](https://github.com/cnwxi)提交。<br>
+修改主函数逻辑，防止epub文件不存在导致的程序崩溃。https://github.com/cnwxi/epub_tool/pull/4<br>
+加入CI自动构建。https://github.com/cnwxi/epub_tool/pull/5<br>
+加入CI自动发布。<br>
 ### 2024.05.28<br>
-修正`重构epub为规范格式_v2.8.3.py`中生成的content.opf文件内容格式，由[lgernier](https://github.com/lgernierO)提交。<br>
+修正`重构epub为规范格式_v2.8.3.py`中生成的content.opf文件内容格式。https://github.com/cnwxi/epub_tool/pull/3<br>
 ### 2024.05.16<br>
-更改文件输出路径，由[lgernier](https://github.com/lgernierO)提交。<br>
+更改文件输出路径。https://github.com/cnwxi/epub_tool/pull/2<br>
 ### 2024.05.09<br>
 针对多看~slim文件进行修改，处理html中使用`../`、`./`、`/`开头的链接。<br>
 ### 2024.04.23<br>
