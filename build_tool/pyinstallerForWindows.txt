@@ -1,4 +1,4 @@
 # for windows
-pyinstaller -F -w Epub_Tool_TKUI.py -n Epub_Tool_TKUI;
+pyinstaller -F -w -i ./img/icon.ico Epub_Tool_TKUI.py -n Epub_Tool_TKUI;
 rm ./build;
 rm ./Epub_Tool_TKUI.spec;

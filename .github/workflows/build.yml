@@ -16,7 +16,7 @@ on:
       version:
         description: 'Release version'
         required: true
-        default: '2024.12.24.v1'
+        default: '2025.03.01.v1'
       body:
         description: 'Release body text'
         required: true
@@ -56,11 +56,11 @@ jobs:
     - name: Build the executables
       run: |
         if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
-          pyinstaller --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
-          pyinstaller --onefile --name Epub_Tool_Console Epub_Tool_Console.py
+          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_TKUI Epub_Tool_TKUI.py
+          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_Console Epub_Tool_Console.py
         else
-          pyinstaller -w --onefile --name Epub_Tool_TKUI Epub_Tool_TKUI.py
-          pyinstaller --onefile --name Epub_Tool_Console Epub_Tool_Console.py
+          pyinstaller -w --onefile -i ./img/icon.ico --name Epub_Tool_TKUI Epub_Tool_TKUI.py
+          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_Console Epub_Tool_Console.py
         fi
       shell: bash
 
