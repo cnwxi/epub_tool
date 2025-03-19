@@ -20,7 +20,6 @@ root.resizable(True, True)
 tmp_files_dic = {}
 defalut_output_dir = None
 
-
 if sys.platform.startswith("darwin"):  # macOS
     default_font = "PingFang SC"
 elif os.name == "nt":  # Windows
@@ -82,9 +81,9 @@ def store_file(files):
 
 # 添加文件（可多选）
 def add_file():
-    files = filedialog.askopenfilenames(
-        title="选择文件", filetypes=[("EPUB files", "*.epub *.EPUB")]
-    )
+    files = filedialog.askopenfilenames(title="选择文件",
+                                        filetypes=[("EPUB files",
+                                                    "*.epub *.EPUB")])
     tmp_files = []
     for file in files:
         if file.lower().endswith(".epub"):
@@ -125,9 +124,11 @@ def delete_all():
     tmp_files_dic.clear()
 
 
-add_files_btn = tk.Button(
-    add_frame, text="添加文件", font=(default_font, 10), command=add_file, fg="green"
-)
+add_files_btn = tk.Button(add_frame,
+                          text="添加文件",
+                          font=(default_font, 10),
+                          command=add_file,
+                          fg="green")
 add_files_btn.pack(side=tk.LEFT, padx=5)
 
 select_dir_btn = tk.Button(
@@ -139,7 +140,6 @@ select_dir_btn = tk.Button(
 )
 select_dir_btn.pack(side=tk.LEFT, padx=5)
 
-
 delete_button = tk.Button(
     add_frame,
     text="删除所选",
@@ -149,38 +149,46 @@ delete_button = tk.Button(
 )
 delete_button.pack(side=tk.LEFT, padx=5)
 
-
-delete_all_button = tk.Button(
-    add_frame, text="删除全部", font=(default_font, 10), command=delete_all, fg="red"
-)
+delete_all_button = tk.Button(add_frame,
+                              text="删除全部",
+                              font=(default_font, 10),
+                              command=delete_all,
+                              fg="red")
 delete_all_button.pack(side=tk.LEFT, padx=5)
 
 # 创建一个 Frame 用于放置 Listbox 和 Scrollbar
 listbox_frame = tk.Frame(root)
 listbox_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-listbox_label = tk.Label(
-    listbox_frame, text="输入文件列表", font=(default_font, 10, "bold"), fg="DimGray"
-)
+listbox_label = tk.Label(listbox_frame,
+                         text="输入文件列表",
+                         font=(default_font, 10, "bold"),
+                         fg="DimGray")
 # listbox_label.pack(side=tk.LEFT, padx=5)
 listbox_label.grid(row=0, column=0, sticky=tk.W, padx=0, pady=(0, 5))
 # 创建 Listbox
-file_list = tk.Listbox(listbox_frame, selectmode=tk.EXTENDED, bd=3, relief="sunken")
+file_list = tk.Listbox(listbox_frame,
+                       selectmode=tk.EXTENDED,
+                       bd=3,
+                       relief="sunken")
 file_list.grid(row=1, column=0, sticky=tk.NSEW)
 
 # 创建垂直 Scrollbar
-v_scrollbar = tk.Scrollbar(
-    listbox_frame, orient=tk.VERTICAL, command=file_list.yview, width=15
-)
+v_scrollbar = tk.Scrollbar(listbox_frame,
+                           orient=tk.VERTICAL,
+                           command=file_list.yview,
+                           width=15)
 v_scrollbar.grid(row=1, column=1, sticky=tk.NS)
 
 # 创建水平 Scrollbar
-h_scrollbar = tk.Scrollbar(
-    listbox_frame, orient=tk.HORIZONTAL, command=file_list.xview, width=15
-)
+h_scrollbar = tk.Scrollbar(listbox_frame,
+                           orient=tk.HORIZONTAL,
+                           command=file_list.xview,
+                           width=15)
 h_scrollbar.grid(row=2, column=0, sticky=tk.EW)
 
 # 将 Scrollbar 绑定到 Listbox
-file_list.config(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+file_list.config(yscrollcommand=v_scrollbar.set,
+                 xscrollcommand=h_scrollbar.set)
 
 # 配置 grid 行列权重
 listbox_frame.grid_rowconfigure(1, weight=1)
@@ -202,6 +210,8 @@ def select_output_dir():
         output_dir_label.config(text=f"输出路径: {output_dir}")
         output_dir_label.config(fg="royalblue")
         output_dir_label.update()
+        result_list.insert(tk.END, f"设置输出路径成功: {output_dir}")
+        root.update_idletasks()
 
 
 def open_output_dir(event):
@@ -229,6 +239,8 @@ def reset_output_dir():
     output_dir_label.config(text=f"输出路径: 默认文件所在路径")
     output_dir_label.config(fg="DimGray")
     output_dir_label.update()
+    result_list.insert(tk.END, "重置输出路径成功")
+    root.update_idletasks()
 
 
 outdir_frame = tk.Frame(root)
@@ -271,8 +283,7 @@ separator.pack(fill="x", pady=5, padx=5)
 def start_progress(func, func_name, output_dir, *args):
     # 创建一个新的线程来运行传入的函数
     thread = threading.Thread(
-        target=lambda: run_in_thread(func, func_name, output_dir, *args)
-    )
+        target=lambda: run_in_thread(func, func_name, output_dir, *args))
     thread.start()
 
 
@@ -341,41 +352,44 @@ progress_frame = tk.Frame(root)
 progress_frame.pack(fill=tk.X, padx=10, pady=0)
 
 # 创建进度条
-progress = ttk.Progressbar(
-    progress_frame, orient=tk.HORIZONTAL, length=400, mode="determinate"
-)
+progress = ttk.Progressbar(progress_frame,
+                           orient=tk.HORIZONTAL,
+                           length=400,
+                           mode="determinate")
 progress.pack(fill=tk.X, padx=5, pady=0)
-
 
 # 创建一个 Frame 用于放置 Listbox 和 Scrollbar
 result_box_frame = tk.Frame(root)
 result_box_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-result_box_lable = tk.Label(
-    result_box_frame, text="执行结果", font=(default_font, 10, "bold"), fg="DimGray"
-)
+result_box_lable = tk.Label(result_box_frame,
+                            text="执行结果",
+                            font=(default_font, 10, "bold"),
+                            fg="DimGray")
 result_box_lable.grid(row=0, column=0, sticky=tk.W, padx=0, pady=(0, 5))
 # 创建 Listbox
-result_list = tk.Listbox(
-    result_box_frame, selectmode=tk.EXTENDED, bd=3, relief="sunken"
-)
+result_list = tk.Listbox(result_box_frame,
+                         selectmode=tk.EXTENDED,
+                         bd=3,
+                         relief="sunken")
 result_list.grid(row=1, column=0, sticky=tk.NSEW)
 
 # 创建垂直 Scrollbar
-v_scrollbar_result = tk.Scrollbar(
-    result_box_frame, orient=tk.VERTICAL, command=result_list.yview, width=15
-)
+v_scrollbar_result = tk.Scrollbar(result_box_frame,
+                                  orient=tk.VERTICAL,
+                                  command=result_list.yview,
+                                  width=15)
 v_scrollbar_result.grid(row=1, column=1, sticky=tk.NS)
 
 # 创建水平 Scrollbar
-h_scrollbar_result = tk.Scrollbar(
-    result_box_frame, orient=tk.HORIZONTAL, command=result_list.xview, width=15
-)
+h_scrollbar_result = tk.Scrollbar(result_box_frame,
+                                  orient=tk.HORIZONTAL,
+                                  command=result_list.xview,
+                                  width=15)
 h_scrollbar_result.grid(row=2, column=0, sticky=tk.EW)
 
 # 将 Scrollbar 绑定到 Listbox
-result_list.config(
-    yscrollcommand=v_scrollbar_result.set, xscrollcommand=h_scrollbar_result.set
-)
+result_list.config(yscrollcommand=v_scrollbar_result.set,
+                   xscrollcommand=h_scrollbar_result.set)
 
 # 配置 grid 行列权重
 result_box_frame.grid_rowconfigure(1, weight=1)

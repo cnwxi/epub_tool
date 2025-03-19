@@ -376,7 +376,7 @@ class EpubTool:
             del self.id_to_h_m_p[id]
 
     def create_tgt_epub(self):
-        output_path = self.ebook_root
+        output_path = self.output_path
         logger.write(f"输出路径：{output_path}")
         return zipfile.ZipFile(
             path.join(output_path, self.epub_name.replace(".epub", "_decrypt.epub")),
