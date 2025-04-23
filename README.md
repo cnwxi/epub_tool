@@ -111,15 +111,16 @@ Epub Tool->ET->E-Book Thor->📖🔨
   <p>
 
     
-
->（注：同样会在程序所在路径生成log日志文件）<br>
-> （Mac参考命令行程序教程授予权限；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
+>（注：同样会在可执行程序所在路径生成log日志文件，mac文件写入位置为`/Applications/Epub_Tool_TKUI.app/Contents/MacOS/log.txt`）<br>
+> （Mac参考[Apple官网Mac使用手册](https://support.apple.com/zh-cn/guide/mac-help/mchleab3a043/mac)；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
 
 - UI预览，具体界面可能随后续更新改动<br>
-mac<br>
+
+  - mac<br> 
 <img width="300" alt="mac" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" /><br> 
-windows<br> 
-<img width="300" alt="windows" src="https://github.com/user-attachments/assets/99acedf7-2f41-44bb-9059-6de9d36dd1d0" /><br> 
+
+  - windows<br> 
+<img width="260" alt="windows" src="https://github.com/user-attachments/assets/99acedf7-2f41-44bb-9059-6de9d36dd1d0" /><br> 
 
   </p>
 </details>

@@ -27,7 +27,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix: # os: [ubuntu-latest, macos-latest, windows-latest] 暂时去除Ubuntu系统
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     steps:
     - uses: actions/checkout@v4
     
