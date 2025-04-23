@@ -65,8 +65,19 @@ jobs:
     - name: Rename artifacts with OS prefix (macOS) # Epub_Tool_TKUI.app为文件夹，zip压缩
       if: matrix.os == 'macos-latest'
       run: |
+        brew install create-dmg
         cd ./dist
-        zip -r Epub_Tool_TKUI.zip ./Epub_Tool_TKUI.app;
+        create-dmg \
+          --volname "Epub_Tool_TKUI" \
+          --window-pos 400 200 \
+          --window-size 660 400 \
+          --icon-size 100 \
+          --icon "Epub_Tool_TKUI.app" 160 185 \
+          --hide-extension "Epub_Tool_TKUI.app"\
+          --app-drop-link 500 185 \
+          --no-internet-enable \
+          "./Epub_Tool_TKUI.dmg" \
+          "./Epub_Tool_TKUI.app";
         rm -rf ./Epub_Tool_TKUI.app;
         rm -rf ./Epub_Tool_TKUI;
         cd ..

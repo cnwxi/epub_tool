@@ -55,6 +55,8 @@ Epub Tool->ET->E-Book Thor->📖🔨
   </p>
 </details>
 
+<!-- 
+
 <details> 
   <summary>命令行程序</summary>
   <p>
@@ -74,7 +76,7 @@ Epub Tool->ET->E-Book Thor->📖🔨
 \-r  无需后接任何参数，指定程序对epub进行格式化处理。<br>
 \-m  后接指定的处理模式，e、d、r。（可选，效果同上-e、-d、-r）
 6. 现在输入为文件夹路径时会提醒选择文件执行edr操作或所有文件执行edr操作。<br> 
- ![image](https://github.com/user-attachments/assets/4c5d6a6e-2e6e-427d-9251-8d9e4c2a3a68)
+ ![image](https://github.com/user-attachments/assets/4c5d6a6e-2e6e-427d-9251-8d9e4c2a3a68) 
 
 - 举例：<br>
 在可执行文件所在文件夹打开命令行工具（或打开命令行工具后切换到可执行文件所在文件夹）。<br>
@@ -85,7 +87,6 @@ Epub Tool->ET->E-Book Thor->📖🔨
 
   </p>
 </details>
-
 
 <details>
   <summary>Windows系统CMD命令行操作演示</summary>
@@ -101,7 +102,9 @@ Epub Tool->ET->E-Book Thor->📖🔨
 <img src="https://github.com/user-attachments/assets/0e1c703f-1c78-4242-9dce-480219805005" width="600"><br>
   
   </p>
-</details>
+</details> 
+
+-->
 
 <details>
   <summary>可视化界面程序</summary>
@@ -139,6 +142,8 @@ windows<br>
   <summary>点击以展开</summary>
   <p>
 
+### 2025.04.23<br>
+移除命令行程序编译；移除mac编译-F参数；添加icon.icns图标适配macOS，优化显示效果；移除Ubuntu（Linux系统）编译。<br>
 ### 2025.03.20<br>
 修复失效的自定义输出路径。<br>
 ### 2025.03.01<br>
