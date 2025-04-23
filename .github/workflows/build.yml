@@ -55,17 +55,26 @@ jobs:
 
     - name: Build the executables
       run: |
-        if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
-          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_TKUI Epub_Tool_TKUI.py
-          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_Console Epub_Tool_Console.py
-        else
-          pyinstaller -w --onefile -i ./img/icon.ico --name Epub_Tool_TKUI Epub_Tool_TKUI.py
-          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_Console Epub_Tool_Console.py
-        fi
+          pyinstaller -w -F -i ./img/icon.ico  Epub_Tool_TKUI.py -n Epub_Tool_TKUI;
+          pyinstaller -F -i ./img/icon.ico --name Epub_Tool_Console Epub_Tool_Console.py
       shell: bash
 
-    - name: Rename artifacts with OS prefix (Linux and macOS)
-      if: matrix.os != 'windows-latest'
+    - name: Rename artifacts with OS prefix (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        cd ./dist
+        zip -r Epub_Tool_TKUI.zip ./Epub_Tool_TKUI.app;
+        rm -rf ./Epub_Tool_TKUI.app;
+        rm -rf ./Epub_Tool_TKUI;
+        cd ..
+        for file in dist/*; do
+          mv "$file" "dist/${{ runner.os }}_$(basename "$file")"
+        done
+      shell: bash
+
+    # 无Ubuntu系统，暂时不知道Ubuntu版本下打包的可执行文件是什么格式、是否可用
+    - name: Rename artifacts with OS prefix (Ubuntu)
+      if: matrix.os == 'macos-latest'
       run: |
         for file in dist/*; do
           mv "$file" "dist/${{ runner.os }}_$(basename "$file")"
