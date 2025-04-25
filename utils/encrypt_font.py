@@ -186,7 +186,7 @@ class FontEncrypt:
 
         # 定义CJK字符的Unicode范围
         cjk_ranges = [
-            (0x4E00, 0x9FA5),  # CJK Unified Ideographs
+            (0x4E00, 0x9FFF),  # CJK Unified Ideographs
             # (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
             # (0x20000, 0x2A6DF),  # CJK Unified Ideographs Extension B
             # (0x2A700, 0x2B73F),  # CJK Unified Ideographs Extension C
@@ -262,8 +262,10 @@ class FontEncrypt:
                     print(f'字体文件{font_path}缺少字符{miss_char}')
 
                 glyphs, metrics, cmap = {}, {}, {}
-                private_codes = random.sample(range(0xE000, 0xF8FF),
+                private_codes = random.sample(range(0xAC00, 0xD7AF),
                                               len(plain_text))
+                print(len(private_codes), len(available_ranges),len(plain_text))
+                print(plain_text)
                 cjk_codes = random.sample(available_ranges, len(plain_text))
                 # private_chars = [chr(code) for code in private_codes]
                 # cjk_chars = [chr(code) for code in cjk_codes]
