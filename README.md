@@ -55,6 +55,8 @@ Epub Tool->ET->E-Book Thor->📖🔨
   </p>
 </details>
 
+<!-- 
+
 <details> 
   <summary>命令行程序</summary>
   <p>
@@ -74,7 +76,7 @@ Epub Tool->ET->E-Book Thor->📖🔨
 \-r  无需后接任何参数，指定程序对epub进行格式化处理。<br>
 \-m  后接指定的处理模式，e、d、r。（可选，效果同上-e、-d、-r）
 6. 现在输入为文件夹路径时会提醒选择文件执行edr操作或所有文件执行edr操作。<br> 
- ![image](https://github.com/user-attachments/assets/4c5d6a6e-2e6e-427d-9251-8d9e4c2a3a68)
+ ![image](https://github.com/user-attachments/assets/4c5d6a6e-2e6e-427d-9251-8d9e4c2a3a68) 
 
 - 举例：<br>
 在可执行文件所在文件夹打开命令行工具（或打开命令行工具后切换到可执行文件所在文件夹）。<br>
@@ -85,7 +87,6 @@ Epub Tool->ET->E-Book Thor->📖🔨
 
   </p>
 </details>
-
 
 <details>
   <summary>Windows系统CMD命令行操作演示</summary>
@@ -101,22 +102,25 @@ Epub Tool->ET->E-Book Thor->📖🔨
 <img src="https://github.com/user-attachments/assets/0e1c703f-1c78-4242-9dce-480219805005" width="600"><br>
   
   </p>
-</details>
+</details> 
+
+-->
 
 <details>
   <summary>可视化界面程序</summary>
   <p>
 
     
-
->（注：同样会在程序所在路径生成log日志文件）<br>
-> （Mac参考命令行程序教程授予权限；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
+>（注：同样会在可执行程序所在路径生成log日志文件，mac文件写入位置为`/Applications/Epub_Tool_TKUI.app/Contents/MacOS/log.txt`）<br>
+> （Mac若提示无法验证安全性，请参考[Apple官网Mac使用手册](https://support.apple.com/zh-cn/guide/mac-help/mchleab3a043/mac)；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
 
 - UI预览，具体界面可能随后续更新改动<br>
-mac<br>
+
+  - mac<br> 
 <img width="300" alt="mac" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" /><br> 
-windows<br> 
-<img width="300" alt="windows" src="https://github.com/user-attachments/assets/99acedf7-2f41-44bb-9059-6de9d36dd1d0" /><br> 
+
+  - windows<br> 
+<img width="260" alt="windows" src="https://github.com/user-attachments/assets/99acedf7-2f41-44bb-9059-6de9d36dd1d0" /><br> 
 
   </p>
 </details>
@@ -139,6 +143,8 @@ windows<br>
   <summary>点击以展开</summary>
   <p>
 
+### 2025.04.23<br>
+移除命令行程序编译；移除mac编译-F参数；添加icon.icns图标适配macOS，优化显示效果；移除Ubuntu（Linux系统）编译。<br>
 ### 2025.03.20<br>
 修复失效的自定义输出路径。<br>
 ### 2025.03.01<br>

@@ -20,14 +20,14 @@ on:
       body:
         description: 'Release body text'
         required: true
-        default: '详情请查看更新日志；Epub_Tool_TKUI为可视化程序，Epub_Tool_Console为命令行程序。'
+        default: '详情请查看更新日志；Epub_Tool_TKUI为可视化程序，不再支持命令行程序。有需要请直接下载python执行源码。'
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+      matrix: # os: [ubuntu-latest, macos-latest, windows-latest] 暂时去除Ubuntu系统
+        os: [macos-latest, windows-latest]
     steps:
     - uses: actions/checkout@v4
     
@@ -55,22 +55,45 @@ jobs:
 
     - name: Build the executables
       run: |
-        if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
-          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_TKUI Epub_Tool_TKUI.py
-          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_Console Epub_Tool_Console.py
+        if [ "${{ matrix.os }}" == "macos-latest" ]; then
+          pyinstaller -w -i ./img/icon.icns Epub_Tool_TKUI.py -n Epub_Tool_TKUI;
         else
-          pyinstaller -w --onefile -i ./img/icon.ico --name Epub_Tool_TKUI Epub_Tool_TKUI.py
-          pyinstaller --onefile -i ./img/icon.ico --name Epub_Tool_Console Epub_Tool_Console.py
+          pyinstaller -w -F -i ./img/icon.ico  Epub_Tool_TKUI.py -n Epub_Tool_TKUI;
         fi
       shell: bash
 
-    - name: Rename artifacts with OS prefix (Linux and macOS)
-      if: matrix.os != 'windows-latest'
+    - name: Rename artifacts with OS prefix (macOS) # Epub_Tool_TKUI.app为文件夹，zip压缩
+      if: matrix.os == 'macos-latest'
       run: |
+        brew install create-dmg
+        cd ./dist
+        create-dmg \
+          --volname "Epub_Tool_TKUI" \
+          --window-pos 400 200 \
+          --window-size 660 400 \
+          --icon-size 100 \
+          --icon "Epub_Tool_TKUI.app" 160 185 \
+          --hide-extension "Epub_Tool_TKUI.app"\
+          --app-drop-link 500 185 \
+          --no-internet-enable \
+          "./Epub_Tool_TKUI.dmg" \
+          "./Epub_Tool_TKUI.app";
+        rm -rf ./Epub_Tool_TKUI.app;
+        rm -rf ./Epub_Tool_TKUI;
+        cd ..
         for file in dist/*; do
           mv "$file" "dist/${{ runner.os }}_$(basename "$file")"
         done
       shell: bash
+
+    # 无Ubuntu系统，暂时不知道Ubuntu版本下打包的可执行文件是什么格式、是否可用
+    # - name: Rename artifacts with OS prefix (Ubuntu)
+    #   if: matrix.os == 'ubuntu-latest'
+    #   run: |
+    #     for file in dist/*; do
+    #       mv "$file" "dist/${{ runner.os }}_$(basename "$file")"
+    #     done
+    #   shell: bash
 
     - name: Rename artifacts with OS prefix (Windows)
       if: matrix.os == 'windows-latest'

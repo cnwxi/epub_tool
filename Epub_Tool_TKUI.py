@@ -202,7 +202,7 @@ separator.pack(fill="x", padx=5, pady=5)
 def select_output_dir():
     global defalut_output_dir
     output_dir = os.path.normpath(filedialog.askdirectory(title="选择输出文件夹"))
-    if output_dir and os.path.exists(output_dir):
+    if output_dir != '.' and os.path.exists(output_dir):
         defalut_output_dir = output_dir
         if len(output_dir) > 30:
             length = len(output_dir) - 15
