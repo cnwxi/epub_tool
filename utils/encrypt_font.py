@@ -17,8 +17,22 @@ import html
 class FontEncrypt:
 
     def __init__(self, epub_path, output_path):
+        if not os.path.exists(epub_path):
+            raise Exception("EPUB文件不存在")
+        
         self.epub_path = os.path.normpath(epub_path)
         self.epub = zipfile.ZipFile(epub_path)
+        if output_path and os.path.exists(output_path):
+            if os.path.isfile(output_path):
+                raise Exception("输出路径不能是文件")
+            if not os.path.exists(output_path):
+                raise Exception("输出路径不存在")
+        else:
+            output_path=os.path.dirname(epub_path)
+        self.output_path = os.path.normpath(output_path)
+        self.file_write_path=os.path.join(self.output_path, self.epub_path.lower().split('/')[-1].replace('.epub','_font_encrypt.epub'))
+        if os.path.exists(self.file_write_path):
+            os.remove(self.file_write_path)
         self.htmls = []
         self.css = []
         self.fonts = []
@@ -38,12 +52,7 @@ class FontEncrypt:
                 self.fonts.append(file)
             else:
                 self.ori_files.append(file)
-        self.output_path = os.path.normpath(output_path)
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
-        if os.path.exists(
-                os.path.join(output_path, epub_path.split('/')[-1])):
-            os.remove(os.path.join(output_path, epub_path.split('/')[-1]))
+        
 
     def find_local_fonts_mapping(self):
         font_face_rules = []
@@ -222,12 +231,14 @@ class FontEncrypt:
     # 修改自https://github.com/solarhell/fontObfuscator
     def encrypt_font(self):
         with zipfile.ZipFile(
-                os.path.join(self.output_path,
-                             self.epub_path.split('/')[-1]), 'a',
+               self.file_write_path, 'a',
                 zipfile.ZIP_DEFLATED) as new_epub:
             for i, (font_path, plain_text) in enumerate(
                     self.font_to_char_mapping.items()):
-                original_font = TTFont(BytesIO(self.epub.read(font_path)))
+                if font_path in self.font_to_unchanged_file_mapping.keys():
+                    original_font = TTFont(self.font_to_unchanged_file_mapping[font_path])
+                else:
+                    original_font = TTFont(BytesIO(self.epub.read(font_path)))
                 name_table = original_font['name']
                 # 提取 FAMILY_NAME 和 STYLE_NAME
                 family_name = None
@@ -351,8 +362,7 @@ class FontEncrypt:
 
     def read_html(self):
         with zipfile.ZipFile(
-                os.path.join(self.output_path,
-                             self.epub_path.split('/')[-1]), 'a',
+                self.file_write_path, 'a',
                 zipfile.ZIP_DEFLATED) as new_epub:
             for one_html in self.htmls:
                 # if one_html.split('/')[-1] != "Chapter01.xhtml":

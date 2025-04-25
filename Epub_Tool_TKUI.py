@@ -7,6 +7,7 @@ import os
 from utils.encrypt_epub import run as encrypt_run
 from utils.decrypt_epub import run as decrypt_run
 from utils.reformat_epub import run as reformat_run
+from utils.encrypt_font import FontEncrypt
 import sys
 import threading
 import subprocess
