@@ -2,7 +2,7 @@ import zipfile
 import os
 from bs4 import BeautifulSoup
 import tinycss2
-from tinycss2 import parse_component_value_list
+# from tinycss2 import parse_component_value_list
 import emoji
 import re
 from fontTools.ttLib import TTFont
@@ -12,7 +12,7 @@ from io import BytesIO
 import random
 import traceback
 import html
-
+# from tkinter import filedialog
 
 class FontEncrypt:
 
@@ -23,10 +23,11 @@ class FontEncrypt:
         self.css = []
         self.fonts = []
         self.ori_files = []
+        self.missing_chars = []
         self.font_to_font_family_mapping = {}
         self.css_selector_to_font_mapping = {}
         self.font_to_char_mapping = {}
-        self.missing_chars = []
+        self.font_to_unchanged_file_mapping = {}
         for file in self.epub.namelist():
             if file.lower().endswith('.html') or file.endswith('.xhtml'):
                 self.htmls.append(file)
@@ -38,6 +39,11 @@ class FontEncrypt:
             else:
                 self.ori_files.append(file)
         self.output_path = os.path.normpath(output_path)
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+        if os.path.exists(
+                os.path.join(output_path, epub_path.split('/')[-1])):
+            os.remove(os.path.join(output_path, epub_path.split('/')[-1]))
 
     def find_local_fonts_mapping(self):
         font_face_rules = []
@@ -264,8 +270,8 @@ class FontEncrypt:
                 glyphs, metrics, cmap = {}, {}, {}
                 private_codes = random.sample(range(0xAC00, 0xD7AF),
                                               len(plain_text))
-                print(len(private_codes), len(available_ranges),len(plain_text))
-                print(plain_text)
+                # print(len(private_codes), len(available_ranges),len(plain_text))
+                # print(plain_text)
                 cjk_codes = random.sample(available_ranges, len(plain_text))
                 # private_chars = [chr(code) for code in private_codes]
                 # cjk_chars = [chr(code) for code in cjk_codes]
@@ -302,7 +308,7 @@ class FontEncrypt:
                         # print('shadow_cmap_name', shadow_cmap_name)
                     except KeyError:
                         # 遇到基础字库不存在的字会出现这种错误
-                        print("请勿进行字体子集化，使用完整字体文件")
+                        print("请勿进行字体子集化，使用完整字体文件，或者使用其他字体")
                         traceback.print_exc()
 
                     final_shadow_text += [shadow_cmap_name]
@@ -334,7 +340,7 @@ class FontEncrypt:
                 font_stream = BytesIO()
                 fb.save(font_stream)
                 # print(plain_text, html_entities)
-                print(f"write {font_path}")
+                # print(f"write {font_path}")
 
                 new_epub.writestr(font_path, font_stream.getvalue())
                 text_list = list(plain_text)
@@ -376,7 +382,7 @@ class FontEncrypt:
                         # print(f"ori_text:{ori_text}\nnew_text:{new_text}")
                         tag.clear()  # 清空当前标签内容
                         tag.append(parsed_new_text)  # 插入新的内容
-                        print(tag.get_text(strip=True))
+                        # print(tag.get_text(strip=True))
                 formatted_html = soup.prettify(formatter="html")
                 new_epub.writestr(one_html, formatted_html.encode('utf-8'))
             for item in self.ori_files:
@@ -385,10 +391,46 @@ class FontEncrypt:
                         content = f.read()
                     new_epub.writestr(item, content)
 
+    def read_unchanged_fonts(self,font_file_mapping=None):
+       self.font_to_unchanged_file_mapping = font_file_mapping if font_file_mapping else {}
 
 if __name__ == '__main__':
-    fe = FontEncrypt('test.epub', './dist')
+    epub_read_path = input("1、请输入EPUB文件路径（如：./test.epub）：")
+    file_write_dir = input(
+        "2、请输入输出文件夹路径（如：./dist）：")
+    fe = FontEncrypt(epub_read_path, file_write_dir)
     fe.get_mapping()
     fe.clean_text()
-    fe.encrypt_font()
-    fe.read_html()
+    the_font_file_mapping = {}
+    print(f"3、此EPUB文件包含{len(fe.fonts)}个字体文件:\n{'\n'.join(fe.fonts)}")
+    for font_file in fe.fonts:
+        if font_file in fe.font_to_char_mapping.keys():
+            raw_input = None 
+            while True:
+                raw_input= input(
+                    f"请输入字体文件{font_file}对应的文件路径（如：./font/font.ttf）或输入 Q/q 跳过：")
+                if raw_input.lower() == 'q':
+                    print(f"跳过{font_file}的映射")
+                    break
+                raw_input = raw_input.strip()
+                raw_input = os.path.normpath(raw_input)
+                if os.path.exists(raw_input):
+                    the_font_file_mapping[font_file] = raw_input
+                    print(f"已将{font_file}映射到{raw_input}")
+                    break
+                else:
+                    print(f"文件{raw_input}不存在，请重新输入")
+                    continue
+    fe.read_unchanged_fonts(the_font_file_mapping)
+    try:
+        fe.encrypt_font()
+        print("4、字体加密成功")
+    except Exception as e:
+        print(f"4、字体加密失败，错误信息：{e}")
+        exit(1)
+    try:
+        fe.read_html()
+        print("5、EPUB文件处理成功")
+    except Exception as e:
+        print(f"5、EPUB文件处理失败，错误信息：{e}")
+        exit(1)
