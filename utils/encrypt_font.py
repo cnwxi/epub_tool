@@ -12,7 +12,12 @@ from io import BytesIO
 import random
 import traceback
 import html
-# from tkinter import filedialog
+try:
+    from utils.log import logwriter
+except:
+    from log import logwriter
+
+logger = logwriter()
 
 class FontEncrypt:
 
@@ -26,12 +31,12 @@ class FontEncrypt:
             if os.path.isfile(output_path):
                 raise Exception("输出路径不能是文件")
             if not os.path.exists(output_path):
-                raise Exception("输出路径不存在")
+                raise Exception(f"输出路径{output_path}不存在")
         else:
             output_path=os.path.dirname(epub_path)
-            print(f"输出路径不存在，使用默认路径：{output_path}")
+            logger.write(f"输出路径不存在，使用默认路径：{output_path}")
         self.output_path = os.path.normpath(output_path)
-        self.file_write_path=os.path.join(self.output_path, self.epub_path.lower().split('/')[-1].replace('.epub','_font_encrypt.epub'))
+        self.file_write_path=os.path.join(self.output_path, os.path.basename(self.epub_path).replace('.epub','_font_encrypt.epub'))
         if os.path.exists(self.file_write_path):
             os.remove(self.file_write_path)
         self.htmls = []
@@ -84,7 +89,7 @@ class FontEncrypt:
                             font_face_rules.append(tmp_list)
         mapping = {}
         for font in self.fonts:
-            font_name = font.split('/')[-1]
+            font_name = os.path.basename(font)
             for j in font_face_rules:
                 if font_name in j[1]:
                     font_family = j[0].split(':')[1].strip().replace(
@@ -323,7 +328,7 @@ class FontEncrypt:
                     # print('shadow_cmap_name', shadow_cmap_name)
                 except KeyError:
                     # 遇到基础字库不存在的字会出现这种错误
-                    print("请勿进行字体子集化，使用完整字体文件，或者使用其他字体")
+                    logger.write("请勿进行字体子集化，使用完整字体文件，或者使用其他字体")
                     traceback.print_exc()
 
                 final_shadow_text += [shadow_cmap_name]
@@ -371,9 +376,6 @@ class FontEncrypt:
 
     def read_html(self):
         for one_html in self.htmls:
-            # if one_html.split('/')[-1] != "Chapter01.xhtml":
-            #     # print(html)
-            #     continue
             with self.epub.open(one_html) as f:
                 content = f.read().decode('utf-8')
             soup = BeautifulSoup(content, 'html.parser')
@@ -417,7 +419,6 @@ if __name__ == '__main__':
         "2、请输入输出文件夹路径（如：./dist）：")
     fe = FontEncrypt(epub_read_path, file_write_dir)
     fe.get_mapping()
-    fe.clean_text()
     the_font_file_mapping = {}
     print(f"3、此EPUB文件包含{len(fe.fonts)}个字体文件:\n{'\n'.join(fe.fonts)}")
     for i,font_file in enumerate(fe.fonts):
@@ -439,6 +440,7 @@ if __name__ == '__main__':
                     print(f"文件{raw_input}不存在，请重新输入")
                     continue
     fe.read_unchanged_fonts(the_font_file_mapping)
+    fe.clean_text()
     try:
         fe.encrypt_font()
         print("4、字体加密成功")
