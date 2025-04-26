@@ -691,7 +691,7 @@ def run_font_encrypt():
                 "end",
                 values=(
                     "^_^",
-                    os.path.basename(file_path),
+                    os.path.basename(file_path).rsplit(".", 1)[0],
                     outdir,
                     "成功",
                     f"字体加密成功，输出路径：{outdir}",
