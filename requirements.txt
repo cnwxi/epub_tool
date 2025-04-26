@@ -3,3 +3,4 @@ emoji
 fonttools
 tinycss2
 tqdm
+pillow
