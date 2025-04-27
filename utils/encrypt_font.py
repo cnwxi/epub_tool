@@ -421,10 +421,11 @@ class FontEncrypt:
 
 def run_epub_font_encrypt(epub_path, output_path):
     fe = FontEncrypt(epub_path, output_path)
-    logger.write(f"此EPUB文件包含{len(fe.fonts)}个字体文件:\n{'\n'.join(fe.fonts)}")
+    logger.write(f"\n正在尝试加密EPUB字体: {epub_path}")
     if len(fe.fonts) == 0:
         logger.write("没有找到字体文件，退出")
         return "skip"
+    logger.write(f"此EPUB文件包含{len(fe.fonts)}个字体文件: {', '.join(fe.fonts)}")
     fe.get_mapping()
     fe.clean_text()
     try:

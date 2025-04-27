@@ -254,7 +254,10 @@ def open_selected_file_dir():
 context_menu = tk.Menu(file_list, tearoff=0)
 context_menu.add_command(label="打开所在文件夹", command=open_selected_file_dir)
 context_menu.add_command(label="删除选中文件", command=delete_selected)
-file_list.bind("<Button-3>", show_context_menu)
+if sys.platform.startswith("win"):
+    file_list.bind("<Button-3>", show_context_menu)
+elif sys.platform.startswith("darwin"):
+    file_list.bind("<Button-2>", show_context_menu)
 
 
 class Tooltip:
@@ -633,128 +636,6 @@ def run_font_encrypt():
         progress["value"] += 1
         root.update_idletasks()
 
-        # sub_window = tk.Toplevel(root)
-        # sub_window.title("字体映射")
-        # sub_window.geometry("500x400")
-        # sub_window.minsize(500, 400)
-        # sub_label_frame = ttk.Frame(sub_window)
-        # sub_label_frame.pack(pady=10)
-        # sub_label = ttk.Label(
-        #     sub_label_frame,
-        #     text="请为每个字体文件选择对应的字体文件路径：\n（若已对内嵌字体进行过字体子集化，请不要跳过此流程）",
-        # )
-        # sub_label.pack(pady=10, padx=10)
-        # sub_label.config(font=("TkDefaultFont", 12, "bold"), justify="center")
-
-    # def select_font_file(font_file, parent_window, status_label):
-    #     file_path = filedialog.askopenfilename(
-    #         title=f"选择 {font_file} 对应字体文件",
-    #         filetypes=[("字体文件", "*.ttf *.otf"), ("所有文件", "*.*")],
-    #     )
-    #     root.update_idletasks()
-    #     if file_path:
-    #         file_path = os.path.normpath(file_path)
-    #         if os.path.exists(file_path):
-    #             the_font_file_mapping[font_file] = file_path
-    #             # print(f"已将 {font_file} 映射到 {file_path}")
-    #             status_label.config(
-    #                 text=f"已映射到 {os.path.basename(file_path)}"
-    #             )  # 更新状态标签
-    #         else:
-    #             pass
-    #     else:
-    #         pass
-
-    # canvas = tk.Canvas(sub_window)
-    # scrollbar = ttk.Scrollbar(sub_window, orient="vertical", command=canvas.yview)
-    # scrollable_frame = ttk.Frame(canvas)
-
-    # # 配置 Canvas
-    # scrollable_frame.bind(
-    #     "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-    # )
-
-    # canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-    # canvas.configure(yscrollcommand=scrollbar.set)
-
-    # # 布局 Canvas 和 Scrollbar
-    # canvas.pack(side="left", fill="both", expand=True)
-    # scrollbar.pack(side="right", fill="y",)
-    # # 绑定鼠标滚轮事件
-    # def on_mousewheel(event):
-    #     canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    # canvas.bind_all("<MouseWheel>", on_mousewheel)  # Windows 鼠标滚轮
-    # canvas.bind_all("<Button-4>", on_mousewheel)   # Linux 向上滚动
-    # canvas.bind_all("<Button-5>", on_mousewheel)   # Linux 向下滚动
-    # for i, font_file in enumerate(fe.fonts):
-    #     if font_file in fe.font_to_char_mapping.keys():
-    #         frame = ttk.Frame(scrollable_frame)
-    #         frame.pack(fill="x", pady=5)
-
-    #         label = tk.Label(frame, text=f"字体文件: {font_file}")
-    #         label.pack(side="left", padx=5)
-
-    #         status_label = tk.Label(frame, text="未映射")  # 初始化状态
-    #         status_label.pack(side="right", padx=5)
-
-    #         font_select_btn = ttk.Button(
-    #             frame,
-    #             text="选择字体文件",
-    #             command=lambda f=font_file, s=status_label: select_font_file(
-    #                 f, sub_window, s
-    #             ),
-    #         )
-    #         font_select_btn.pack(side="left", padx=5)
-    # progress["value"] += 1
-    # root.update_idletasks()
-
-    # bottom_frame = ttk.Frame(scrollable_frame)
-    # # bottom_frame = ttk.Frame(sub_window)
-    # bottom_frame.pack(side="bottom", fill="x", pady=10)
-    # encrypt_btn = ttk.Button(
-    #     bottom_frame,
-    #     text="开始加密",
-    #     command=lambda: start_font_encrypt(fe, the_font_file_mapping),
-    # )
-    # encrypt_btn.pack(fill='x',padx=5,pady=5)
-    
-    # sub_window.protocol("WM_DELETE_WINDOW", lambda: sub_window.destroy())
-
-    # # def start_font_encrypt(fe, font_mapping):
-    # #     # print(font_mapping)
-    # #     if len(font_mapping) != len(fe.fonts):
-    # #         messagebox.showwarning("Warning", "未指定所有字体文件")
-    # #         # progress["value"] = 0
-    # #         # root.update_idletasks()
-    # #         # return
-    # #     try:
-    # #         sub_window.destroy()
-    # #         fe.read_unchanged_fonts(font_mapping)
-    # #         fe.encrypt_font()
-    # #         fe.read_html()
-    # #         fe.close_file()
-    # #         # messagebox.showinfo("Success", "字体加密成功！")
-    # #         if defalut_output_dir == None:
-    # #             outdir = os.path.dirname(file_path)
-    # #         result_list.insert(
-    # #             "",
-    # #             "end",
-    # #             values=(
-    # #                 "^_^",
-    # #                 os.path.basename(file_path).rsplit(".", 1)[0],
-    # #                 outdir,
-    # #                 "成功",
-    # #                 f"字体加密成功，输出路径：{outdir}",
-    # #             ),
-    # #         )
-    # #     except Exception as e:
-    # #         fe.close_file()
-    # #         # messagebox.showerror("Error", f"字体加密失败: {e}")
-    #     progress["value"] += 1
-    #     root.update_idletasks()
-
-
 font_encrypt_btn = ttk.Button(
     op_frame,
     text="字体加密",
@@ -811,6 +692,24 @@ def show_context_menu_result(event):
         result_list.selection_set(item)
         context_menu_result.post(event.x_root, event.y_root)
 
+def open_log_file():
+    log_path=os.path.join(
+            os.path.dirname(os.path.abspath(sys.argv[0])), "log.txt"
+        )
+    if os.path.exists(log_path):
+        try:
+            if sys.platform.startswith("darwin"):  # macOS
+                subprocess.run(["open", log_path])
+            elif os.name == "nt":  # Windows
+                os.startfile(log_path)
+            elif os.name == "posix":  # Linux
+                subprocess.run(["xdg-open", log_path])
+            else:
+                messagebox.showerror("Warning", "不支持的操作系统")
+        except Exception as e:
+            messagebox.showerror("Warning", f"无法打开路径: {e}")
+    else:
+        messagebox.showwarning("Warning", f"文件不存在: {log_path}")
 
 def open_selected_file_output_dir():
     selected_items = result_list.selection()
@@ -841,8 +740,14 @@ context_menu_result = tk.Menu(result_list, tearoff=0)
 context_menu_result.add_command(
     label="打开输出文件夹", command=open_selected_file_output_dir
 )
+context_menu_result.add_command(
+    label="打开日志文件", command=open_log_file
+)
 
-result_list.bind("<Button-3>", show_context_menu_result)
+if sys.platform.startswith('win'):
+    result_list.bind("<Button-3>", show_context_menu_result)
+elif sys.platform.startswith('darwin'):
+    result_list.bind("<Button-2>", show_context_menu_result)
 
 
 # 创建垂直 Scrollbar

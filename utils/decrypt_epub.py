@@ -896,7 +896,7 @@ def epub_sources():
 
 def run(epub_src, output_path=None):
     try:
-        logger.write(f"正在尝试重构EPUB {epub_src}")
+        logger.write(f"\n正在尝试解密EPUB: {epub_src}")
         if epub_src.lower().endswith("_decrypt.epub"):
             logger.write("警告: 该文件已解密，无需再次处理！")
             return "skip"
