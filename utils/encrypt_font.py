@@ -34,7 +34,7 @@ class FontEncrypt:
                 raise Exception(f"输出路径{output_path}不存在")
         else:
             output_path=os.path.dirname(epub_path)
-            logger.write(f"输出路径不存在，使用默认路径：{output_path}")
+            logger.write(f"输出路径不存在，使用默认路径: {output_path}")
         self.output_path = os.path.normpath(output_path)
         self.file_write_path=os.path.join(self.output_path, os.path.basename(self.epub_path).replace('.epub','_font_encrypt.epub'))
         if os.path.exists(self.file_write_path):
@@ -171,9 +171,9 @@ class FontEncrypt:
         self.find_local_fonts_mapping()
         self.find_selector_to_font_mapping()
         self.find_char_mapping()
-        logger.write(f"字体文件映射：{self.font_to_font_family_mapping}")
-        logger.write(f"CSS选择器映射：{self.css_selector_to_font_mapping}")
-        logger.write(f"字体文件到字符映射：{self.font_to_char_mapping}")
+        logger.write(f"字体文件映射: {self.font_to_font_family_mapping}")
+        logger.write(f"CSS选择器映射: {self.css_selector_to_font_mapping}")
+        logger.write(f"字体文件到字符映射: {self.font_to_char_mapping}")
         return self.font_to_font_family_mapping, self.css_selector_to_font_mapping, self.font_to_char_mapping
 
     def clean_text(self):
@@ -187,7 +187,7 @@ class FontEncrypt:
                 r'[^\u4e00-\u9fa5a-zA-Z0-9]', '', text)
             self.font_to_char_mapping[key] = emoji.replace_emoji(text,
                                                                  replace='')
-        logger.write(f"清理后的文本：{self.font_to_char_mapping}")
+        logger.write(f"清理后的文本: {self.font_to_char_mapping}")
 
     # 修改自https://github.com/solarhell/fontObfuscator
     def ensure_cmap_has_all_text(self, cmap: dict, s: str) -> bool:
@@ -372,7 +372,7 @@ class FontEncrypt:
             for a0, a1 in zip(text_list, html_entities):
                 replace_table[a0] = a1
             self.font_to_char_mapping[font_path] = replace_table
-            logger.write(f"字体文件{font_path}的加密映射：\n{replace_table}")
+            logger.write(f"字体文件{font_path}的加密映射: \n{replace_table}")
 
     def close_file(self):
         self.epub.close()
@@ -414,36 +414,40 @@ class FontEncrypt:
                     content = f.read()
                 self.target_epub.writestr(item, content,zipfile.ZIP_DEFLATED)
         self.close_file()
-        logger.write(f"EPUB文件处理完成，输出文件路径：{self.file_write_path}")
+        logger.write(f"EPUB文件处理完成，输出文件路径: {self.file_write_path}")
 
     # def read_unchanged_fonts(self,font_file_mapping=None):
     #    self.font_to_unchanged_file_mapping = font_file_mapping if font_file_mapping else {}
 
 def run_epub_font_encrypt(epub_path, output_path):
     fe = FontEncrypt(epub_path, output_path)
+    logger.write(f"此EPUB文件包含{len(fe.fonts)}个字体文件:\n{'\n'.join(fe.fonts)}")
+    if len(fe.fonts) == 0:
+        logger.write("没有找到字体文件，退出")
+        return "skip"
     fe.get_mapping()
     fe.clean_text()
     try:
         fe.encrypt_font()
         logger.write("字体加密成功")
     except Exception as e:
-        logger.write(f"字体加密失败，错误信息：{e}")
+        logger.write(f"字体加密失败，错误信息: {e}")
         fe.close_file()
-        return f"字体加密失败，错误信息：{e}"
+        return f"字体加密失败，错误信息: {e}"
     try:
         fe.read_html()
         logger.write("EPUB文件处理成功")
         fe.close_file()
     except Exception as e:
-        logger.write(f"EPUB文件处理失败，错误信息：{e}")
+        logger.write(f"EPUB文件处理失败，错误信息: {e}")
         fe.close_file()
-        return f"EPUB文件处理失败，错误信息：{e}"
+        return f"EPUB文件处理失败，错误信息: {e}"
     return 0
 
 if __name__ == '__main__':
-    epub_read_path = input("1、请输入EPUB文件路径（如：./test.epub）：")
+    epub_read_path = input("1、请输入EPUB文件路径（如: ./test.epub）: ")
     file_write_dir = input(
-        "2、请输入输出文件夹路径（如：./dist）：")
+        "2、请输入输出文件夹路径（如: ./dist）: ")
     fe = FontEncrypt(epub_read_path, file_write_dir)
     fe.get_mapping()
     # the_font_file_mapping = {}
@@ -453,7 +457,7 @@ if __name__ == '__main__':
     #         raw_input = None 
     #         while True:
     #             raw_input= input(
-    #                 f"3.{i+1}、请输入字体文件{font_file}对应的文件路径（如：./font/font.ttf）或输入 Q/q 跳过：\n（若已对内嵌字体进行过字体子集化，请不要跳过此流程）\n")
+    #                 f"3.{i+1}、请输入字体文件{font_file}对应的文件路径（如: ./font/font.ttf）或输入 Q/q 跳过: \n（若已对内嵌字体进行过字体子集化，请不要跳过此流程）\n")
     #             if raw_input.lower() == 'q':
     #                 print(f"跳过{font_file}的映射")
     #                 break
@@ -472,13 +476,13 @@ if __name__ == '__main__':
         fe.encrypt_font()
         print("4、字体加密成功")
     except Exception as e:
-        print(f"4、字体加密失败，错误信息：{e}")
+        print(f"4、字体加密失败，错误信息: {e}")
         fe.close_file()
         exit(1)
     try:
         fe.read_html()
         print("5、EPUB文件处理成功")
     except Exception as e:
-        print(f"5、EPUB文件处理失败，错误信息：{e}")
+        print(f"5、EPUB文件处理失败，错误信息: {e}")
         fe.close_file()
         exit(1)

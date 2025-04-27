@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # !/usr/bin/env python
-# 源码：sigil吧ID：遥遥心航
-# 二改：cnwxi
+# 源码: sigil吧ID: 遥遥心航
+# 二改: cnwxi
 
 import zipfile
 import re, sys
@@ -10,6 +10,7 @@ from urllib.parse import unquote
 from xml.etree import ElementTree
 import os
 import hashlib
+
 try:
     from utils.log import logwriter
 except:
@@ -238,7 +239,7 @@ class EpubTool:
                     .replace("\r", "")
                     .replace("\t", "")
                 )
-                logger.write(f"item:{str_item} error:{e}")
+                logger.write(f"item: {str_item} error: {e}")
                 if_error = True
                 continue
             mime = item.get("media-type")
@@ -364,7 +365,7 @@ class EpubTool:
 
     def create_tgt_epub(self):
         output_path = self.output_path
-        logger.write(f"输出路径：{output_path}")
+        logger.write(f"输出路径: {output_path}")
         return zipfile.ZipFile(
             path.join(output_path, self.epub_name.replace(".epub", "_encrypt.epub")),
             "w",
@@ -852,14 +853,14 @@ def epub_sources():
 
 def run(epub_src, output_path=None):
     try:
-        logger.write("%s 正在尝试重构EPUB" % epub_src)
+        logger.write(f"正在尝试重构EPUB {epub_src}")
         if epub_src.lower().endswith("_encrypt.epub"):
-            logger.write("警告：该文件已加密，无需再次处理！")
+            logger.write("警告: 该文件已加密，无需再次处理！")
             return "skip"
         epub = EpubTool(epub_src)
         epub.set_output_path(output_path)
         if epub.encrypted == True:
-            logger.write("警告：该文件已加密，无需再次处理！")
+            logger.write("警告: 该文件已加密，无需再次处理！")
             return "skip"
         epub.restructure()  # 重构
         el = epub.errorLink_log.copy()
@@ -876,51 +877,52 @@ def run(epub_src, output_path=None):
             logger.write("-------在 OPF文件 发现问题------:")
             for error_type, error_value in epub.errorOPF_log:
                 if error_type == "duplicate_id":
-                    logger.write("问题：发现manifest节点内部存在重复ID %s !!!" % error_value)
-                    logger.write("措施：已自动清除重复ID对应的manifest项。")
-                elif error_type == "invalid_idref":
-                    logger.write("问题：发现spine节点内部存在无效引用ID %s !!!" % error_value)
                     logger.write(
-                        "措施：请自行检查spine内的itemref节点并手动修改，确保引用的ID存在于manifest的item项。\n"
-                        + "      （大小写不一致也会导致引用无效。）"
+                        f"问题: 发现manifest节点内部存在重复ID {error_value} !!!"
+                    )
+                    logger.write("措施: 已自动清除重复ID对应的manifest项。")
+                elif error_type == "invalid_idref":
+                    logger.write(
+                        f"问题: 发现spine节点内部存在无效引用ID {error_value} !!!"
+                    )
+                    logger.write(
+                        "措施: 请自行检查spine内的itemref节点并手动修改，确保引用的ID存在于manifest的item项。\n大小写不一致也会导致引用无效。）"
                     )
                 elif error_type == "xhtml_not_in_spine":
                     logger.write(
-                        "问题：发现ID为 %s 的文件manifest中登记为application/xhtml+xml类型，但不被spine节点的项所引用"
-                        % error_value
+                        f"问题: 发现ID为 {error_value} 的文件manifest中登记为application/xhtml+xml类型，但不被spine节点的项所引用"
                     )
                     logger.write(
-                        "措施：自行检查该文件是否需要被spine引用。部分阅读器中，如果存在xhtml文件不被spine引用，可能导致epub无法打开。"
+                        f"措施: 自行检查该文件是否需要被spine引用。部分阅读器中，如果存在xhtml文件不被spine引用，可能导致epub无法打开。"
                     )
 
         if el:
             for file_path, log in el.items():
                 basename = path.basename(file_path)
-                logger.write("-----在 %s 发现问题链接-----:" % basename)
+                logger.write(f"-----在 {basename} 发现问题链接-----:")
                 for href, correct_path in log:
                     if correct_path is not None:
                         logger.write(
-                            "链接：%s\n问题：与实际文件名大小写不一致！\n措施：程序已自动纠正链接。"
-                            % href
+                            f"链接: {href}\n问题: 与实际文件名大小写不一致！\n措施: 程序已自动纠正链接。"
                         )
                     else:
-                        logger.write("链接：%s\n问题：未能找到对应文件！！！" % href)
+                        logger.write(f"链接: {href}\n问题: 未能找到对应文件！！！")
     except Exception as e:
-        logger.write("%s 重构EPUB失败：%s" % (epub_src, e))
+        logger.write(f"{epub_src} 重构EPUB失败: {e}")
         return e
     else:
-        logger.write("%s 重构EPUB成功" % epub_src)
+        logger.write(f"{epub_src} 重构EPUB成功")
     return 0
 
 
 def main():
-    epub_src = input("【使用说明】请把EPUB文件拖曳到本窗口上（输入'e'退出）：")
+    epub_src = input("【使用说明】请把EPUB文件拖曳到本窗口上（输入'e'退出）")
     epub_src = epub_src.strip("'").strip('"').strip()
     if epub_src.lower() == "e":
         print("程序已退出")
         sys.exit()
     if not os.path.isfile(epub_src):
-        print("错误：找不到指定的EPUB文件，请确认文件路径是否正确并重新输入！")
+        print("错误: 找不到指定的EPUB文件，请确认文件路径是否正确并重新输入！")
         return
     ret = run(epub_src)
     if ret == "skip":

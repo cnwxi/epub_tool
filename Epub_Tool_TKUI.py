@@ -540,21 +540,21 @@ op_frame = ttk.Frame(root)
 op_frame.pack(padx=10, pady=5)
 reformat_btn = ttk.Button(
     op_frame,
-    text="批量格式化",
+    text="格式化",
     command=lambda: start_progress(reformat_run, "格式化", defalut_output_dir),
 )
 reformat_btn.pack(side=tk.LEFT, padx=5)
 
 decrypt_btn = ttk.Button(
     op_frame,
-    text="批量文件名解密",
+    text="文件名解密",
     command=lambda: start_progress(decrypt_run, "解密", defalut_output_dir),
 )
 decrypt_btn.pack(side=tk.LEFT, padx=5)
 
 encrypt_btn = ttk.Button(
     op_frame,
-    text="批量文件名加密",
+    text="文件名加密",
     command=lambda: start_progress(encrypt_run, "加密", defalut_output_dir),
 )
 encrypt_btn.pack(side=tk.LEFT, padx=5)
@@ -591,6 +591,18 @@ def run_font_encrypt():
                         outdir,
                         "成功",
                         f"字体加密成功，输出路径：{outdir}",
+                    ),
+                )
+            elif ret == "skip":
+                result_list.insert(
+                    "",
+                    "end",
+                    values=(
+                        "O_o",
+                        file_name,
+                        outdir,
+                        "跳过",
+                        f"无字体文件，跳过字体加密操作",
                     ),
                 )
             else:
@@ -745,7 +757,7 @@ def run_font_encrypt():
 
 font_encrypt_btn = ttk.Button(
     op_frame,
-    text="批量字体加密",
+    text="字体加密",
     command=run_font_encrypt,
 )
 font_encrypt_btn.pack(side=tk.LEFT, padx=5)
