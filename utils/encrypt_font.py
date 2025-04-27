@@ -47,7 +47,7 @@ class FontEncrypt:
         self.font_to_font_family_mapping = {}
         self.css_selector_to_font_mapping = {}
         self.font_to_char_mapping = {}
-        self.font_to_unchanged_file_mapping = {}
+        # self.font_to_unchanged_file_mapping = {}
         self.target_epub = None
         for file in self.epub.namelist():
             if file.lower().endswith('.html') or file.endswith('.xhtml'):
@@ -171,6 +171,9 @@ class FontEncrypt:
         self.find_local_fonts_mapping()
         self.find_selector_to_font_mapping()
         self.find_char_mapping()
+        logger.write(f"字体文件映射：{self.font_to_font_family_mapping}")
+        logger.write(f"CSS选择器映射：{self.css_selector_to_font_mapping}")
+        logger.write(f"字体文件到字符映射：{self.font_to_char_mapping}")
         return self.font_to_font_family_mapping, self.css_selector_to_font_mapping, self.font_to_char_mapping
 
     def clean_text(self):
@@ -184,6 +187,7 @@ class FontEncrypt:
                 r'[^\u4e00-\u9fa5a-zA-Z0-9]', '', text)
             self.font_to_char_mapping[key] = emoji.replace_emoji(text,
                                                                  replace='')
+        logger.write(f"清理后的文本：{self.font_to_char_mapping}")
 
     # 修改自https://github.com/solarhell/fontObfuscator
     def ensure_cmap_has_all_text(self, cmap: dict, s: str) -> bool:
@@ -197,57 +201,58 @@ class FontEncrypt:
                 exsit_chars.append(char)
         return missing_chars, ''.join(exsit_chars)
 
-    def is_cjk_font(self, font):
-        """
-        判断字体文件是否包含CJK字符。
+    # def is_cjk_font(self, font):
+    #     """
+    #     判断字体文件是否包含CJK字符。
         
-        :param font_path: 字体文件路径
-        :return: 如果字体包含CJK字符返回True，否则返回False
-        """
-        # 加载字体文件
-        # font = TTFont(font_io)
+    #     :param font_path: 字体文件路径
+    #     :return: 如果字体包含CJK字符返回True，否则返回False
+    #     """
+    #     # 加载字体文件
+    #     # font = TTFont(font_io)
 
-        # 获取所有字符映射表
-        cmap_tables = font['cmap'].tables
+    #     # 获取所有字符映射表
+    #     cmap_tables = font['cmap'].tables
 
-        # 定义CJK字符的Unicode范围
-        cjk_ranges = [
-            (0x4E00, 0x9FFF),  # CJK Unified Ideographs
-            # (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
-            # (0x20000, 0x2A6DF),  # CJK Unified Ideographs Extension B
-            # (0x2A700, 0x2B73F),  # CJK Unified Ideographs Extension C
-            # (0x2B740, 0x2B81F),  # CJK Unified Ideographs Extension D
-            # (0x2B820, 0x2CEAF),  # CJK Unified Ideographs Extension E
-            # (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
-            # (0x2F800, 0x2FA1F)  # CJK Compatibility Ideographs Supplement
-        ]
-        # 遍历所有字符映射表
-        for table in cmap_tables:
-            # 获取当前表中的字符到字形名称的映射
-            char_to_glyph = table.cmap
+    #     # 定义CJK字符的Unicode范围
+    #     cjk_ranges = [
+    #         (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+    #         # (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
+    #         # (0x20000, 0x2A6DF),  # CJK Unified Ideographs Extension B
+    #         # (0x2A700, 0x2B73F),  # CJK Unified Ideographs Extension C
+    #         # (0x2B740, 0x2B81F),  # CJK Unified Ideographs Extension D
+    #         # (0x2B820, 0x2CEAF),  # CJK Unified Ideographs Extension E
+    #         # (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
+    #         # (0x2F800, 0x2FA1F)  # CJK Compatibility Ideographs Supplement
+    #     ]
+    #     # 遍历所有字符映射表
+    #     for table in cmap_tables:
+    #         # 获取当前表中的字符到字形名称的映射
+    #         char_to_glyph = table.cmap
 
-            # 检查是否存在CJK范围内的字符
-            available_ranges = []
-            for code_point in char_to_glyph.keys():
-                if any(start <= code_point <= end
-                       for start, end in cjk_ranges):
-                    available_ranges.append(code_point)
-            if len(available_ranges) > 0:
-                # 如果找到CJK字符，返回True
-                # print(f"找到CJK字符: {available_ranges}")
-                return True, available_ranges
+    #         # 检查是否存在CJK范围内的字符
+    #         available_ranges = []
+    #         for code_point in char_to_glyph.keys():
+    #             if any(start <= code_point <= end
+    #                    for start, end in cjk_ranges):
+    #                 available_ranges.append(code_point)
+    #         if len(available_ranges) > 0:
+    #             # 如果找到CJK字符，返回True
+    #             # print(f"找到CJK字符: {available_ranges}")
+    #             return True, available_ranges
 
-        return False, None  # 未找到CJK字符
+    #     return False, None  # 未找到CJK字符
 
     # 修改自https://github.com/solarhell/fontObfuscator
     def encrypt_font(self):
         self.create_target_epub()
         for i, (font_path, plain_text) in enumerate(
                 self.font_to_char_mapping.items()):
-            if font_path in self.font_to_unchanged_file_mapping.keys():
-                original_font = TTFont(self.font_to_unchanged_file_mapping[font_path])
-            else:
-                original_font = TTFont(BytesIO(self.epub.read(font_path)))
+            # if font_path in self.font_to_unchanged_file_mapping.keys():
+            #     original_font = TTFont(self.font_to_unchanged_file_mapping[font_path])
+            # else:
+            #     original_font = TTFont(BytesIO(self.epub.read(font_path)))
+            original_font = TTFont(BytesIO(self.epub.read(font_path)))
             name_table = original_font['name']
             # 提取 FAMILY_NAME 和 STYLE_NAME
             family_name = None
@@ -268,7 +273,7 @@ class FontEncrypt:
             if style_name is None:
                 style_name = 'Regular'
             # print(family_name, style_name)
-            cjk_flag, available_ranges = self.is_cjk_font(original_font)
+            # cjk_flag, available_ranges = self.is_cjk_font(original_font)
             # if cjk_flag:
             #     print('包含CJK编码')
             # else:
@@ -285,16 +290,15 @@ class FontEncrypt:
             miss_char, plain_text = self.ensure_cmap_has_all_text(
                 original_cmap, plain_text)
             if len(miss_char) > 0:
-                print(f'字体文件{font_path}缺少字符{miss_char}')
-
+                logger.write(f'字体文件{font_path}缺少字符{miss_char}')
+            available_ranges= [ord(char) for char in plain_text]
             glyphs, metrics, cmap = {}, {}, {}
             private_codes = random.sample(range(0xAC00, 0xD7AF),
                                             len(plain_text))
             # print(len(private_codes), len(available_ranges),len(plain_text))
             # print(plain_text)
-            cjk_codes = random.sample(available_ranges, len(plain_text))
-            # private_chars = [chr(code) for code in private_codes]
-            # cjk_chars = [chr(code) for code in cjk_codes]
+            cjk_codes = random.sample(available_ranges, len(plain_text)) # 打乱原编码映射
+
             glyph_set = original_font.getGlyphSet()
 
             pen = TTGlyphPen(glyph_set)
@@ -324,11 +328,11 @@ class FontEncrypt:
             for index, plain in enumerate(plain_text):
 
                 try:
-                    shadow_cmap_name = original_cmap[cjk_codes[index]]
+                    shadow_cmap_name = original_cmap[cjk_codes[index]] # 
                     # print('shadow_cmap_name', shadow_cmap_name)
                 except KeyError:
                     # 遇到基础字库不存在的字会出现这种错误
-                    logger.write("请勿进行字体子集化，使用完整字体文件，或者使用其他字体")
+                    logger.write(f"字体文件缺少字符，unicode:{cjk_codes[index]}，请检查")
                     traceback.print_exc()
 
                 final_shadow_text += [shadow_cmap_name]
@@ -368,6 +372,7 @@ class FontEncrypt:
             for a0, a1 in zip(text_list, html_entities):
                 replace_table[a0] = a1
             self.font_to_char_mapping[font_path] = replace_table
+            logger.write(f"字体文件{font_path}的加密映射：\n{replace_table}")
 
     def close_file(self):
         self.epub.close()
@@ -409,9 +414,31 @@ class FontEncrypt:
                     content = f.read()
                 self.target_epub.writestr(item, content,zipfile.ZIP_DEFLATED)
         self.close_file()
+        logger.write(f"EPUB文件处理完成，输出文件路径：{self.file_write_path}")
 
-    def read_unchanged_fonts(self,font_file_mapping=None):
-       self.font_to_unchanged_file_mapping = font_file_mapping if font_file_mapping else {}
+    # def read_unchanged_fonts(self,font_file_mapping=None):
+    #    self.font_to_unchanged_file_mapping = font_file_mapping if font_file_mapping else {}
+
+def run_epub_font_encrypt(epub_path, output_path):
+    fe = FontEncrypt(epub_path, output_path)
+    fe.get_mapping()
+    fe.clean_text()
+    try:
+        fe.encrypt_font()
+        logger.write("字体加密成功")
+    except Exception as e:
+        logger.write(f"字体加密失败，错误信息：{e}")
+        fe.close_file()
+        return f"字体加密失败，错误信息：{e}"
+    try:
+        fe.read_html()
+        logger.write("EPUB文件处理成功")
+        fe.close_file()
+    except Exception as e:
+        logger.write(f"EPUB文件处理失败，错误信息：{e}")
+        fe.close_file()
+        return f"EPUB文件处理失败，错误信息：{e}"
+    return 0
 
 if __name__ == '__main__':
     epub_read_path = input("1、请输入EPUB文件路径（如：./test.epub）：")
@@ -419,27 +446,27 @@ if __name__ == '__main__':
         "2、请输入输出文件夹路径（如：./dist）：")
     fe = FontEncrypt(epub_read_path, file_write_dir)
     fe.get_mapping()
-    the_font_file_mapping = {}
+    # the_font_file_mapping = {}
     print(f"3、此EPUB文件包含{len(fe.fonts)}个字体文件:\n{'\n'.join(fe.fonts)}")
-    for i,font_file in enumerate(fe.fonts):
-        if font_file in fe.font_to_char_mapping.keys():
-            raw_input = None 
-            while True:
-                raw_input= input(
-                    f"3.{i+1}、请输入字体文件{font_file}对应的文件路径（如：./font/font.ttf）或输入 Q/q 跳过：\n（若已对内嵌字体进行过字体子集化，请不要跳过此流程）\n")
-                if raw_input.lower() == 'q':
-                    print(f"跳过{font_file}的映射")
-                    break
-                raw_input = raw_input.strip()
-                raw_input = os.path.normpath(raw_input)
-                if os.path.exists(raw_input):
-                    the_font_file_mapping[font_file] = raw_input
-                    print(f"已将{font_file}映射到{raw_input}")
-                    break
-                else:
-                    print(f"文件{raw_input}不存在，请重新输入")
-                    continue
-    fe.read_unchanged_fonts(the_font_file_mapping)
+    # for i,font_file in enumerate(fe.fonts):
+    #     if font_file in fe.font_to_char_mapping.keys():
+    #         raw_input = None 
+    #         while True:
+    #             raw_input= input(
+    #                 f"3.{i+1}、请输入字体文件{font_file}对应的文件路径（如：./font/font.ttf）或输入 Q/q 跳过：\n（若已对内嵌字体进行过字体子集化，请不要跳过此流程）\n")
+    #             if raw_input.lower() == 'q':
+    #                 print(f"跳过{font_file}的映射")
+    #                 break
+    #             raw_input = raw_input.strip()
+    #             raw_input = os.path.normpath(raw_input)
+    #             if os.path.exists(raw_input):
+    #                 the_font_file_mapping[font_file] = raw_input
+    #                 print(f"已将{font_file}映射到{raw_input}")
+    #                 break
+    #             else:
+    #                 print(f"文件{raw_input}不存在，请重新输入")
+    #                 continue
+    # fe.read_unchanged_fonts(the_font_file_mapping)
     fe.clean_text()
     try:
         fe.encrypt_font()
