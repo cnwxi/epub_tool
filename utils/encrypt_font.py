@@ -291,6 +291,7 @@ class FontEncrypt:
                 original_cmap, plain_text)
             if len(miss_char) > 0:
                 logger.write(f'字体文件{font_path}缺少字符{miss_char}')
+            # print(f"plain_text: {plain_text}")
             available_ranges= [ord(char) for char in plain_text]
             glyphs, metrics, cmap = {}, {}, {}
             private_codes = random.sample(range(0xAC00, 0xD7AF),
@@ -306,21 +307,17 @@ class FontEncrypt:
             glyph_order = original_font.getGlyphOrder()
             final_shadow_text: list = []
 
-            if 'null' in glyph_order:
-                # print('基础字体含有 null')
-                glyph_set['null'].draw(pen)
-                glyphs['null'] = pen.glyph()
-                metrics['null'] = original_font['hmtx']['null']
-
-                final_shadow_text += ['null']
-
-            if '.notdef' in glyph_order:
-                # print('基础字体含有 .notdef')
-                glyph_set['.notdef'].draw(pen)
-                glyphs['.notdef'] = pen.glyph()
-                metrics['.notdef'] = original_font['hmtx']['.notdef']
-
-                final_shadow_text += ['.notdef']
+            spescial_glyphs= ['null', '.notdef', 'minus', 'dotlessi','uni0307','quotesingle','zero.dnom','fraction','uni0237']
+            # 处理特殊字符
+            for special_glyph in spescial_glyphs:
+                if special_glyph in glyph_order:
+                    # print(f'基础字体含有 {special_glyph}')
+                    glyph_set[special_glyph].draw(pen)
+                    glyphs[special_glyph] = pen.glyph()
+                    metrics[special_glyph] = original_font['hmtx'][
+                        special_glyph]
+                    final_shadow_text += [special_glyph]
+            
 
             html_entities = []
 
@@ -352,6 +349,18 @@ class FontEncrypt:
                 'ascent': original_font['hhea'].ascent,
                 'descent': original_font['hhea'].descent,
             }
+            missing_glyphs = [glyph for glyph in final_shadow_text if glyph not in glyphs]
+            if missing_glyphs:
+                logger.write(f"以下字形在 glyphs 中缺失: {missing_glyphs}")
+                for glyph in missing_glyphs:
+                    # 添加占位符字形
+                    pen = TTGlyphPen(glyph_set)
+                    glyphs[glyph] = pen.glyph()
+                    metrics[glyph] = (0, 0)  # 设置默认的水平度量
+            # print(len(glyph_order),len(glyphs))
+            if len(glyph_order) != len(glyphs):
+                logger.write(f"字体文件{font_path}的字形数量不匹配，可能会导致错误")
+                # raise Exception(f"字体文件{font_path}的字形数量不匹配，可能会导致错误")
             fb = FontBuilder(original_font['head'].unitsPerEm, isTTF=True)
             fb.setupGlyphOrder(final_shadow_text)
             fb.setupCharacterMap(cmap)
@@ -433,6 +442,7 @@ def run_epub_font_encrypt(epub_path, output_path):
         logger.write("字体加密成功")
     except Exception as e:
         logger.write(f"字体加密失败，错误信息: {e}")
+        traceback.print_exc()
         fe.close_file()
         return f"字体加密失败，错误信息: {e}"
     try:
@@ -447,8 +457,13 @@ def run_epub_font_encrypt(epub_path, output_path):
 
 if __name__ == '__main__':
     epub_read_path = input("1、请输入EPUB文件路径（如: ./test.epub）: ")
+    
     file_write_dir = input(
         "2、请输入输出文件夹路径（如: ./dist）: ")
+    
+    # epub_read_path= './crazy.epub'
+    # file_write_dir = './dist'
+    
     fe = FontEncrypt(epub_read_path, file_write_dir)
     fe.get_mapping()
     # the_font_file_mapping = {}
@@ -478,6 +493,7 @@ if __name__ == '__main__':
         print("4、字体加密成功")
     except Exception as e:
         print(f"4、字体加密失败，错误信息: {e}")
+        traceback.print_exc()
         fe.close_file()
         exit(1)
     try:
