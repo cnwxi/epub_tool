@@ -420,8 +420,8 @@ class FontEncrypt:
     #    self.font_to_unchanged_file_mapping = font_file_mapping if font_file_mapping else {}
 
 def run_epub_font_encrypt(epub_path, output_path):
-    fe = FontEncrypt(epub_path, output_path)
     logger.write(f"\n正在尝试加密EPUB字体: {epub_path}")
+    fe = FontEncrypt(epub_path, output_path)
     if len(fe.fonts) == 0:
         logger.write("没有找到字体文件，退出")
         return "skip"

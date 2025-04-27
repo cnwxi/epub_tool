@@ -385,17 +385,17 @@ def select_output_dir():
         )
         output_dir_label.config(style="FileLink.TLabel", cursor="hand2")
         output_dir_label.update()
-        # result_list.insert(
-        # "",
-        # "end",
-        # values=(
-        #     "^_^",
-        #     "",
-        #     "",
-        #     "路径设置成功",
-        #     f"设置输出路径成功: {output_dir}",
-        # ),
-        # )
+        result_list.insert(
+        "",
+        "end",
+        values=(
+            "^_^",
+            "",
+            "",
+            "已设置路径",
+            f"成功设置输出路径为 {defalut_output_dir}",
+        ),
+        )
         root.update_idletasks()
 
 
@@ -501,6 +501,7 @@ def run_in_thread(func, func_name, output_dir, *args):
         tmp_files_dic.pop(file_path)
         file_name = os.path.basename(file_path)
         file_name = file_name.rsplit(".", 1)[0]
+        tmp_output_dir = defalut_output_dir
         # 执行操作
         try:
             ret = func(file_path, output_dir, *args)
