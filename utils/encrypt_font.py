@@ -12,6 +12,8 @@ from io import BytesIO
 import random
 import traceback
 import html
+from datetime import datetime
+
 try:
     from utils.log import logwriter
 except:
@@ -243,41 +245,43 @@ class FontEncrypt:
 
     #     return False, None  # 未找到CJK字符
 
+
+    def set_timestamps(self, font):
+        # 设置 'head' 表的时间戳
+        head_table = font['head']
+        current_time = int(datetime.now().timestamp())
+        # print(f"原始时间戳: {head_table.created}, {head_table.modified}")
+        created_datetime = datetime.fromtimestamp(head_table.created).strftime('%Y-%m-%d %H:%M:%S')
+        modified_datetime = datetime.fromtimestamp(head_table.modified).strftime('%Y-%m-%d %H:%M:%S')
+        logger.write(f"原始时间戳: {created_datetime}, {modified_datetime}")
+        # print(f"转换UTC时间，: {created_datetime}")
+        # print(f"转换UTC时间，: {modified_datetime}")
+        head_table.created = current_time
+        head_table.modified = current_time
+        logger.write(f"转换后时间戳 {datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')}")
+
     # 修改自https://github.com/solarhell/fontObfuscator
     def encrypt_font(self):
         self.create_target_epub()
         for i, (font_path, plain_text) in enumerate(
                 self.font_to_char_mapping.items()):
-            # if font_path in self.font_to_unchanged_file_mapping.keys():
-            #     original_font = TTFont(self.font_to_unchanged_file_mapping[font_path])
-            # else:
-            #     original_font = TTFont(BytesIO(self.epub.read(font_path)))
             original_font = TTFont(BytesIO(self.epub.read(font_path)))
             name_table = original_font['name']
-            # 提取 FAMILY_NAME 和 STYLE_NAME
             family_name = None
             style_name = None
             for record in name_table.names:
-                # 解码为字符串
-                if record.nameID == 1:  # FAMILY_NAME 的 ID 是 1
-                    family_name = record.string.decode(
-                        record.getEncoding())
-                elif record.nameID == 2:  # STYLE_NAME 的 ID 是 2
+                if record.nameID == 1:
+                    family_name = record.string.decode(record.getEncoding())
+                elif record.nameID == 2:
                     style_name = record.string.decode(record.getEncoding())
 
-                # 如果已经找到两个字段，可以提前退出循环
                 if family_name and style_name:
                     break
             if family_name is None:
                 family_name = f'ETFamily_{i}'
             if style_name is None:
                 style_name = 'Regular'
-            # print(family_name, style_name)
-            # cjk_flag, available_ranges = self.is_cjk_font(original_font)
-            # if cjk_flag:
-            #     print('包含CJK编码')
-            # else:
-            #     print('错误，不包含CJK编码')
+
             NAME_STRING = {
                 'familyName': family_name,
                 'styleName': style_name,
@@ -291,59 +295,38 @@ class FontEncrypt:
                 original_cmap, plain_text)
             if len(miss_char) > 0:
                 logger.write(f'字体文件{font_path}缺少字符{miss_char}')
-            # print(f"plain_text: {plain_text}")
             available_ranges= [ord(char) for char in plain_text]
             glyphs, metrics, cmap = {}, {}, {}
-            private_codes = random.sample(range(0xAC00, 0xD7AF),
-                                            len(plain_text))
-            # print(len(private_codes), len(available_ranges),len(plain_text))
-            # print(plain_text)
-            cjk_codes = random.sample(available_ranges, len(plain_text)) # 打乱原编码映射
+            private_codes = random.sample(range(0xAC00, 0xD7AF), len(plain_text))
+            cjk_codes = random.sample(available_ranges, len(plain_text))
 
             glyph_set = original_font.getGlyphSet()
-
             pen = TTGlyphPen(glyph_set)
-
             glyph_order = original_font.getGlyphOrder()
             final_shadow_text: list = []
-
             spescial_glyphs= ['null', '.notdef', 'minus', 'dotlessi','uni0307','quotesingle','zero.dnom','fraction','uni0237']
-            # 处理特殊字符
+
             for special_glyph in spescial_glyphs:
                 if special_glyph in glyph_order:
-                    # print(f'基础字体含有 {special_glyph}')
                     glyph_set[special_glyph].draw(pen)
                     glyphs[special_glyph] = pen.glyph()
-                    metrics[special_glyph] = original_font['hmtx'][
-                        special_glyph]
+                    metrics[special_glyph] = original_font['hmtx'][special_glyph]
                     final_shadow_text += [special_glyph]
-            
 
             html_entities = []
 
-            # 理论上这里还可以再打散一次顺序
             for index, plain in enumerate(plain_text):
-
                 try:
-                    shadow_cmap_name = original_cmap[cjk_codes[index]] # 
-                    # print('shadow_cmap_name', shadow_cmap_name)
+                    shadow_cmap_name = original_cmap[cjk_codes[index]]
                 except KeyError:
-                    # 遇到基础字库不存在的字会出现这种错误
                     logger.write(f"字体文件缺少字符，unicode:{cjk_codes[index]}，请检查")
-                    traceback.print_exc()
 
                 final_shadow_text += [shadow_cmap_name]
-
                 glyph_set[original_cmap[ord(plain)]].draw(pen)
                 glyphs[shadow_cmap_name] = pen.glyph()
-
-                metrics[shadow_cmap_name] = original_font['hmtx'][
-                    original_cmap[ord(plain)]]
-
+                metrics[shadow_cmap_name] = original_font['hmtx'][original_cmap[ord(plain)]]
                 cmap[private_codes[index]] = shadow_cmap_name
-                html_entities += [
-                    hex(private_codes[index]).replace('0x', '&#x')
-                ]
+                html_entities += [hex(private_codes[index]).replace('0x', '&#x')]
 
             horizontal_header = {
                 'ascent': original_font['hhea'].ascent,
@@ -353,16 +336,32 @@ class FontEncrypt:
             if missing_glyphs:
                 logger.write(f"以下字形在 glyphs 中缺失: {missing_glyphs}")
                 for glyph in missing_glyphs:
-                    # 添加占位符字形
-                    pen = TTGlyphPen(glyph_set)
                     glyphs[glyph] = pen.glyph()
-                    metrics[glyph] = (0, 0)  # 设置默认的水平度量
-            # print(len(glyph_order),len(glyphs))
-            if len(glyph_order) != len(glyphs):
-                logger.write(f"字体文件{font_path}的字形数量不匹配，可能会导致错误")
-                # raise Exception(f"字体文件{font_path}的字形数量不匹配，可能会导致错误")
+                    metrics[glyph] = (0, 0)
+
+            glyf_table = original_font['glyf']
+            glyphs_to_keep = set(glyphs.keys())
+            new_glyph_order = [glyph for glyph in glyph_order if glyph in glyphs_to_keep]
+            original_font.setGlyphOrder(new_glyph_order)
+
+            # 删除不必要的字形
+            for glyph in glyph_order:
+                if glyph not in glyphs_to_keep:
+                    if glyph in glyf_table.glyphs:
+                        del glyf_table.glyphs[glyph]
+                    if glyph in original_font['hmtx'].metrics:
+                        del original_font['hmtx'].metrics[glyph]
+                    loca_index = glyph_order.index(glyph)
+                    if 0 <= loca_index < len(original_font['loca'].locations):
+                        original_font['loca'].locations[loca_index] = 0
+
+            # 更新 maxp 表
+            original_font['maxp'].numGlyphs = len(new_glyph_order)
+
+            self.set_timestamps(original_font)
+
             fb = FontBuilder(original_font['head'].unitsPerEm, isTTF=True)
-            fb.setupGlyphOrder(final_shadow_text)
+            fb.setupGlyphOrder(new_glyph_order)
             fb.setupCharacterMap(cmap)
             fb.setupGlyf(glyphs)
             fb.setupHorizontalMetrics(metrics)
