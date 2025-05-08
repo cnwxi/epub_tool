@@ -27,11 +27,11 @@ Epub Tool->ET->E-Book Thor->📖🔨
 作用：见原文件名。<br>
 3. `重构epub并加入文件名混淆.py`->`utils\encrypt_epub.py`<br>
 作用：见原文件名。<br>
-4. `epub_tool.py`<br>
+4. `Epub_Tool_Console.py`<br>
 作用：对上述工具（不包括字体混淆）的整合的命令行程序。<br>
 5. `utils\encrypt_font.py`<br>
 作用：对epub文件中指定内嵌字体的文字进行字体混淆。[https://github.com/cnwxi/epub_tool/issues/21]<br>
-6. `epub_tool_TKUI.py`<br>
+6. `Epub_Tool_TKUI.py`<br>
 作用：对上述工具的整合的带操作界面的程序。<br>
 
 注：重构会严格保证文件夹分类和文件名后缀。[https://github.com/cnwxi/epub_tool/issues/13]
