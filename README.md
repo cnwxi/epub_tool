@@ -4,7 +4,7 @@
 
 
 <div>
-<img src="./img/icon.ico" alt="图片名称" style="width:10em">
+<img src="./img/icon.ico" alt="icon" style="width:10em">
 </div>
 
 
@@ -15,7 +15,7 @@
 Epub Tool->ET->E-Book Thor->📖🔨
 
 <details>
-  <summary>包含一些可用的epub工具，用于epub文件的重构、解密、加密。</summary>
+  <summary>包含一些可用的epub工具，用于epub文件的重构、解密、加密、字体混淆。</summary>
   <p>
 
 
@@ -28,8 +28,10 @@ Epub Tool->ET->E-Book Thor->📖🔨
 3. `重构epub并加入文件名混淆.py`->`utils\encrypt_epub.py`<br>
 作用：见原文件名。<br>
 4. `epub_tool.py`<br>
-作用：对上述工具的整合的命令行程序。<br>
-5. `epub_tool_TKUI.py`<br>
+作用：对上述工具（不包括字体混淆）的整合的命令行程序。<br>
+5. `utils\encrypt_font.py`<br>
+作用：对epub文件中指定内嵌字体的文字进行字体混淆。[https://github.com/cnwxi/epub_tool/issues/21]<br>
+6. `epub_tool_TKUI.py`<br>
 作用：对上述工具的整合的带操作界面的程序。<br>
 
 注：重构会严格保证文件夹分类和文件名后缀。[https://github.com/cnwxi/epub_tool/issues/13]
@@ -42,17 +44,21 @@ Epub Tool->ET->E-Book Thor->📖🔨
   <summary>python源码执行</summary>
   <p>
 
-1. 下载python3.8；<br> 
+1. 下载python（推荐3.8或更高版本）；<br> 
 2. 使用`git clone https://github.com/cnwxi/epub_tool.git`克隆本仓库；或直接在网页下载源码压缩包，解压后得到py文件；<br>
 3. 准备依赖库，在终端输入`python -m pip install -r requirements.txt`;<br>
-4. 执行py文件。<br> 
-    - 单个工具执行：<br> 
-    1. 使用命令行执行 `python 解压目标文件夹/epub_tool/utils/**.py` 或修改py为pyz双击运行。<br>
+4. 终端切换工作路径为解压后文件夹所在路径
+5. 执行py文件`python ./***.py`、`python ./utils/***.py`。<br> 
+    <!-- - 单个工具执行：<br> 
+    1. 使用命令行执行 `python 解压目标文件夹/epub_tool/utils/**.py` 。<br>
     - 整合工具执行：<br> 
     1. 使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -e/d/r` 其中e、d、r为不同的处理模式，分别是混淆`-e`、反混淆`-d`、重新格式化`-r`。<br> 
-    2. 也可使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -m 处理模式`，处理模式为e、d、r。<br> 
+    2. 也可使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -m 处理模式`，处理模式为e、d、r。<br>  -->
 
   </p>
+
+  >（注：会在对应工作路径生成日志文件`log.txt`，每次执行py文件会覆盖写入该文件，无需担心此文件过分占用存储空间<br>
+
 </details>
 
 <!-- 
@@ -107,12 +113,14 @@ Epub Tool->ET->E-Book Thor->📖🔨
 -->
 
 <details>
-  <summary>可视化界面程序</summary>
+  <summary>可视化界面程序（推荐）</summary>
   <p>
 
     
->（注：同样会在可执行程序所在路径生成log日志文件，mac文件写入位置为`/Applications/Epub_Tool_TKUI.app/Contents/MacOS/log.txt`）<br>
-> （Mac若提示无法验证安全性，请参考[Apple官网Mac使用手册](https://support.apple.com/zh-cn/guide/mac-help/mchleab3a043/mac)；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
+>（注：同样会在可执行程序所在路径生成日志文件`log.txt`，每次启动程序会覆盖写入该文件，无需担心此文件过分占用存储空间，mac文件写入位置为`/Applications/Epub_Tool_TKUI.app/Contents/MacOS/log.txt`，win文件写入位置为`Epub_Tool_TKUI.exe所在目录`）<br>
+
+
+> （Mac安装后运行若提示无法验证安全性，请参考[Apple 无法检查 App 是否包含恶意软件（来自Apple官网Mac使用手册）](https://support.apple.com/zh-cn/guide/mac-help/mchleab3a043/mac)，进入系统设置-隐私与安全性-安全性-点击“仍要打开”；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
 
 ![操作演示](./img/how_to_use.gif)
 
@@ -132,12 +140,18 @@ Epub Tool->ET->E-Book Thor->📖🔨
 <details>
   <summary>epub无法正常规范/混淆/反混淆</summary><br>
   <p>
-    1、优先解压文件，查看其中content.opf文件，检查是否存在问题。若无法解决，在Issues区提交issue并附带原文件。[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10]<br>
+    1、优先解压文件，查看其中content.opf文件，检查是否存在问题。若无法解决，在Issues区提交issue并附带原文件。[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10]
   </p>
   <p>
-    2、若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。[https://github.com/cnwxi/epub_tool/issues/19]<br> 
+    2、若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。[https://github.com/cnwxi/epub_tool/issues/19]
   </p>
+</details>
 
+<details>
+  <summary>epub字体混淆出现异常</summary><br>
+  <p>
+    1、字体混淆根据标签名称的字典逆序进行处理，如存在如下标签时：&lt;h2&gt;、&lt;p&gt;、&lt;p class=&quot;p1&quot;&gt;、&lt;span&gt;、&lt;span class=&quot;s1&quot;&gt;，会按照span.s1、span、p.p1、p、h2的顺序进行字体混淆，并以此类推，规划样式标签命名，来保证嵌套标签中的文字能够正常混淆，当然最好避免过分复杂的标签嵌套。<br>
+  </p>
 </details>
 
 ## Ⅳ 更新日志<br>
@@ -147,7 +161,7 @@ Epub Tool->ET->E-Book Thor->📖🔨
 
 ### 2025.04.27<br>
 界面更新，使用ttk控件替换tk以实现跨平台统一；功能更新，增加右键点击快速打开所在/输出文件夹、删除已添加文件、查看日志文件等功能，添加鼠标悬停显示更多信息功能，添加字体加密功能。<br>
-使用 `20230418《ePub指南——从入门到放弃》编著：赤霓（第2版）`进行字体加密测试，执行过程无报错，具体查看内容有部分因复杂样式导致部分字符被意外混淆。 [下载链接](https://wwxq.lanzov.com/b0nz4q13i) 密码:8vfp<br>
+使用 `20230418《ePub指南——从入门到放弃》编著：赤霓（第2版）`进行字体加密测试，执行过程无报错，具体查看内容有部分字符因复杂样式导致被意外混淆。 [下载链接](https://wwxq.lanzov.com/b0nz4q13i) 密码:8vfp<br>
 ### 2025.04.23<br>
 移除命令行程序编译；移除mac编译-F参数；添加icon.icns图标适配macOS，优化显示效果；移除Ubuntu（Linux系统）编译。<br>
 ### 2025.03.20<br>
