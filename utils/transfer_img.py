@@ -81,6 +81,7 @@ class ImageTransfer:
             except Exception as e:
                 # logger.write(f"无法处理图片 {img}: {str(e)}")
                 logger.write(f'无法处理图片 {img_path}: {str(e)}')
+                self.close_files()
 
         for item in self.ori_files:
             if item in self.epub.namelist():
@@ -154,8 +155,14 @@ class ImageTransfer:
             pattern = r'url\(\s*([\'"]?)\s*(.*?)\.webp\s*(?:\?\S*)?\s*\1\s*\)'
             updated_css = re.sub(pattern, replace_match, css_content, flags=re.IGNORECASE)
             self.target_epub.writestr(css_path,updated_css.encode('utf-8'),zipfile.ZIP_DEFLATED)
+
+    def close_files(self):
+        self.epub.close()
+        self.target_epub.close()
+        exit()
         
 if __name__ == "__main__":
     it=ImageTransfer('./test/Hooshaun.epub','./test/')
     it.read_files()
     it.replace()
+    it.close_files()
