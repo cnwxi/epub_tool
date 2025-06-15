@@ -136,8 +136,12 @@ class ImageTransfer:
                     return match.group(0)
             # 使用正则表达式匹配 <img src="...webp">
             pattern = r'<img\b[^>]*?\bsrc\s*=\s*(["\'])(.*?)\.webp\1'
-            updated_content = html_content = re.sub(pattern, lambda m: replace_match(m), html_content)
+            pattern2 = r'<image\b[^>]*?\bxlink:href\s*=\s*(["\'])(.*?)\.webp\1'  # 处理SVG中的image标签
+            updated_content = re.sub(pattern, lambda m: replace_match(m), html_content)
+            updated_content = re.sub(pattern2, lambda m: replace_match(m), updated_content)
             self.target_epub.writestr(html_path,updated_content.encode('utf-8'),zipfile.ZIP_DEFLATED)
+            if os.path.basename(html_path)== 'cover.xhtml':
+                print(updated_content)
         
         for css_path in self.css:
             css_content=self.epub.open(css_path).read().decode('utf-8')
@@ -157,12 +161,37 @@ class ImageTransfer:
             self.target_epub.writestr(css_path,updated_css.encode('utf-8'),zipfile.ZIP_DEFLATED)
 
     def close_files(self):
-        self.epub.close()
-        self.target_epub.close()
-        exit()
+        if self.target_epub:
+            self.target_epub.close()
+        if self.epub:
+            self.epub.close()
+    
+    def fail_del_target(self):
+        if os.path.exists(self.file_write_path):
+            os.remove(self.file_write_path)
+            logger.write(f"删除临时文件: {self.file_write_path}")
         
+def run_epub_img_transfer(epub_path, output_path):
+    logger.write(f"\n正在尝试转换epub中webp格式图片: {epub_path}")
+    it= ImageTransfer(epub_path, output_path)
+    try:
+        it.read_files()
+        print(len(it.img_dict.keys()))
+        if len(it.img_dict.keys()) == 0:
+            logger.write("没有找到需要转换的webp图片")
+            it.close_files()
+            it.fail_del_target()
+            return "skip"
+        it.replace()
+        return 0
+    except Exception as e:
+        logger.write(f"处理EPUB文件时发生错误: {str(e)}")
+        it.close_files()
+        it.fail_del_target()
+        return f"处理EPUB文件时发生错误: {str(e)}"
+
 if __name__ == "__main__":
-    it=ImageTransfer('./test/Hooshaun.epub','./test/')
+    it=ImageTransfer('test/demo.epub','./test/')
     it.read_files()
     it.replace()
     it.close_files()

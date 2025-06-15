@@ -8,6 +8,7 @@ from utils.encrypt_epub import run as encrypt_run
 from utils.decrypt_epub import run as decrypt_run
 from utils.reformat_epub import run as reformat_run
 from utils.encrypt_font import run_epub_font_encrypt
+from utils.transfer_img import run_epub_img_transfer
 import sys
 import threading
 import subprocess
@@ -641,6 +642,88 @@ font_encrypt_btn = ttk.Button(
     op_frame,
     text="字体加密",
     command=run_font_encrypt,
+)
+font_encrypt_btn.pack(side=tk.LEFT, padx=5)
+
+
+def run_img_transfer():
+    children = file_list.get_children()
+    file_count = len(children)
+    if file_count == 0:
+        messagebox.showwarning("Warning", "未添加任何文件")
+        return
+    progress["value"] = 0
+    progress["maximum"] = file_count
+    root.update_idletasks()
+    for item in children:
+        # 获取文件路径
+        file_path = file_list.item(item, "values")[2]
+        file_list.delete(item)
+        tmp_files_dic.pop(file_path)
+        file_name = os.path.basename(file_path).rsplit(".", 1)[0]
+        try:
+            ret = run_epub_img_transfer(file_path, defalut_output_dir)
+            print(ret)
+            if defalut_output_dir == None:
+                outdir = os.path.dirname(file_path)
+            else:
+                outdir = defalut_output_dir
+            if ret == 0:
+                result_list.insert(
+                    "",
+                    "end",
+                    values=(
+                        "^_^",
+                        file_name,
+                        outdir,
+                        "成功",
+                        f"图片转换成功，输出路径：{outdir}",
+                    ),
+                )
+            elif ret == "skip":
+                result_list.insert(
+                    "",
+                    "end",
+                    values=(
+                        "O_o",
+                        file_name,
+                        outdir,
+                        "跳过",
+                        f"无webp图片文件，跳过图片转换操作",
+                    ),
+                )
+            else:
+                result_list.insert(
+                    "",
+                    "end",
+                    values=(
+                        "T_T",
+                        file_name,
+                        outdir,
+                        "失败",
+                        f"{ret}",
+                    ),
+                )
+        except Exception as e:
+            result_list.insert(
+                "",
+                "end",
+                values=(
+                    "@_@",
+                    file_name,
+                    outdir,
+                    "失败",
+                    f"图片转换失败，错误信息：{e}",
+                ),
+            )
+            
+        progress["value"] += 1
+        root.update_idletasks()
+
+font_encrypt_btn = ttk.Button(
+    op_frame,
+    text="图片转换",
+    command=run_img_transfer,
 )
 font_encrypt_btn.pack(side=tk.LEFT, padx=5)
 
