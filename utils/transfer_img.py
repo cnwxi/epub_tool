@@ -117,7 +117,7 @@ class ImageTransfer:
                     item.set('id',replace_name)
                     item.set('href',item.get('href').replace(href_basename,replace_name))
                     item.set('media-type', replace_media_type)
-                logger.write(f'{self.opf} 替换：<item id="{id}" href="{href}" media-type="{media_type}"/> -> <item id="{item.get('href')}" href="{item.get('href')}" media-type="{item.get('media-type')}"/>')
+                logger.write(f'{self.opf} 替换：<item id=\"{id}\" href=\"{href}\" media-type=\"{media_type}\"/> -> <item id=\"{item.get("id")}\" href=\"{item.get("href")}\" media-type=\"{item.get("media-type")}\"/>')
         modified_opf = ElementTree.tostring(root, encoding='utf-8', xml_declaration=True)
         self.target_epub.writestr(self.opf,modified_opf,zipfile.ZIP_DEFLATED)
         # logger.write(tree)
