@@ -1,21 +1,17 @@
-
-
-## Ⅰ epub_tool介绍<br>
-
-
-<div>
-<img src="./img/icon.ico" alt="icon" style="width:10em">
-</div>
-
+<div style="text-align: center; margin: 2em auto 0 auto; width: 100%;">
+<img src="./img/icon.ico" alt="icon" style="width:10em;">
 
 [![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest)  
  [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers)
   [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
 
-Epub Tool->ET->E-Book Thor->📖🔨
+Epub Tool->ET->E-Book Thor->📖🔨-><img src="./img/icon.ico" alt="icon" style="width:1em">（AI生成）
+</div>
+
+## Ⅰ epub_tool介绍<br>
 
 <details>
-  <summary>包含一些可用的epub工具，用于epub文件的重构、解密、加密、字体混淆。</summary>
+  <summary>包含一些可用的epub工具，用于epub文件的重构、解密、加密、字体混淆、WEBP图片转换。</summary>
   <p>
 
 
@@ -28,10 +24,12 @@ Epub Tool->ET->E-Book Thor->📖🔨
 3. `重构epub并加入文件名混淆.py`->`utils\encrypt_epub.py`<br>
 作用：见原文件名。<br>
 4. `Epub_Tool_Console.py`<br>
-作用：对上述工具（不包括字体混淆）的整合的命令行程序。<br>
+作用：对上述工具（不包括字体混淆）的整合的命令行程序。（已不再更新，后续使用Epub_Tool_TKUI）https://github.com/cnwxi/epub_tool/issues/11<br>
 5. `utils\encrypt_font.py`<br>
 作用：对epub文件中指定内嵌字体的文字进行字体混淆。[https://github.com/cnwxi/epub_tool/issues/21]<br>
-6. `Epub_Tool_TKUI.py`<br>
+6. `utils\transfer_img.py`<br>
+作用：对epub文件中WEBP格式图片进行转换以支持kindle的正常显示。（WEBP->JPG/PNG，转换后图像会进行压缩以控制文件大小）https://github.com/cnwxi/epub_tool/issues/25<br>
+7. `Epub_Tool_TKUI.py`<br>
 作用：对上述工具的整合的带操作界面的程序。<br>
 
 注：重构会严格保证文件夹分类和文件名后缀。[https://github.com/cnwxi/epub_tool/issues/13]
@@ -140,91 +138,23 @@ Epub Tool->ET->E-Book Thor->📖🔨
 <details>
   <summary>epub无法正常规范/混淆/反混淆</summary><br>
   <p>
-    1、优先解压文件，查看其中content.opf文件，检查是否存在问题。如果觉得解压查看opf难以发现错误，可以使用本工具中的“格式化”按钮，然后查看日志文件，程序会记录文件错误。若无法解决，在Issues区提交issue并附带原文件。[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10 https://github.com/cnwxi/epub_tool/issues/24]
+    1、优先解压文件，查看其中content.opf文件 或 使用本工具中的“格式化”按钮，查看日志文件，检查epub是否存在问题；删除或修复存在问题的文件（如content.opf）。若无法解决，在Issues区提交issue并附带原文件。<br>样例：[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10 https://github.com/cnwxi/epub_tool/issues/24]
   </p>
   <p>
-    2、若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。[https://github.com/cnwxi/epub_tool/issues/19]
+    2、若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。<br>样例：[https://github.com/cnwxi/epub_tool/issues/19]
   </p>
 </details>
 
 <details>
   <summary>epub字体混淆出现异常</summary><br>
   <p>
-    1、字体混淆根据标签名称的字典逆序进行处理，如存在如下标签时：&lt;h2&gt;、&lt;p&gt;、&lt;p class=&quot;p1&quot;&gt;、&lt;span&gt;、&lt;span class=&quot;s1&quot;&gt;，会按照span.s1、span、p.p1、p、h2的顺序进行字体混淆，并以此类推，规划样式标签命名，来保证嵌套标签中的文字能够正常混淆，当然最好避免过分复杂的标签嵌套。<br>
+    1、字体混淆根据标签名称的字典逆序进行处理，如存在如下标签时：&lt;h2&gt;、&lt;p&gt;、&lt;p class=&quot;p1&quot;&gt;、&lt;span&gt;、&lt;span class=&quot;s1&quot;&gt;，会按照span.s1、span、p.p1、p、h2的顺序进行字体混淆（注意不会处理body中的字体设定），并以此类推，规划样式标签命名，来保证嵌套标签中的文字能够正常混淆，当然最好避免过分复杂的标签嵌套。<br>
   </p>
 </details>
 
 ## Ⅳ 更新日志<br>
-<details>
-  <summary>点击以展开</summary>
-  <p>
+[点击以查看](./CHANGELOG.md)
 
-### 2025.06.15<br>
-增加WEBP格式图片转换功能。https://github.com/cnwxi/epub_tool/issues/25<br>
-### 2025.04.27<br>
-界面更新，使用ttk控件替换tk以实现跨平台统一；功能更新，增加右键点击快速打开所在/输出文件夹、删除已添加文件、查看日志文件等功能，添加鼠标悬停显示更多信息功能，添加字体加密功能。https://github.com/cnwxi/epub_tool/issues/21<br>
-使用 `20230418《ePub指南——从入门到放弃》编著：赤霓（第2版）`进行字体加密测试，执行过程无报错，具体查看内容有部分字符因复杂样式导致被意外混淆。 [下载链接](https://wwxq.lanzov.com/b0nz4q13i) 密码:8vfp<br>
-### 2025.04.23<br>
-移除命令行程序编译；移除mac编译-F参数；添加icon.icns图标适配macOS，优化显示效果；移除Ubuntu（Linux系统）编译。<br>
-### 2025.03.20<br>
-修复失效的自定义输出路径。<br>
-### 2025.03.01<br>
-图标打包进可执行文件。<br>
-### 2025.02.20<br>
-更新图标。<br>
-### 2024.12.25<br>
-修复在mac上的日志文件写入位置，更改日志写入方式，清理原始脚本中重复的无效循环。<br>
-### 2024.12.24<br>
-Update build.yml。https://github.com/cnwxi/epub_tool/pull/17<br>
-### 2024.12.23<br>
-调整UI、取消push自动构建。<br>
-### 2024.12.17<br>
-修复UI显示问题,分支整合。<br>
-### 2024.12.16<br>
-创建新分支TKUI，实现基本UI DEMO，功能已整合。<br>
-### 2024.11.17<br>
-添加文件夹手动选择需要处理文件，输入文件序号进行选择，不再是默认处理文件夹内全部epub文件，添加了输入检测提示，错误后会返回重新输入。https://github.com/cnwxi/epub_tool/pull/15<br>
-### 2024.10.24<br>
-修复未处理输入时拖入文件带引号导致的文件路径检查错误。<br>
-### 2024.09.09<br>
-因额外依赖库未打包到可执行文件，重新打包可执行文件。<br>
-更新相关使用教程。<br>
-### 2024.09.08<br>
-为避免有人不会使用命令行工具，更新Windows系统下相关操作的基础流程。<br>
-程序允许直接双击执行，后续再输入参数。<br>
-对应操作忽略固定后缀跳过文件处理。_encrypt、_decrypt、_reformat<br>
-### 2024.08.29<br>
-修复混淆ID导致的反混淆不完全。<br>
-修复存在异常opf时程序闪退问题。<br>
-更新日志记录。<br>
-### 2024.08.28<br>
-整合代码，使用命令行批量处理epub文件。<br>
-支持输入单个epub文件或epub文件所在文件夹，支持子目录遍历。<br>
-修改输出路径，现为原epub文件同级路径，通过添加不同后缀`encrypt\decrypt\reformat`区分原文件和处理后文件。<br>
-### 2024.06.19<br>
-代码更新，使用相似度计算覆盖opf文件中未混淆的其他文件名情况。<br>
-### 2024.06.13<br>
-更新yml文件。https://github.com/cnwxi/epub_tool/pull/9<br>
-### 2024.06.12<br>
-针对cover页面未混淆的情况做更改。<br>
-修改自动发布逻辑，修改py文件不触发CI，仅修改yml后触发。修改yml，无需手动执行才执行发布。<br>
-### 2024.06.08<br>
-CI配置文件更新。https://github.com/cnwxi/epub_tool/pull/6 https://github.com/cnwxi/epub_tool/pull/7<br>
-### 2024.06.07<br>
-修改主函数逻辑，防止epub文件不存在导致的程序崩溃。https://github.com/cnwxi/epub_tool/pull/4<br>
-加入CI自动构建。https://github.com/cnwxi/epub_tool/pull/5<br>
-加入CI自动发布。<br>
-### 2024.05.28<br>
-修正`重构epub为规范格式_v2.8.3.py`中生成的content.opf文件内容格式。https://github.com/cnwxi/epub_tool/pull/3<br>
-### 2024.05.16<br>
-更改文件输出路径。https://github.com/cnwxi/epub_tool/pull/2<br>
-### 2024.05.09<br>
-针对多看~slim文件进行修改，处理html中使用`../`、`./`、`/`开头的链接。<br>
-### 2024.04.23<br>
-初始化仓库。<br>
-
-  </p>
-</details>
 
 ## Ⅴ 鸣谢<br>
 感谢以下用户对此项目的贡献：
