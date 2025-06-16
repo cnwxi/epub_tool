@@ -24,7 +24,7 @@ class EpubTool:
     def __init__(self, epub_src):
         self.encrypted = False
         self.epub = zipfile.ZipFile(epub_src)
-        self.tgt_epub=None
+        self.tgt_epub = None
         self.file_write_path = None
         self.epub_src = epub_src
         self.epub_name = path.basename(epub_src)
@@ -55,7 +55,9 @@ class EpubTool:
     def set_output_path(self, output_path):
         if output_path is not None and os.path.isdir(output_path):
             self.output_path = output_path
-        self.file_write_path = path.join(self.output_path, self.epub_name.replace(".epub", "_encrypt.epub"))
+        self.file_write_path = path.join(
+            self.output_path, self.epub_name.replace(".epub", "_encrypt.epub")
+        )
 
     def _init_namelist(self):
         self.namelist = self.epub.namelist()

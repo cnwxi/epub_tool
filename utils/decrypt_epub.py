@@ -13,6 +13,7 @@ import copy
 import os
 import difflib
 import hashlib
+
 try:
     from utils.log import logwriter
 except:
@@ -26,7 +27,7 @@ class EpubTool:
     def __init__(self, epub_src):
         self.encrypted = False
         self.epub = zipfile.ZipFile(epub_src)
-        self.tgt_epub=None
+        self.tgt_epub = None
         self.file_write_path = None
         self.epub_src = epub_src
         self.epub_name = path.basename(epub_src)
@@ -57,8 +58,8 @@ class EpubTool:
         if output_path is not None and os.path.isdir(output_path):
             self.output_path = output_path
         self.file_write_path = path.join(
-                self.output_path, self.epub_name.replace(".epub", "_decrypt.epub")
-            )
+            self.output_path, self.epub_name.replace(".epub", "_decrypt.epub")
+        )
 
     def _init_namelist(self):
         self.namelist = self.epub.namelist()
@@ -829,7 +830,8 @@ class EpubTool:
                     tmp = href
                     href = self.text_list[sorted_id[0]][1]
                     logger.write(
-                        f"已自动替换为相似度最高文件: {tmp} <-> {self.text_list[sorted_id[0]]}")
+                        f"已自动替换为相似度最高文件: {tmp} <-> {self.text_list[sorted_id[0]]}"
+                    )
                     return match.group(1) + "Text/" + self.toc_rn[href] + match.group(4)
             else:
                 return match.group()
@@ -839,7 +841,7 @@ class EpubTool:
             "OEBPS/content.opf", bytes(opf, encoding="utf-8"), zipfile.ZIP_DEFLATED
         )
         self.close_files()
-    
+
     def close_files(self):
         if self.epub:
             self.epub.close()
@@ -1012,4 +1014,3 @@ if __name__ == "__main__":
     )
     while True:
         main()
-
