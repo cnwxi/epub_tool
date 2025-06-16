@@ -24,6 +24,8 @@ class EpubTool:
     def __init__(self, epub_src):
         self.encrypted = False
         self.epub = zipfile.ZipFile(epub_src)
+        self.tgt_epub=None
+        self.file_write_path = None
         self.epub_src = epub_src
         self.epub_name = path.basename(epub_src)
         self.ebook_root = path.dirname(epub_src)
@@ -53,6 +55,7 @@ class EpubTool:
     def set_output_path(self, output_path):
         if output_path is not None and os.path.isdir(output_path):
             self.output_path = output_path
+        self.file_write_path = path.join(self.output_path, self.epub_name.replace(".epub", "_encrypt.epub"))
 
     def _init_namelist(self):
         self.namelist = self.epub.namelist()
@@ -790,8 +793,20 @@ class EpubTool:
         self.tgt_epub.writestr(
             "OEBPS/content.opf", bytes(opf, encoding="utf-8"), zipfile.ZIP_DEFLATED
         )
-        self.tgt_epub.close()
-        self.epub.close()
+        self.close_files()
+
+    def close_files(self):
+        if self.epub:
+            self.epub.close()
+        if self.tgt_epub:
+            self.tgt_epub.close()
+
+    def fail_del_target(self):
+        if self.file_write_path and os.path.exists(self.file_write_path):
+            os.remove(self.file_write_path)
+            logger.write(f"删除临时文件: {self.file_write_path}")
+        else:
+            logger.write("临时文件不存在或已被删除。")
 
 
 # 相对路径计算函数
@@ -861,6 +876,8 @@ def run(epub_src, output_path=None):
         epub.set_output_path(output_path)
         if epub.encrypted == True:
             logger.write("警告: 该文件已加密，无需再次处理！")
+            epub.close_files()
+            epub.fail_del_target()
             return "skip"
         epub.restructure()  # 重构
         el = epub.errorLink_log.copy()
@@ -909,6 +926,8 @@ def run(epub_src, output_path=None):
                         logger.write(f"链接: {href}\n问题: 未能找到对应文件！！！")
     except Exception as e:
         logger.write(f"{epub_src} 重构EPUB失败: {e}")
+        epub.close_files()
+        epub.fail_del_target()
         return e
     else:
         logger.write(f"{epub_src} 重构EPUB成功")

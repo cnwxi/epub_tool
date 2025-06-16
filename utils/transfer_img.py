@@ -96,13 +96,13 @@ class ImageTransfer:
         for meta in root.findall('.//opf:meta[@name="cover"]',ns):
             content = meta.get('content')
             if content and content.endswith('.webp'):
-                logger.write(f'meta cover：{content}')
+                logger.write(f'meta 替换cover：{content}')
                 cover_basename=os.path.basename(content)
                 if os.path.basename(content) in self.img_dict:
                     replace_name=self.img_dict[cover_basename][0]
                     new_content = content.replace(cover_basename,replace_name)
                     meta.set('content', new_content)
-                    logger.write(f'{self.opf} 替换: <meta name="cover" content="{content}" /> -> <meta name="cover" content="{new_content}"')
+                    logger.write(f'{self.opf} 替换：<meta name="cover" content="{content}" /> -> <meta name="cover" content="{new_content}"')
         # 遍历所有 <item> 标签
         for item in root.findall('.//opf:item',ns):
             # 获取属性值
@@ -140,8 +140,6 @@ class ImageTransfer:
             updated_content = re.sub(pattern, lambda m: replace_match(m), html_content)
             updated_content = re.sub(pattern2, lambda m: replace_match(m), updated_content)
             self.target_epub.writestr(html_path,updated_content.encode('utf-8'),zipfile.ZIP_DEFLATED)
-            if os.path.basename(html_path)== 'cover.xhtml':
-                print(updated_content)
         
         for css_path in self.css:
             css_content=self.epub.open(css_path).read().decode('utf-8')
@@ -159,6 +157,7 @@ class ImageTransfer:
             pattern = r'url\(\s*([\'"]?)\s*(.*?)\.webp\s*(?:\?\S*)?\s*\1\s*\)'
             updated_css = re.sub(pattern, replace_match, css_content, flags=re.IGNORECASE)
             self.target_epub.writestr(css_path,updated_css.encode('utf-8'),zipfile.ZIP_DEFLATED)
+        logger.write(f"EPUB文件处理完成，输出文件路径: {self.file_write_path}")
 
     def close_files(self):
         if self.target_epub:
@@ -167,22 +166,24 @@ class ImageTransfer:
             self.epub.close()
     
     def fail_del_target(self):
-        if os.path.exists(self.file_write_path):
+        if self.file_write_path and os.path.exists(self.file_write_path):
             os.remove(self.file_write_path)
             logger.write(f"删除临时文件: {self.file_write_path}")
+        else:
+            logger.write("临时文件不存在或已被删除。")
         
 def run_epub_img_transfer(epub_path, output_path):
     logger.write(f"\n正在尝试转换epub中webp格式图片: {epub_path}")
     it= ImageTransfer(epub_path, output_path)
     try:
         it.read_files()
-        print(len(it.img_dict.keys()))
         if len(it.img_dict.keys()) == 0:
             logger.write("没有找到需要转换的webp图片")
             it.close_files()
             it.fail_del_target()
             return "skip"
         it.replace()
+        logger.write("EPUB文件处理成功")
         return 0
     except Exception as e:
         logger.write(f"处理EPUB文件时发生错误: {str(e)}")

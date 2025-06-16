@@ -387,15 +387,15 @@ def select_output_dir():
         output_dir_label.config(style="FileLink.TLabel", cursor="hand2")
         output_dir_label.update()
         result_list.insert(
-        "",
-        "end",
-        values=(
-            "^_^",
             "",
-            "",
-            "已设置路径",
-            f"成功设置输出路径为 {defalut_output_dir}",
-        ),
+            "end",
+            values=(
+                "^_^",
+                "",
+                "",
+                "已设置路径",
+                f"成功设置输出路径为 {defalut_output_dir}",
+            ),
         )
         root.update_idletasks()
 
@@ -491,8 +491,8 @@ def run_in_thread(func, func_name, output_dir, *args):
     if file_count == 0:
         messagebox.showwarning("Warning", "未添加任何文件")
         return
-    progress["value"] = 0
-    progress["maximum"] = file_count
+    progress["value"] = 1
+    progress["maximum"] = file_count * 10
     root.update_idletasks()
 
     for item in children:
@@ -512,14 +512,15 @@ def run_in_thread(func, func_name, output_dir, *args):
                 emoji = "^_^"
                 result = f" 成功 "
                 info = f"{func_name}成功，输出路径：{tmp_output_dir}"
-            elif ret == "skip":
-                emoji = "O_o"
-                result = f" 跳过 "
-                info = f"文件已被{func_name}处理，跳过{func_name}操作"
             else:
-                emoji = "T_T"
-                result = f" 失败"
-                info = f"{func_name}失败，错误信息：{ret}"
+                if ret == "skip":
+                    emoji = "O_o"
+                    result = f" 跳过 "
+                    info = f"文件已被{func_name}处理，跳过{func_name}操作"
+                else:
+                    emoji = "T_T"
+                    result = f" 失败 "
+                    info = f"{func_name}失败，错误信息：{ret}"
         except Exception as e:
             emoji = "@_@"
             result = f" 错误 "
@@ -537,7 +538,10 @@ def run_in_thread(func, func_name, output_dir, *args):
                 info,
             ),
         )
-        progress["value"] += 1
+        if progress["value"] // 10 == 0:
+            progress["value"] += 10
+        else:
+            progress["value"] += 9
         root.update_idletasks()
 
 
@@ -553,179 +557,35 @@ reformat_btn.pack(side=tk.LEFT, padx=5)
 decrypt_btn = ttk.Button(
     op_frame,
     text="文件名解密",
-    command=lambda: start_progress(decrypt_run, "解密", defalut_output_dir),
+    command=lambda: start_progress(decrypt_run, "文件名解密", defalut_output_dir),
 )
 decrypt_btn.pack(side=tk.LEFT, padx=5)
 
 encrypt_btn = ttk.Button(
     op_frame,
     text="文件名加密",
-    command=lambda: start_progress(encrypt_run, "加密", defalut_output_dir),
+    command=lambda: start_progress(encrypt_run, "文件名加密", defalut_output_dir),
 )
 encrypt_btn.pack(side=tk.LEFT, padx=5)
-
-
-def run_font_encrypt():
-    children = file_list.get_children()
-    file_count = len(children)
-    if file_count == 0:
-        messagebox.showwarning("Warning", "未添加任何文件")
-        return
-    progress["value"] = 0
-    progress["maximum"] = file_count
-    root.update_idletasks()
-    for item in children:
-        # 获取文件路径
-        file_path = file_list.item(item, "values")[2]
-        file_list.delete(item)
-        tmp_files_dic.pop(file_path)
-        file_name = os.path.basename(file_path).rsplit(".", 1)[0]
-        try:
-            ret = run_epub_font_encrypt(file_path, defalut_output_dir)
-            if defalut_output_dir == None:
-                outdir = os.path.dirname(file_path)
-            else:
-                outdir = defalut_output_dir
-            if ret == 0:
-                result_list.insert(
-                    "",
-                    "end",
-                    values=(
-                        "^_^",
-                        file_name,
-                        outdir,
-                        "成功",
-                        f"字体加密成功，输出路径：{outdir}",
-                    ),
-                )
-            elif ret == "skip":
-                result_list.insert(
-                    "",
-                    "end",
-                    values=(
-                        "O_o",
-                        file_name,
-                        outdir,
-                        "跳过",
-                        f"无字体文件，跳过字体加密操作",
-                    ),
-                )
-            else:
-                result_list.insert(
-                    "",
-                    "end",
-                    values=(
-                        "T_T",
-                        file_name,
-                        outdir,
-                        "失败",
-                        f"{ret}",
-                    ),
-                )
-        except Exception as e:
-            result_list.insert(
-                "",
-                "end",
-                values=(
-                    "@_@",
-                    file_name,
-                    outdir,
-                    "失败",
-                    f"字体加密失败，错误信息：{e}",
-                ),
-            )
-            
-        progress["value"] += 1
-        root.update_idletasks()
 
 font_encrypt_btn = ttk.Button(
     op_frame,
     text="字体加密",
-    command=run_font_encrypt,
+    command=lambda: start_progress(
+        run_epub_font_encrypt, "字体加密", defalut_output_dir
+    ),
 )
 font_encrypt_btn.pack(side=tk.LEFT, padx=5)
 
 
-def run_img_transfer():
-    children = file_list.get_children()
-    file_count = len(children)
-    if file_count == 0:
-        messagebox.showwarning("Warning", "未添加任何文件")
-        return
-    progress["value"] = 0
-    progress["maximum"] = file_count
-    root.update_idletasks()
-    for item in children:
-        # 获取文件路径
-        file_path = file_list.item(item, "values")[2]
-        file_list.delete(item)
-        tmp_files_dic.pop(file_path)
-        file_name = os.path.basename(file_path).rsplit(".", 1)[0]
-        try:
-            ret = run_epub_img_transfer(file_path, defalut_output_dir)
-            print(ret)
-            if defalut_output_dir == None:
-                outdir = os.path.dirname(file_path)
-            else:
-                outdir = defalut_output_dir
-            if ret == 0:
-                result_list.insert(
-                    "",
-                    "end",
-                    values=(
-                        "^_^",
-                        file_name,
-                        outdir,
-                        "成功",
-                        f"图片转换成功，输出路径：{outdir}",
-                    ),
-                )
-            elif ret == "skip":
-                result_list.insert(
-                    "",
-                    "end",
-                    values=(
-                        "O_o",
-                        file_name,
-                        outdir,
-                        "跳过",
-                        f"无webp图片文件，跳过图片转换操作",
-                    ),
-                )
-            else:
-                result_list.insert(
-                    "",
-                    "end",
-                    values=(
-                        "T_T",
-                        file_name,
-                        outdir,
-                        "失败",
-                        f"{ret}",
-                    ),
-                )
-        except Exception as e:
-            result_list.insert(
-                "",
-                "end",
-                values=(
-                    "@_@",
-                    file_name,
-                    outdir,
-                    "失败",
-                    f"图片转换失败，错误信息：{e}",
-                ),
-            )
-            
-        progress["value"] += 1
-        root.update_idletasks()
-
-font_encrypt_btn = ttk.Button(
+img_transfer_btn = ttk.Button(
     op_frame,
     text="图片转换",
-    command=run_img_transfer,
+    command=lambda: start_progress(
+        run_epub_img_transfer, "图片转换", defalut_output_dir
+    ),
 )
-font_encrypt_btn.pack(side=tk.LEFT, padx=5)
+img_transfer_btn.pack(side=tk.LEFT, padx=5)
 
 # 创建一个 Frame 用于放置进度条
 progress_frame = ttk.Frame(root)
@@ -776,10 +636,9 @@ def show_context_menu_result(event):
         result_list.selection_set(item)
         context_menu_result.post(event.x_root, event.y_root)
 
+
 def open_log_file():
-    log_path=os.path.join(
-            os.path.dirname(os.path.abspath(sys.argv[0])), "log.txt"
-        )
+    log_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "log.txt")
     if os.path.exists(log_path):
         try:
             if sys.platform.startswith("darwin"):  # macOS
@@ -794,6 +653,7 @@ def open_log_file():
             messagebox.showerror("Warning", f"无法打开路径: {e}")
     else:
         messagebox.showwarning("Warning", f"文件不存在: {log_path}")
+
 
 def open_selected_file_output_dir():
     selected_items = result_list.selection()
@@ -824,13 +684,11 @@ context_menu_result = tk.Menu(result_list, tearoff=0)
 context_menu_result.add_command(
     label="打开输出文件夹", command=open_selected_file_output_dir
 )
-context_menu_result.add_command(
-    label="打开日志文件", command=open_log_file
-)
+context_menu_result.add_command(label="打开日志文件", command=open_log_file)
 
-if sys.platform.startswith('win'):
+if sys.platform.startswith("win"):
     result_list.bind("<Button-3>", show_context_menu_result)
-elif sys.platform.startswith('darwin'):
+elif sys.platform.startswith("darwin"):
     result_list.bind("<Button-2>", show_context_menu_result)
 
 

@@ -386,6 +386,12 @@ class FontEncrypt:
         self.epub.close()
         self.target_epub.close()
 
+    def fail_del_target(self):
+        if self.file_write_path and os.path.exists(self.file_write_path):
+            os.remove(self.file_write_path)
+            logger.write(f"删除临时文件: {self.file_write_path}")
+        else:
+            logger.write("临时文件不存在或已被删除。")
 
     def read_html(self):
         for one_html in self.htmls:
@@ -427,7 +433,7 @@ class FontEncrypt:
     # def read_unchanged_fonts(self,font_file_mapping=None):
     #    self.font_to_unchanged_file_mapping = font_file_mapping if font_file_mapping else {}
 
-def run_epub_font_encrypt(epub_path, output_path):
+def run_epub_font_encrypt(epub_path, output_path=None):
     logger.write(f"\n正在尝试加密EPUB字体: {epub_path}")
     fe = FontEncrypt(epub_path, output_path)
     if len(fe.fonts) == 0:
@@ -443,7 +449,8 @@ def run_epub_font_encrypt(epub_path, output_path):
         logger.write(f"字体加密失败，错误信息: {e}")
         traceback.print_exc()
         fe.close_file()
-        return f"字体加密失败，错误信息: {e}"
+        fe.fail_del_target()
+        return e
     try:
         fe.read_html()
         logger.write("EPUB文件处理成功")
@@ -451,7 +458,8 @@ def run_epub_font_encrypt(epub_path, output_path):
     except Exception as e:
         logger.write(f"EPUB文件处理失败，错误信息: {e}")
         fe.close_file()
-        return f"EPUB文件处理失败，错误信息: {e}"
+        fe.fail_del_target()
+        return e
     return 0
 
 if __name__ == '__main__':

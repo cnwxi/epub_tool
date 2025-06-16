@@ -8,6 +8,7 @@ from os import path, mkdir, getcwd
 from urllib.parse import unquote
 from xml.etree import ElementTree
 import os
+
 try:
     from utils.log import logwriter
 except:
@@ -15,9 +16,12 @@ except:
 
 logger = logwriter()
 
+
 class EpubTool:
     def __init__(self, epub_src):
         self.epub = zipfile.ZipFile(epub_src)
+        self.tgt_epub = None
+        self.file_write_path = None
         self.epub_src = epub_src
         self.epub_name = path.basename(epub_src)
         self.ebook_root = path.dirname(epub_src)
@@ -45,6 +49,9 @@ class EpubTool:
     def set_output_path(self, output_path):
         if output_path is not None and os.path.isdir(output_path):
             self.output_path = output_path
+        self.file_write_path = path.join(
+            self.output_path, self.epub_name.replace(".epub", "_reformat.epub")
+        )
 
     def _init_namelist(self):
         self.namelist = self.epub.namelist()
@@ -727,8 +734,20 @@ class EpubTool:
         self.tgt_epub.writestr(
             "OEBPS/content.opf", bytes(opf, encoding="utf-8"), zipfile.ZIP_DEFLATED
         )
-        self.tgt_epub.close()
-        self.epub.close()
+        self.close_files()
+
+    def close_files(self):
+        if self.epub:
+            self.epub.close()
+        if self.tgt_epub:
+            self.tgt_epub.close()
+
+    def fail_del_target(self):
+        if self.file_write_path and os.path.exists(self.file_write_path):
+            os.remove(self.file_write_path)
+            logger.write(f"删除临时文件: {self.file_write_path}")
+        else:
+            logger.write("临时文件不存在或已被删除。")
 
 
 # 相对路径计算函数
@@ -811,10 +830,14 @@ def run(epub_src, output_path=None):
             logger.write("-------在 OPF文件 发现问题------:")
             for error_type, error_value in epub.errorOPF_log:
                 if error_type == "duplicate_id":
-                    logger.write(f"问题: 发现manifest节点内部存在重复ID {error_value} !!!" )
+                    logger.write(
+                        f"问题: 发现manifest节点内部存在重复ID {error_value} !!!"
+                    )
                     logger.write("措施: 已自动清除重复ID对应的manifest项。")
                 elif error_type == "invalid_idref":
-                    logger.write(f"问题: 发现spine节点内部存在无效引用ID {error_value} !!!" )
+                    logger.write(
+                        f"问题: 发现spine节点内部存在无效引用ID {error_value} !!!"
+                    )
                     logger.write(
                         "措施: 请自行检查spine内的itemref节点并手动修改，确保引用的ID存在于manifest的item项。\n"
                         + "      （大小写不一致也会导致引用无效。）"
@@ -837,9 +860,11 @@ def run(epub_src, output_path=None):
                             f"链接: {href}\n问题: 与实际文件名大小写不一致！\n措施: 程序已自动纠正链接。"
                         )
                     else:
-                        logger.write(f"链接: {href}\n问题: 未能找到对应文件！！！")   
+                        logger.write(f"链接: {href}\n问题: 未能找到对应文件！！！")
     except Exception as e:
         logger.write(f"{epub_src} 重构EPUB失败: {e}")
+        epub.close_files()
+        epub.fail_del_target()
         return e
     else:
         logger.write(f"{epub_src} 重构EPUB成功")
@@ -862,7 +887,6 @@ def main():
         print("操作失败，请检查日志！")
     else:
         print("操作成功！")
-
 
 
 if __name__ == "__main__":

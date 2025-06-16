@@ -1,0 +1,2 @@
+--include=\.py$
+--exclude=\.venv
