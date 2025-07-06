@@ -2,9 +2,7 @@ import zipfile
 import os
 from bs4 import BeautifulSoup
 import tinycss2
-
-# from tinycss2 import parse_component_value_list
-import emoji
+# import emoji
 import re
 from fontTools.ttLib import TTFont
 from fontTools.fontBuilder import FontBuilder
@@ -200,14 +198,12 @@ class FontEncrypt:
         for key in self.font_to_char_mapping:
             text = self.font_to_char_mapping[key]
             # 去除转义字符和换行符
-            self.font_to_char_mapping[key] = (
-                text.replace("\n", "").replace("\r", "").replace("\t", "")
-            )
+            # self.font_to_char_mapping[key] = (
+            #     text.replace("\n", "").replace("\r", "").replace("\t", "")
+            # )
             # 去除标点符号和特殊字符
-            self.font_to_char_mapping[key] = re.sub(
-                r"[^\u4e00-\u9fa5a-zA-Z0-9]", "", text
-            )
-            self.font_to_char_mapping[key] = emoji.replace_emoji(text, replace="")
+            self.font_to_char_mapping[key] = re.sub(r"[^\u4e00-\u9fa5]", "", text)
+            # self.font_to_char_mapping[key] = emoji.replace_emoji(text, replace="")
         logger.write(f"清理后的文本: {self.font_to_char_mapping}")
 
     # 修改自https://github.com/solarhell/fontObfuscator
@@ -221,48 +217,6 @@ class FontEncrypt:
             else:
                 exsit_chars.append(char)
         return missing_chars, "".join(exsit_chars)
-
-    # def is_cjk_font(self, font):
-    #     """
-    #     判断字体文件是否包含CJK字符。
-
-    #     :param font_path: 字体文件路径
-    #     :return: 如果字体包含CJK字符返回True，否则返回False
-    #     """
-    #     # 加载字体文件
-    #     # font = TTFont(font_io)
-
-    #     # 获取所有字符映射表
-    #     cmap_tables = font['cmap'].tables
-
-    #     # 定义CJK字符的Unicode范围
-    #     cjk_ranges = [
-    #         (0x4E00, 0x9FFF),  # CJK Unified Ideographs
-    #         # (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
-    #         # (0x20000, 0x2A6DF),  # CJK Unified Ideographs Extension B
-    #         # (0x2A700, 0x2B73F),  # CJK Unified Ideographs Extension C
-    #         # (0x2B740, 0x2B81F),  # CJK Unified Ideographs Extension D
-    #         # (0x2B820, 0x2CEAF),  # CJK Unified Ideographs Extension E
-    #         # (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
-    #         # (0x2F800, 0x2FA1F)  # CJK Compatibility Ideographs Supplement
-    #     ]
-    #     # 遍历所有字符映射表
-    #     for table in cmap_tables:
-    #         # 获取当前表中的字符到字形名称的映射
-    #         char_to_glyph = table.cmap
-
-    #         # 检查是否存在CJK范围内的字符
-    #         available_ranges = []
-    #         for code_point in char_to_glyph.keys():
-    #             if any(start <= code_point <= end
-    #                    for start, end in cjk_ranges):
-    #                 available_ranges.append(code_point)
-    #         if len(available_ranges) > 0:
-    #             # 如果找到CJK字符，返回True
-    #             # print(f"找到CJK字符: {available_ranges}")
-    #             return True, available_ranges
-
-    #     return False, None  # 未找到CJK字符
 
     def set_timestamps(self, font):
         # 设置 'head' 表的时间戳
@@ -521,7 +475,8 @@ if __name__ == "__main__":
     fe = FontEncrypt(epub_read_path, file_write_dir)
     fe.get_mapping()
     # the_font_file_mapping = {}
-    print(f"3、此EPUB文件包含{len(fe.fonts)}个字体文件:\n{'\n'.join(fe.fonts)}")
+    print(f"3、此EPUB文件包含{len(fe.fonts)}个字体文件:")
+    print("\n".join(fe.fonts))
     # for i,font_file in enumerate(fe.fonts):
     #     if font_file in fe.font_to_char_mapping.keys():
     #         raw_input = None
