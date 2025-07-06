@@ -18,7 +18,7 @@ root = tk.Tk()
 style = ttk.Style()
 
 root.title("Epub Tool")
-min_width = 500
+min_width = 600
 min_height = 780
 root.geometry(f"{min_width}x{min_height}")
 root.minsize(min_width, min_height)

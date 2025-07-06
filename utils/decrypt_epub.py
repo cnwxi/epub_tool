@@ -6,13 +6,13 @@
 
 import zipfile
 import re, sys
-from os import path, mkdir, getcwd
+from os import path
 from urllib.parse import unquote
 from xml.etree import ElementTree
 import copy
 import os
-import difflib
-import hashlib
+from difflib import SequenceMatcher
+from hashlib import md5 as hashlibmd5
 
 try:
     from utils.log import logwriter
@@ -177,7 +177,7 @@ class EpubTool:
                 # 判断_id_name是否合法
                 if re.search(r'[\\/:*?"<>|]', _id_name):
                     logger.write(f"ID: {_id} 中包含非法字符")
-                    _id_name = hashlib.md5(_id_name.encode()).hexdigest()
+                    _id_name = hashlibmd5(_id_name.encode()).hexdigest()
                     logger.write(f"ID: {_id} 替换为 {_id_name}")
                 new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"
             logger.write(f"decrypt href: {_id}:{_href} -> {new_href}")
@@ -816,7 +816,7 @@ class EpubTool:
                     logger.write(f"写入content.opf时，文件链接出错: {href}")
                     similar_list = []
                     for i in self.text_list:
-                        similar = difflib.SequenceMatcher(
+                        similar = SequenceMatcher(
                             None,
                             i[0].rsplit("/", 1)[-1].split(".")[0],
                             href.rsplit("/", 1)[-1].split(".")[0],

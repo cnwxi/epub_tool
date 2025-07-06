@@ -1,7 +1,7 @@
 import zipfile
 import os
 from bs4 import BeautifulSoup
-import tinycss2
+from tinycss2 import parse_stylesheet, serialize, parse_declaration_list
 # import emoji
 import re
 from fontTools.ttLib import TTFont
@@ -78,12 +78,12 @@ class FontEncrypt:
         for css in self.css:
             with self.epub.open(css) as f:
                 content = f.read().decode("utf-8")
-                rules = tinycss2.parse_stylesheet(content)
+                rules = parse_stylesheet(content)
                 # 遍历所有规则，查找 @font-face
                 for rule in rules:
                     all_count = 0
                     if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
-                        tmp_font_face = tinycss2.serialize(rule.content)
+                        tmp_font_face = serialize(rule.content)
 
                         local_count, url_count = tmp_font_face.count(
                             "local"
@@ -112,12 +112,12 @@ class FontEncrypt:
         for css in self.css:
             with self.epub.open(css) as f:
                 content = f.read().decode("utf-8")
-                rules = tinycss2.parse_stylesheet(content)
+                rules = parse_stylesheet(content)
                 for rule in rules:
                     if rule.type == "qualified-rule":  # 确保是样式规则
                         # 获取选择器
-                        selector = tinycss2.serialize(rule.prelude).strip()
-                        declarations = tinycss2.parse_declaration_list(rule.content)
+                        selector = serialize(rule.prelude).strip()
+                        declarations = parse_declaration_list(rule.content)
                         for declaration in declarations:
                             if (
                                 declaration.type == "declaration"
@@ -477,25 +477,6 @@ if __name__ == "__main__":
     # the_font_file_mapping = {}
     print(f"3、此EPUB文件包含{len(fe.fonts)}个字体文件:")
     print("\n".join(fe.fonts))
-    # for i,font_file in enumerate(fe.fonts):
-    #     if font_file in fe.font_to_char_mapping.keys():
-    #         raw_input = None
-    #         while True:
-    #             raw_input= input(
-    #                 f"3.{i+1}、请输入字体文件{font_file}对应的文件路径（如: ./font/font.ttf）或输入 Q/q 跳过: \n（若已对内嵌字体进行过字体子集化，请不要跳过此流程）\n")
-    #             if raw_input.lower() == 'q':
-    #                 print(f"跳过{font_file}的映射")
-    #                 break
-    #             raw_input = raw_input.strip()
-    #             raw_input = os.path.normpath(raw_input)
-    #             if os.path.exists(raw_input):
-    #                 the_font_file_mapping[font_file] = raw_input
-    #                 print(f"已将{font_file}映射到{raw_input}")
-    #                 break
-    #             else:
-    #                 print(f"文件{raw_input}不存在，请重新输入")
-    #                 continue
-    # fe.read_unchanged_fonts(the_font_file_mapping)
     fe.clean_text()
     try:
         fe.encrypt_font()

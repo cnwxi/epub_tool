@@ -1,5 +1,5 @@
 import zipfile
-import re, sys
+import re
 import os
 from PIL import Image
 from io import BytesIO

@@ -5,11 +5,11 @@
 
 import zipfile
 import re, sys
-from os import path, mkdir, getcwd
+from os import path
 from urllib.parse import unquote
 from xml.etree import ElementTree
 import os
-import hashlib
+from hashlib import md5 as hashlibmd5
 
 try:
     from utils.log import logwriter
@@ -153,7 +153,7 @@ class EpubTool:
                 # :*:*:**::**::::******::***::***:*:**::***::*:*::::::**::::**:*~slim.webp
             else:
                 image_slim = ""
-            _href_hash = hashlib.md5(_id_name.encode()).digest()
+            _href_hash = hashlibmd5(_id_name.encode()).digest()
             _href_hash = int.from_bytes(_href_hash, byteorder="big")
             bin_hash = bin(_href_hash)
             new_href = (

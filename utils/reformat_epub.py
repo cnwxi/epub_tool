@@ -4,7 +4,7 @@
 
 import zipfile
 import re, sys
-from os import path, mkdir, getcwd
+from os import path
 from urllib.parse import unquote
 from xml.etree import ElementTree
 import os
