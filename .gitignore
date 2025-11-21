@@ -4,8 +4,9 @@ test
 epub_tool.spec
 log.txt
 result.txt
-utils/__pycache__/
 log_file
 epub_tool_TKUI.spec
 .DS_Store
 *.epub
+.vscode
+__pycache__/
