@@ -107,7 +107,7 @@ class ModernEpubTool(BaseClass):
                 sidebar,
                 text="使用说明\n·\n点击上侧按钮添加删除文件\n本程序已支持文件拖拽功能\n·\n点击右侧按钮进行批量处理\n·\n右键框内文件项目查看更多\n·",
                 justify=CENTER,
-                font=("TkDefaultFont", 12),
+                font=("TkDefaultFont", 10),
                 bootstyle="inverse-secondary",
             )
             drag_tip.pack(pady=(0, 10))
