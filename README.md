@@ -120,7 +120,8 @@ Epub Tool->ET->E-Book Thor->📖🔨-><img src="./img/icon.ico" alt="icon" style
 
 > （Mac安装后运行若提示无法验证安全性，请参考[Apple 无法检查 App 是否包含恶意软件（来自Apple官网Mac使用手册）](https://support.apple.com/zh-cn/guide/mac-help/mchleab3a043/mac)，进入系统设置-隐私与安全性-安全性-点击“仍要打开”；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
 
-![操作演示](./img/how_to_use.gif)
+UI操作演示
+![操作演示](./img/how_to_use_new.gif)
 
 <!-- - UI预览，具体界面可能随后续更新改动<br>
 
