@@ -61,7 +61,7 @@ class ModernEpubTool(BaseClass):
         x = (self.winfo_screenwidth() // 2) - (width // 2)
         y = (self.winfo_screenheight() // 2) - (height // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
-
+        self.minsize(width, height)
         self.file_map = {}
         self.output_dir = None
         self.msg_queue = queue.Queue()
@@ -88,7 +88,7 @@ class ModernEpubTool(BaseClass):
         title_lbl = ttk.Label(
             sidebar,
             text="EPUB TOOL",
-            font=("Helvetica", 16, "bold"),
+            font=("TkDefaultFont", 16, "bold"),
             bootstyle="inverse-secondary",
         )
         title_lbl.pack(pady=(40, 30), anchor=CENTER)
@@ -96,20 +96,18 @@ class ModernEpubTool(BaseClass):
         btn_frame = ttk.Frame(sidebar, bootstyle=SECONDARY)
         btn_frame.pack(fill=X, padx=20)
 
-        self.create_sidebar_btn(btn_frame, "📂 添加文件", self.add_files, style="light")
-        self.create_sidebar_btn(btn_frame, "📁 添加文件夹", self.add_dir, style="light")
+        self.create_sidebar_btn(btn_frame, "添加文件", self.add_files, style="light")
+        self.create_sidebar_btn(btn_frame, "添加文件夹", self.add_dir, style="light")
 
         ttk.Separator(sidebar, bootstyle="light").pack(fill=X, padx=20, pady=15)
-        self.create_sidebar_btn(
-            btn_frame, "🗑️ 清空列表", self.clear_files, style="danger"
-        )
+        self.create_sidebar_btn(btn_frame, "清空列表", self.clear_files, style="danger")
 
         if DND_AVAILABLE:
             drag_tip = ttk.Label(
                 sidebar,
-                text="使用说明\n·\n点击上侧按钮添加删除文件\n本程序已支持文件拖拽功能\n·\n点击右侧按钮进行批量处理\n·\n右键框内文件项目查看更多",
+                text="使用说明\n·\n点击上侧按钮添加删除文件\n本程序已支持文件拖拽功能\n·\n点击右侧按钮进行批量处理\n·\n右键框内文件项目查看更多\n·",
                 justify=CENTER,
-                # font=("Helvetica", 9),
+                font=("TkDefaultFont", 12),
                 bootstyle="inverse-secondary",
             )
             drag_tip.pack(pady=(0, 10))
@@ -117,7 +115,7 @@ class ModernEpubTool(BaseClass):
         link_lbl = ttk.Label(
             sidebar,
             text="Github Repository",
-            font=("Helvetica", 9, "underline"),
+            font=("TkDefaultFont", 9, "underline"),
             cursor="hand2",
             bootstyle="inverse-secondary",
         )
@@ -132,7 +130,7 @@ class ModernEpubTool(BaseClass):
         list_label = ttk.Label(
             main_content,
             text="待处理文件",
-            font=("Helvetica", 12, "bold"),
+            font=("TkDefaultFont", 12, "bold"),
             bootstyle="primary",
         )
         list_label.pack(anchor=W, pady=(0, 10))
@@ -160,7 +158,12 @@ class ModernEpubTool(BaseClass):
 
         # 绑定右键菜单
         self.create_context_menus()
-        self.file_tree.bind("<Button-3>", self.show_file_menu)
+
+        if sys.platform.startswith("darwin"):
+            self.file_tree.bind("<Button-2>", self.show_file_menu)
+
+        else:
+            self.file_tree.bind("<Button-3>", self.show_file_menu)
 
         # 2. 路径与操作
         ctrl_frame = ttk.Frame(main_content)
@@ -172,13 +175,13 @@ class ModernEpubTool(BaseClass):
         path_entry.pack(side=LEFT, padx=(0, 10), fill=X, expand=True)
         ttk.Button(
             ctrl_frame,
-            text="⚙️ 设置输出",
+            text="设置输出路径",
             command=self.select_output,
             bootstyle="info-outline",
         ).pack(side=LEFT, padx=5)
         ttk.Button(
             ctrl_frame,
-            text="↺ 重置",
+            text="重置路径",
             command=self.reset_output,
             bootstyle="secondary-outline",
         ).pack(side=LEFT)
@@ -187,11 +190,11 @@ class ModernEpubTool(BaseClass):
         action_frame = ttk.Frame(main_content)
         action_frame.pack(fill=X, pady=(0, 20))
         actions = [
-            ("📖 格式化", reformat_run, "格式化", "primary"),
-            ("🔓 文件解密", decrypt_run, "文件名解密", "success"),
-            ("🔒 文件加密", encrypt_run, "文件名加密", "warning"),
-            ("🅰️ 字体加密", run_epub_font_encrypt, "字体加密", "info"),
-            ("🖼️ 图片转换", run_epub_img_transfer, "图片转换", "dark"),
+            ("格式化", reformat_run, "格式化", "primary"),
+            ("文件解密", decrypt_run, "文件名解密", "success"),
+            ("文件加密", encrypt_run, "文件名加密", "warning"),
+            ("字体加密", run_epub_font_encrypt, "字体加密", "info"),
+            ("图片转换", run_epub_img_transfer, "图片转换", "dark"),
         ]
         for idx, (text, func, name, b_style) in enumerate(actions):
             btn = ttk.Button(
@@ -250,28 +253,27 @@ class ModernEpubTool(BaseClass):
         self.log_tree.tag_configure("skip", foreground="#fd7e14")
 
         # 绑定日志右键
-        self.log_tree.bind("<Button-3>", self.show_log_menu)
+        if sys.platform.startswith("darwin"):
+            self.log_tree.bind("<Button-2>", self.show_log_menu)
+        else:
+            self.log_tree.bind("<Button-3>", self.show_log_menu)
 
     # --- 右键菜单逻辑 ---
     def create_context_menus(self):
         # 文件列表菜单
         self.file_menu = tk.Menu(self, tearoff=0)
         self.file_menu.add_command(
-            label="📂 打开所在文件夹", command=self.open_file_location
+            label="打开所在文件夹", command=self.open_file_location
         )
         self.file_menu.add_separator()
-        self.file_menu.add_command(
-            label="🗑️ 移除此项", command=self.remove_selected_file
-        )
+        self.file_menu.add_command(label="移除此项", command=self.remove_selected_file)
 
         # 日志列表菜单
         self.log_menu = tk.Menu(self, tearoff=0)
-        self.log_menu.add_command(
-            label="📂 打开输出位置", command=self.open_log_location
-        )
+        self.log_menu.add_command(label="打开输出位置", command=self.open_log_location)
         self.log_menu.add_separator()
         self.log_menu.add_command(
-            label="📝 打开日志文件(log.txt)", command=self.open_log_file
+            label="打开日志文件(log.txt)", command=self.open_log_file
         )
 
     def show_file_menu(self, event):
@@ -444,15 +446,15 @@ class ModernEpubTool(BaseClass):
             try:
                 ret = func(f_path, out_dir)
                 if ret == 0:
-                    tag, status = ("success", "✅ 成功")
+                    tag, status = ("success", "成功")
                 elif ret == "skip":
-                    tag, status = ("skip", "⏭️ 跳过")
+                    tag, status = ("skip", "跳过")
                 else:
-                    tag, status = ("error", f"❌ 失败: {ret}")
+                    tag, status = ("error", f"失败: {ret}")
 
                 msg = f"输出至: {real_out_dir}"
             except Exception as e:
-                tag, status, msg = ("error", "⚠️ 异常", str(e))
+                tag, status, msg = ("error", "异常", str(e))
 
             # 传递 real_out_dir 到队列
             self.msg_queue.put((status, f_name, msg, real_out_dir, tag))
