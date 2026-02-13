@@ -548,7 +548,61 @@ class EpubTool:
                 else:
                     return match.group()
 
+            def re_poster(match):
+                href = match.group(3)
+                href = unquote(href).strip()
+                bkpath = get_bookpath(href, xhtml_bkpath)
+                bkpath = check_link(xhtml_bkpath, bkpath, href, self)
+                if not bkpath:
+                    return match.group()
+                if href.lower().endswith(
+                    (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".svg")
+                ):
+                    filename = re_path_map["image"][bkpath]
+                    return match.group(1) + "../Images/" + filename + match.group(4)
+                else:
+                    return match.group()
+
+            def re_media_attr(match):
+                href = match.group(3)
+                href = unquote(href).strip()
+                bkpath = get_bookpath(href, xhtml_bkpath)
+                bkpath = check_link(xhtml_bkpath, bkpath, href, self)
+                if not bkpath:
+                    return match.group()
+
+                if href.lower().endswith(
+                    (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".svg")
+                ):
+                    filename = re_path_map["image"][bkpath]
+                    return match.group(1) + "../Images/" + filename + match.group(4)
+                elif href.lower().endswith(".mp3"):
+                    filename = re_path_map["audio"][bkpath]
+                    return match.group(1) + "../Audio/" + filename + match.group(4)
+                elif href.lower().endswith(".mp4"):
+                    filename = re_path_map["video"][bkpath]
+                    return match.group(1) + "../Video/" + filename + match.group(4)
+                elif href.lower().endswith(".js"):
+                    filename = re_path_map["other"][bkpath]
+                    return match.group(1) + "../Misc/" + filename + match.group(4)
+                else:
+                    return match.group()
+
             text = re.sub(r"(<[^>]* src=([\'\"]))(.*?)(\2[^>]*>)", re_src, text)
+            text = re.sub(r"(<[^>]* poster=([\'\"]))(.*?)(\2[^>]*>)", re_poster, text)
+            text = re.sub(
+                r"(<[^>]* placeholder=([\'\"]))(.*?)(\2[^>]*>)", re_media_attr, text
+            )
+            text = re.sub(
+                r"(<[^>]* activestate=([\'\"]))(.*?)(\2[^>]*>)",
+                re_media_attr,
+                text,
+            )
+            text = re.sub(
+                r"(<[^>]* zy-cover-pic=([\'\"]))(.*?)(\2[^>]*>)",
+                re_media_attr,
+                text,
+            )
 
             # 修改 url
             def re_url(match):
