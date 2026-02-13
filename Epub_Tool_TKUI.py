@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 import os
 import threading
 import queue
@@ -30,7 +30,10 @@ try:
     from utils.encrypt_epub import run as encrypt_run
     from utils.decrypt_epub import run as decrypt_run
     from utils.reformat_epub import run as reformat_run
-    from utils.encrypt_font import run_epub_font_encrypt
+    from utils.encrypt_font import (
+        run_epub_font_encrypt,
+        list_epub_font_encrypt_targets,
+    )
     from utils.transfer_img import run_epub_img_transfer
 except ImportError:
 
@@ -38,9 +41,139 @@ except ImportError:
         time.sleep(0.2)
         return 0
 
+    def list_epub_font_encrypt_targets(epub_path):
+        return {"font_families": [], "xhtml_files": []}
+
     encrypt_run = decrypt_run = reformat_run = run_epub_font_encrypt = (
         run_epub_img_transfer
     ) = mock_run
+
+
+class FontEncryptSelectionDialog(simpledialog.Dialog):
+
+    def __init__(self, parent, font_options, html_options):
+        self.font_options = font_options
+        self.html_options = html_options
+        self.result = None
+        super().__init__(parent, title="字体加密筛选")
+
+    def _toggle_selection(self, listbox):
+        selected = set(listbox.curselection())
+        listbox.select_clear(0, tk.END)
+        for index in range(listbox.size()):
+            if index not in selected:
+                listbox.select_set(index)
+
+    def _select_all(self, listbox):
+        listbox.select_set(0, tk.END)
+
+    def body(self, master):
+        master.grid_columnconfigure(0, weight=1)
+        master.grid_columnconfigure(1, weight=1)
+        master.grid_rowconfigure(1, weight=1)
+
+        ttk.Label(
+            master,
+            text="请勾选要参与字体加密的字体和 html/xhtml（默认全选、支持多选）",
+            bootstyle="secondary",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        font_frame = ttk.Labelframe(master, text="字体 Family")
+        font_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        font_frame.grid_rowconfigure(0, weight=1)
+        font_frame.grid_columnconfigure(0, weight=1)
+
+        self.font_listbox = tk.Listbox(
+            font_frame, selectmode=tk.MULTIPLE, exportselection=False, height=15
+        )
+        self.font_listbox.grid(row=0, column=0, sticky="nsew")
+        font_scroll = ttk.Scrollbar(
+            font_frame, orient=tk.VERTICAL, command=self.font_listbox.yview
+        )
+        font_scroll.grid(row=0, column=1, sticky="ns")
+        self.font_listbox.config(yscrollcommand=font_scroll.set)
+
+        for item in self.font_options:
+            self.font_listbox.insert(tk.END, item)
+        if self.font_options:
+            self.font_listbox.select_set(0, tk.END)
+
+        font_btns = ttk.Frame(font_frame)
+        font_btns.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(
+            font_btns,
+            text="全选",
+            command=lambda: self._select_all(self.font_listbox),
+            bootstyle="secondary-outline",
+            width=8,
+        ).pack(side=tk.LEFT)
+        ttk.Button(
+            font_btns,
+            text="反选",
+            command=lambda: self._toggle_selection(self.font_listbox),
+            bootstyle="secondary-outline",
+            width=8,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        html_frame = ttk.Labelframe(master, text="HTML/XHTML 文件")
+        html_frame.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
+        html_frame.grid_rowconfigure(0, weight=1)
+        html_frame.grid_columnconfigure(0, weight=1)
+
+        self.html_listbox = tk.Listbox(
+            html_frame, selectmode=tk.MULTIPLE, exportselection=False, height=15
+        )
+        self.html_listbox.grid(row=0, column=0, sticky="nsew")
+        html_scroll = ttk.Scrollbar(
+            html_frame, orient=tk.VERTICAL, command=self.html_listbox.yview
+        )
+        html_scroll.grid(row=0, column=1, sticky="ns")
+        self.html_listbox.config(yscrollcommand=html_scroll.set)
+
+        for item in self.html_options:
+            self.html_listbox.insert(tk.END, item)
+        if self.html_options:
+            self.html_listbox.select_set(0, tk.END)
+
+        html_btns = ttk.Frame(html_frame)
+        html_btns.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(
+            html_btns,
+            text="全选",
+            command=lambda: self._select_all(self.html_listbox),
+            bootstyle="secondary-outline",
+            width=8,
+        ).pack(side=tk.LEFT)
+        ttk.Button(
+            html_btns,
+            text="反选",
+            command=lambda: self._toggle_selection(self.html_listbox),
+            bootstyle="secondary-outline",
+            width=8,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        return self.font_listbox
+
+    def validate(self):
+        selected_font_idx = self.font_listbox.curselection()
+        selected_html_idx = self.html_listbox.curselection()
+        if self.font_options and not selected_font_idx:
+            messagebox.showwarning("提示", "请至少选择一个字体 family")
+            return False
+        if self.html_options and not selected_html_idx:
+            messagebox.showwarning("提示", "请至少选择一个 html/xhtml 文件")
+            return False
+        return True
+
+    def apply(self):
+        self.result = {
+            "target_font_families": [
+                self.font_options[index] for index in self.font_listbox.curselection()
+            ],
+            "target_xhtml_files": [
+                self.html_options[index] for index in self.html_listbox.curselection()
+            ],
+        }
 
 
 class ModernEpubTool(BaseClass):
@@ -419,24 +552,52 @@ class ModernEpubTool(BaseClass):
         self.output_dir = None
         self.path_var.set("默认: 源文件同级目录")
 
+    def _ask_font_encrypt_options(self, file_data):
+        font_families = set()
+        xhtml_files = set()
+        for one_file in file_data:
+            try:
+                result = list_epub_font_encrypt_targets(one_file)
+                font_families.update(result.get("font_families", []))
+                xhtml_files.update(result.get("xhtml_files", []))
+            except Exception:
+                continue
+
+        dialog = FontEncryptSelectionDialog(
+            self,
+            sorted(font_families, key=str.lower),
+            sorted(xhtml_files, key=str.lower),
+        )
+        if dialog.result is None:
+            return None
+        return dialog.result
+
     def start_task(self, func, task_name):
         items = self.file_tree.get_children()
         if not items:
             messagebox.showwarning("提示", "请先添加文件！")
             return
 
+        file_data = [self.file_tree.item(i, "values")[2] for i in items]
+        task_kwargs = {}
+        if func == run_epub_font_encrypt:
+            options = self._ask_font_encrypt_options(file_data)
+            if options is None:
+                return
+            task_kwargs = options
+
         self.progress["value"] = 1
         self.progress["maximum"] = len(items) + 1
-
-        file_data = [self.file_tree.item(i, "values")[2] for i in items]
         self.file_tree.delete(*items)
         self.file_map.clear()
 
         threading.Thread(
-            target=self._worker, args=(func, file_data, self.output_dir), daemon=True
+            target=self._worker,
+            args=(func, file_data, self.output_dir, task_kwargs),
+            daemon=True,
         ).start()
 
-    def _worker(self, func, files, out_dir):
+    def _worker(self, func, files, out_dir, task_kwargs=None):
         for i, f_path in enumerate(files):
             f_name = os.path.basename(f_path)
 
@@ -444,7 +605,10 @@ class ModernEpubTool(BaseClass):
             real_out_dir = out_dir if out_dir else os.path.dirname(f_path)
 
             try:
-                ret = func(f_path, out_dir)
+                if task_kwargs:
+                    ret = func(f_path, out_dir, **task_kwargs)
+                else:
+                    ret = func(f_path, out_dir)
                 if ret == 0:
                     tag, status = ("success", "成功")
                 elif ret == "skip":

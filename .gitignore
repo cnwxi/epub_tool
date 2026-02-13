@@ -10,3 +10,4 @@ epub_tool_TKUI.spec
 *.epub
 .vscode
 __pycache__/
+.pycache

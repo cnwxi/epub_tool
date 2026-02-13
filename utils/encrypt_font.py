@@ -1,5 +1,6 @@
 import zipfile
 import os
+import posixpath
 from bs4 import BeautifulSoup
 from tinycss2 import parse_stylesheet, serialize, parse_declaration_list
 # import emoji
@@ -10,7 +11,6 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from io import BytesIO
 import random
 import traceback
-import html
 from datetime import datetime
 
 try:
@@ -21,9 +21,81 @@ except:
 logger = logwriter()
 
 
+def list_epub_font_encrypt_targets(epub_path):
+    if not os.path.exists(epub_path):
+        raise Exception("EPUB文件不存在")
+
+    with zipfile.ZipFile(epub_path) as epub:
+        html_files = sorted(
+            [
+                item
+                for item in epub.namelist()
+                if item.lower().endswith(".html") or item.lower().endswith(".xhtml")
+            ],
+            key=str.lower,
+        )
+        css_files = [item for item in epub.namelist() if item.lower().endswith(".css")]
+        font_file_names = {
+            os.path.basename(item).lower()
+            for item in epub.namelist()
+            if item.lower().endswith((".ttf", ".otf", ".woff"))
+        }
+        font_families = set()
+
+        for css in css_files:
+            try:
+                content = epub.read(css).decode("utf-8")
+                rules = parse_stylesheet(content)
+            except Exception:
+                continue
+
+            for rule in rules:
+                if rule.type != "at-rule" or rule.lower_at_keyword != "font-face":
+                    continue
+                declarations = parse_declaration_list(rule.content)
+                font_family = None
+                src_value = None
+                for declaration in declarations:
+                    if declaration.type != "declaration":
+                        continue
+                    if declaration.lower_name == "font-family":
+                        values = [
+                            token.value
+                            for token in declaration.value
+                            if token.type == "string" or token.type == "ident"
+                        ]
+                        if values:
+                            font_family = " ".join(values).strip().strip("'\"")
+                    elif declaration.lower_name == "src":
+                        src_value = serialize(declaration.value)
+
+                if not font_family or not src_value:
+                    continue
+
+                font_urls = re.findall(r"url\((.*?)\)", src_value, flags=re.IGNORECASE)
+                for one_url in font_urls:
+                    cleaned = (
+                        one_url.strip().strip("'\"").split("#")[0].split("?")[0]
+                    )
+                    if os.path.basename(cleaned).lower() in font_file_names:
+                        font_families.add(font_family)
+                        break
+
+    return {
+        "font_families": sorted(font_families, key=str.lower),
+        "xhtml_files": html_files,
+    }
+
+
 class FontEncrypt:
 
-    def __init__(self, epub_path, output_path):
+    def __init__(
+        self,
+        epub_path,
+        output_path,
+        target_font_families=None,
+        target_xhtml_files=None,
+    ):
         if not os.path.exists(epub_path):
             raise Exception("EPUB文件不存在")
 
@@ -52,6 +124,24 @@ class FontEncrypt:
         self.font_to_font_family_mapping = {}
         self.css_selector_to_font_mapping = {}
         self.font_to_char_mapping = {}
+        self.target_font_families = (
+            {
+                item.strip().strip("'\"").lower()
+                for item in target_font_families
+                if item and item.strip()
+            }
+            if target_font_families
+            else None
+        )
+        self.target_xhtml_files = (
+            {
+                item.replace("\\", "/").strip().strip("'\"").lower()
+                for item in target_xhtml_files
+                if item and item.strip()
+            }
+            if target_xhtml_files
+            else None
+        )
         # self.font_to_unchanged_file_mapping = {}
         self.target_epub = None
         for file in self.epub.namelist():
@@ -65,6 +155,130 @@ class FontEncrypt:
             else:
                 self.ori_files.append(file)
 
+    def is_target_html(self, html_path):
+        if not self.target_xhtml_files:
+            return True
+        normalized = html_path.replace("\\", "/").lower()
+        basename = os.path.basename(normalized)
+        return normalized in self.target_xhtml_files or basename in self.target_xhtml_files
+
+    def normalize_font_name(self, name):
+        return re.sub(r"\s+", " ", (name or "").strip().strip("'\"")).lower()
+
+    def resolve_book_path(self, base_path, href):
+        href = (href or "").strip().strip("'\"").split("#")[0].split("?")[0]
+        if not href or "://" in href:
+            return ""
+        return posixpath.normpath(posixpath.join(posixpath.dirname(base_path), href))
+
+    def extract_font_candidates_from_declaration(self, declaration):
+        if declaration.type != "declaration":
+            return []
+
+        candidates = []
+        for token in declaration.value:
+            if token.type == "string":
+                value = token.value.strip()
+                if value:
+                    candidates.append(value)
+
+        if declaration.lower_name == "font-family":
+            raw = serialize(declaration.value)
+            for part in raw.split(","):
+                part = part.strip().strip("'\"")
+                if part:
+                    candidates.append(part)
+        elif declaration.lower_name == "font":
+            raw = serialize(declaration.value)
+            parts = [p.strip() for p in raw.split(",") if p.strip()]
+            if parts:
+                first = re.sub(r"^.*?(\d[^ ]*(\s*/\s*[^ ]+)?)\s+", "", parts[0]).strip()
+                if first:
+                    candidates.append(first.strip("'\""))
+                for part in parts[1:]:
+                    candidates.append(part.strip("'\""))
+
+        generic = {
+            "serif",
+            "sans-serif",
+            "monospace",
+            "cursive",
+            "fantasy",
+            "system-ui",
+            "emoji",
+            "math",
+            "fangsong",
+            "inherit",
+            "initial",
+            "unset",
+            "normal",
+        }
+        dedup = []
+        seen = set()
+        for item in candidates:
+            normalized = self.normalize_font_name(item)
+            if not normalized or normalized in generic or normalized in seen:
+                continue
+            seen.add(normalized)
+            dedup.append(item)
+        return dedup
+
+    def build_font_name_to_file_mapping(self):
+        mapping = {}
+        for font in self.fonts:
+            aliases = {self.normalize_font_name(os.path.splitext(os.path.basename(font))[0])}
+            try:
+                tt = TTFont(BytesIO(self.epub.read(font)))
+                for record in tt["name"].names:
+                    if record.nameID in (1, 4, 6):
+                        try:
+                            value = record.toUnicode()
+                        except Exception:
+                            value = record.string.decode(record.getEncoding(), errors="ignore")
+                        normalized = self.normalize_font_name(value)
+                        if normalized:
+                            aliases.add(normalized)
+            except Exception:
+                pass
+            for alias in aliases:
+                if alias and alias not in mapping:
+                    mapping[alias] = font
+        return mapping
+
+    def pick_font_file_by_candidates(self, candidates):
+        for candidate in candidates:
+            normalized = self.normalize_font_name(candidate)
+            if self.target_font_families and normalized not in self.target_font_families:
+                continue
+            if normalized in self.font_to_font_family_mapping:
+                return self.font_to_font_family_mapping[normalized]
+        return None
+
+    def parse_css_selector_mapping(self, css_text, source_path, mapping):
+        rules = parse_stylesheet(css_text)
+        for rule in rules:
+            if rule.type != "qualified-rule":
+                continue
+            selector = serialize(rule.prelude).strip()
+            if not selector:
+                continue
+            declarations = parse_declaration_list(rule.content)
+            candidates = []
+            for declaration in declarations:
+                if declaration.type != "declaration":
+                    continue
+                if declaration.lower_name in ("font-family", "font"):
+                    candidates.extend(
+                        self.extract_font_candidates_from_declaration(declaration)
+                    )
+            font_file = self.pick_font_file_by_candidates(candidates)
+            if not font_file:
+                continue
+            for one_selector in selector.split(","):
+                one_selector = one_selector.strip()
+                if one_selector:
+                    mapping[one_selector] = font_file
+
     def create_target_epub(self):
         self.target_epub = zipfile.ZipFile(
             self.file_write_path,
@@ -74,37 +288,39 @@ class FontEncrypt:
         )
 
     def find_local_fonts_mapping(self):
-        font_face_rules = []
+        mapping = self.build_font_name_to_file_mapping()
         for css in self.css:
             with self.epub.open(css) as f:
                 content = f.read().decode("utf-8")
                 rules = parse_stylesheet(content)
-                # 遍历所有规则，查找 @font-face
                 for rule in rules:
-                    all_count = 0
-                    if rule.type == "at-rule" and rule.lower_at_keyword == "font-face":
-                        tmp_font_face = serialize(rule.content)
-
-                        local_count, url_count = tmp_font_face.count(
-                            "local"
-                        ), tmp_font_face.count("url")
-                        all_count += local_count + url_count
-                        if all_count == 1:
-                            tmp_list = []
-
-                            for item in tmp_font_face.split(";"):
-                                if len(item.strip()) > 0:
-                                    tmp_list.append(item.strip())
-                            font_face_rules.append(tmp_list)
-        mapping = {}
-        for font in self.fonts:
-            font_name = os.path.basename(font)
-            for j in font_face_rules:
-                if font_name in j[1]:
-                    font_family = (
-                        j[0].split(":")[1].strip().replace('"', "").replace("'", "")
-                    )
-                    mapping[font_family] = font
+                    if rule.type != "at-rule" or rule.lower_at_keyword != "font-face":
+                        continue
+                    declarations = parse_declaration_list(rule.content)
+                    font_family = None
+                    src_urls = []
+                    for declaration in declarations:
+                        if declaration.type != "declaration":
+                            continue
+                        if declaration.lower_name == "font-family":
+                            candidates = self.extract_font_candidates_from_declaration(
+                                declaration
+                            )
+                            if candidates:
+                                font_family = candidates[0]
+                        elif declaration.lower_name == "src":
+                            src_text = serialize(declaration.value)
+                            src_urls.extend(
+                                re.findall(r"url\((.*?)\)", src_text, flags=re.IGNORECASE)
+                            )
+                    if not font_family:
+                        continue
+                    normalized = self.normalize_font_name(font_family)
+                    for one_url in src_urls:
+                        font_path = self.resolve_book_path(css, one_url)
+                        if font_path in self.fonts:
+                            mapping[normalized] = font_path
+                            break
         self.font_to_font_family_mapping = mapping
 
     def find_selector_to_font_mapping(self):
@@ -112,39 +328,22 @@ class FontEncrypt:
         for css in self.css:
             with self.epub.open(css) as f:
                 content = f.read().decode("utf-8")
-                rules = parse_stylesheet(content)
-                for rule in rules:
-                    if rule.type == "qualified-rule":  # 确保是样式规则
-                        # 获取选择器
-                        selector = serialize(rule.prelude).strip()
-                        declarations = parse_declaration_list(rule.content)
-                        for declaration in declarations:
-                            if (
-                                declaration.type == "declaration"
-                                and declaration.lower_name == "font-family"
-                            ):
-                                # 提取 font-family 的值
-                                font_family_values = [
-                                    token.value
-                                    for token in declaration.value
-                                    if token.type == "string" or token.type == "ident"
-                                ]
+            self.parse_css_selector_mapping(content, css, mapping)
 
-                                # 提取第一个字体名称
-                                primary_font = font_family_values[0].strip("'\"")
+        for one_html in self.htmls:
+            if not self.is_target_html(one_html):
+                continue
+            with self.epub.open(one_html) as f:
+                html_content = f.read().decode("utf-8")
+            soup = BeautifulSoup(html_content, "html.parser")
+            for style_tag in soup.find_all("style"):
+                css_text = style_tag.get_text() or ""
+                if css_text.strip():
+                    self.parse_css_selector_mapping(css_text, one_html, mapping)
 
-                                # 如果该字体在映射中
-                                if primary_font in self.font_to_font_family_mapping:
-                                    # print(
-                                    #     f"选择器 '{selector}' 使用了字体文件: {self.font_to_font_family_mapping[primary_font]}"
-                                    # )
-                                    if primary_font not in mapping:
-                                        mapping[selector] = (
-                                            self.font_to_font_family_mapping[
-                                                primary_font
-                                            ]
-                                        )
-        self.css_selector_to_font_mapping = dict(sorted(mapping.items(), reverse=True))
+        self.css_selector_to_font_mapping = dict(
+            sorted(mapping.items(), key=lambda item: len(item[0]), reverse=True)
+        )
 
     def remove_duplicates(self, s):
         seen = set()
@@ -155,9 +354,20 @@ class FontEncrypt:
                 result.append(char)
         return "".join(result)
 
+    def decode_hex_entity(self, value):
+        match = re.fullmatch(r"&#x([0-9a-fA-F]+)", value or "")
+        if not match:
+            return value
+        codepoint = int(match.group(1), 16)
+        if 0 <= codepoint <= 0x10FFFF:
+            return chr(codepoint)
+        return value
+
     def find_char_mapping(self):
         mapping = {}
         for one_html in self.htmls:
+            if not self.is_target_html(one_html):
+                continue
             with self.epub.open(one_html) as f:
                 content = f.read().decode("utf-8")
                 soup = BeautifulSoup(content, "html.parser")
@@ -166,7 +376,10 @@ class FontEncrypt:
                     font_file,
                 ) in self.css_selector_to_font_mapping.items():
                     # 使用 CSS 选择器查找对应的标签
-                    elements = soup.select(css_selector)
+                    try:
+                        elements = soup.select(css_selector)
+                    except Exception:
+                        continue
 
                     # 提取每个标签的文字内容
                     text_contents = [
@@ -178,6 +391,27 @@ class FontEncrypt:
                     else:
                         mapping[font_file] = self.remove_duplicates(
                             "".join([mapping[font_file], combined_sentence])
+                        )
+                for tag in soup.find_all(style=True):
+                    declarations = parse_declaration_list(tag.get("style", ""))
+                    candidates = []
+                    for declaration in declarations:
+                        if (
+                            declaration.type == "declaration"
+                            and declaration.lower_name in ("font-family", "font")
+                        ):
+                            candidates.extend(
+                                self.extract_font_candidates_from_declaration(declaration)
+                            )
+                    font_file = self.pick_font_file_by_candidates(candidates)
+                    if not font_file:
+                        continue
+                    text = tag.get_text(strip=True)
+                    if font_file not in mapping:
+                        mapping[font_file] = self.remove_duplicates(text)
+                    else:
+                        mapping[font_file] = self.remove_duplicates(
+                            "".join([mapping[font_file], text])
                         )
         self.font_to_char_mapping = mapping
 
@@ -397,27 +631,53 @@ class FontEncrypt:
                 content = f.read().decode("utf-8")
             soup = BeautifulSoup(content, "html.parser")
 
+            if not self.is_target_html(one_html):
+                self.target_epub.writestr(
+                    one_html, content.encode("utf-8"), zipfile.ZIP_DEFLATED
+                )
+                continue
+
             for css_selector in self.css_selector_to_font_mapping.keys():
                 font_file = self.css_selector_to_font_mapping[css_selector]
-                replace_table = self.font_to_char_mapping[font_file]
-                trans_table = str.maketrans(replace_table)
-                if "." in css_selector:
-                    selector, selector_class = css_selector.split(".", 1)
-                    selector_tags = soup.find_all(selector, class_=selector_class)
-                else:
-                    selector, selector_class = css_selector, None
-                    # print(selector, selector_class)
-                    selector_tags = soup.find_all(selector)
+                replace_table = self.font_to_char_mapping.get(font_file, {})
+                if not replace_table:
+                    continue
+                char_replace_table = {
+                    source: self.decode_hex_entity(target)
+                    for source, target in replace_table.items()
+                }
+                trans_table = str.maketrans(char_replace_table)
+                try:
+                    selector_tags = soup.select(css_selector)
+                except Exception:
+                    continue
                 for tag in selector_tags:
-                    ori_text = "".join(str(item) for item in tag.contents)
-                    new_text = ori_text.translate(trans_table)
-                    parsed_new_text = BeautifulSoup(
-                        html.unescape(new_text), "html.parser"
-                    )
-                    # print(f"ori_text:{ori_text}\nnew_text:{new_text}")
-                    tag.clear()  # 清空当前标签内容
-                    tag.append(parsed_new_text)  # 插入新的内容
-                    # print(tag.get_text(strip=True))
+                    for text_node in list(tag.find_all(string=True)):
+                        text_node.replace_with(text_node.translate(trans_table))
+            for tag in soup.find_all(style=True):
+                declarations = parse_declaration_list(tag.get("style", ""))
+                candidates = []
+                for declaration in declarations:
+                    if (
+                        declaration.type == "declaration"
+                        and declaration.lower_name in ("font-family", "font")
+                    ):
+                        candidates.extend(
+                            self.extract_font_candidates_from_declaration(declaration)
+                        )
+                font_file = self.pick_font_file_by_candidates(candidates)
+                if not font_file:
+                    continue
+                replace_table = self.font_to_char_mapping.get(font_file, {})
+                if not replace_table:
+                    continue
+                char_replace_table = {
+                    source: self.decode_hex_entity(target)
+                    for source, target in replace_table.items()
+                }
+                trans_table = str.maketrans(char_replace_table)
+                for text_node in list(tag.find_all(string=True)):
+                    text_node.replace_with(text_node.translate(trans_table))
             formatted_html = soup.prettify(formatter="html")
             self.target_epub.writestr(
                 one_html, formatted_html.encode("utf-8"), zipfile.ZIP_DEFLATED
@@ -434,9 +694,19 @@ class FontEncrypt:
     #    self.font_to_unchanged_file_mapping = font_file_mapping if font_file_mapping else {}
 
 
-def run_epub_font_encrypt(epub_path, output_path=None):
+def run_epub_font_encrypt(
+    epub_path,
+    output_path=None,
+    target_font_families=None,
+    target_xhtml_files=None,
+):
     logger.write(f"\n正在尝试加密EPUB字体: {epub_path}")
-    fe = FontEncrypt(epub_path, output_path)
+    fe = FontEncrypt(
+        epub_path,
+        output_path,
+        target_font_families=target_font_families,
+        target_xhtml_files=target_xhtml_files,
+    )
     if len(fe.fonts) == 0:
         logger.write("没有找到字体文件，退出")
         return "skip"
