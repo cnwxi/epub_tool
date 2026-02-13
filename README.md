@@ -26,7 +26,7 @@ Epub Tool->ET->E-Book Thor->📖🔨-><img src="./img/icon.ico" alt="icon" style
 4. `Epub_Tool_Console.py`<br>
 作用：对上述工具（不包括字体混淆）的整合的命令行程序。（已不再更新，后续使用Epub_Tool_TKUI）https://github.com/cnwxi/epub_tool/issues/11<br>
 5. `utils\encrypt_font.py`<br>
-作用：对epub文件中指定内嵌字体的文字进行字体混淆。[https://github.com/cnwxi/epub_tool/issues/21]<br>
+作用：对epub文件中指定内嵌字体的文字进行字体加密（混淆），支持按字体 family、按 html/xhtml 文件范围筛选处理。<br>
 6. `utils\transfer_img.py`<br>
 作用：对epub文件中WEBP格式图片进行转换以支持kindle的正常显示。（WEBP->JPG/PNG，转换后图像会进行压缩以控制文件大小）https://github.com/cnwxi/epub_tool/issues/25<br>
 7. `Epub_Tool_TKUI.py`<br>
@@ -147,10 +147,14 @@ UI操作演示
 </details>
 
 <details>
-  <summary>epub字体混淆出现异常</summary><br>
-  <p>
-    1、字体混淆根据标签名称的字典逆序进行处理，如存在如下标签时：&lt;h2&gt;、&lt;p&gt;、&lt;p class=&quot;p1&quot;&gt;、&lt;span&gt;、&lt;span class=&quot;s1&quot;&gt;，会按照span.s1、span、p.p1、p、h2的顺序进行字体混淆（注意不会处理body中的字体设定），并以此类推，规划样式标签命名，来保证嵌套标签中的文字能够正常混淆，当然最好避免过分复杂的标签嵌套。<br>
-  </p>
+  <summary>epub字体混淆功能说明</summary><br>
+  <ol>
+    <li>当前字体加密流程：点击“字体加密”后，程序会先扫描选中 epub 的可用字体 family 和 html/xhtml 文件，再弹出勾选列表（支持“全选/反选”）。确认后只处理勾选范围。</li>
+    <li>字体匹配规则：支持 CSS 选择器（如 <code>p.inscribe</code>、<code>.p1</code>、<code>div p</code> 等）、<code>font-family</code>、<code>font</code> 简写、html/xhtml 内 <code>&lt;style&gt;</code> 与标签内联 <code>style</code>。如选择器语法不合法，会自动跳过该规则继续处理。</li>
+    <li>仅可加密“epub 内实际嵌入的字体文件”。若样式里写的是系统字体（例如只写了“楷体”但书中未嵌入对应字体文件），则不会被加密。</li>
+    <li>若结果不符合预期，建议先缩小处理范围（只选目标字体 + 目标 xhtml）排查；并将相关 CSS 规则和 xhtml 片段附在 issue 中便于定位。</li>
+    <li>此功能并不完善，优先使用文件加密</li>
+  </ol>
 </details>
 
 ## Ⅳ 更新日志<br>

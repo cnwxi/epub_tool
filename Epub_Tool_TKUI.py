@@ -74,7 +74,7 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
 
         ttk.Label(
             master,
-            text="请勾选要参与字体加密的字体和 html/xhtml（默认全选、支持多选）",
+            text="请勾选要参与字体加密的字体和 html/xhtml（默认全选）",
             bootstyle="secondary",
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
@@ -326,7 +326,7 @@ class ModernEpubTool(BaseClass):
             ("格式化", reformat_run, "格式化", "primary"),
             ("文件解密", decrypt_run, "文件名解密", "success"),
             ("文件加密", encrypt_run, "文件名加密", "warning"),
-            ("字体加密", run_epub_font_encrypt, "字体加密", "info"),
+            ("字体加密（不推荐）", run_epub_font_encrypt, "字体加密", "info"),
             ("图片转换", run_epub_img_transfer, "图片转换", "dark"),
         ]
         for idx, (text, func, name, b_style) in enumerate(actions):
