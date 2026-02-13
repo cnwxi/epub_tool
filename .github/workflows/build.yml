@@ -57,8 +57,10 @@ jobs:
       run: |
         if [ "${{ matrix.os }}" == "macos-latest" ]; then
           pyinstaller -w -i ./img/icon.icns Epub_Tool_TKUI.py -n Epub_Tool_TKUI;
-        else
+        elif [ "${{ matrix.os }}" == "windows-latest" ]; then
           pyinstaller -w -F -i ./img/icon.ico  Epub_Tool_TKUI.py -n Epub_Tool_TKUI;
+        elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+          pyinstaller --hidden-import=PIL._tkinter_finder -F -w Epub_Tool_TKUI.py -n Epub_Tool_TKUI;
         fi
       shell: bash
 
