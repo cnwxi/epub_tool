@@ -1,19 +1,15 @@
+# Epub Tool->ET->E-Book Thor->📖🔨-><img src="./img/icon.ico" alt="icon" style="width:1em">（AI生成）
 <div style="text-align: center; margin: 2em auto 0 auto; width: 100%;">
 <img src="./img/icon.ico" alt="icon" style="width:10em;">
 
-[![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest)  
- [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers)
-  [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
-
-Epub Tool->ET->E-Book Thor->📖🔨-><img src="./img/icon.ico" alt="icon" style="width:1em">（AI生成）
+[![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest)  [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers) [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
 </div>
 
-## Ⅰ epub_tool介绍<br>
+## Ⅰ 此仓库（epub_tool）介绍<br>
 
 <details>
   <summary>包含一些可用的epub工具，用于epub文件的重构、解密、加密、字体混淆、WEBP图片转换。</summary>
   <p>
-
 
 1. `重构epub为规范格式_v2.8.3.py`->`utils\reformat_epub.py`<br>
 作用：见原文件名。<br>
@@ -26,7 +22,7 @@ Epub Tool->ET->E-Book Thor->📖🔨-><img src="./img/icon.ico" alt="icon" style
 4. `Epub_Tool_Console.py`<br>
 作用：对上述工具（不包括字体混淆）的整合的命令行程序。（已不再更新，后续使用Epub_Tool_TKUI）https://github.com/cnwxi/epub_tool/issues/11<br>
 5. `utils\encrypt_font.py`<br>
-作用：对epub文件中指定内嵌字体的文字进行字体加密（混淆），支持按字体 family、按 html/xhtml 文件范围筛选处理。<br>
+作用：对epub文件中指定内嵌字体的文字进行字体加密（混淆），支持按字体 family范围筛选处理。（部分代码来自[fontObfuscator](https://github.com/solarhell/fontObfuscator)）<br>
 6. `utils\transfer_img.py`<br>
 作用：对epub文件中WEBP格式图片进行转换以支持kindle的正常显示。（WEBP->JPG/PNG，转换后图像会进行压缩以控制文件大小）https://github.com/cnwxi/epub_tool/issues/25<br>
 7. `Epub_Tool_TKUI.py`<br>
@@ -170,6 +166,7 @@ UI操作演示
 
 
 ## Ⅴ 鸣谢<br>
-感谢以下用户对此项目的贡献：
-- [遥遥心航](https://tieba.baidu.com/home/main?id=tb.1.7f262ae1.5_dXQ2Jp0F0MH9YJtgM2Ew)
-- [lgernier](https://github.com/lgernierO)<br>
+感谢以下用户/项目对此仓库的贡献：
+- [遥遥心航](https://tieba.baidu.com/home/main?id=tb.1.7f262ae1.5_dXQ2Jp0F0MH9YJtgM2Ew)  
+- [lgernier](https://github.com/lgernierO)
+- [fontObfuscator](https://github.com/solarhell/fontObfuscator)  
