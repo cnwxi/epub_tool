@@ -22,7 +22,7 @@
 4. `Epub_Tool_Console.py`<br>
 作用：对上述工具（不包括字体混淆）的整合的命令行程序。（已不再更新，后续使用Epub_Tool_TKUI）https://github.com/cnwxi/epub_tool/issues/11<br>
 5. `utils\encrypt_font.py`<br>
-作用：对epub文件中指定内嵌字体的文字进行字体加密（混淆），支持按字体 family范围筛选处理。（部分代码来自[fontObfuscator](https://github.com/solarhell/fontObfuscator)）<br>
+作用：对epub文件中指定内嵌字体的文字进行字体加密（混淆），支持按字体 family范围筛选处理。（部分代码来自[fontObfuscator](https://github.com/solarhell/fontObfuscator)）https://github.com/cnwxi/epub_tool/issues/21<br>
 6. `utils\transfer_img.py`<br>
 作用：对epub文件中WEBP格式图片进行转换以支持kindle的正常显示。（WEBP->JPG/PNG，转换后图像会进行压缩以控制文件大小）https://github.com/cnwxi/epub_tool/issues/25<br>
 7. `Epub_Tool_TKUI.py`<br>
