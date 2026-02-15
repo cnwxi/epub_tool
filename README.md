@@ -138,12 +138,11 @@ UI操作演示
 
 <details>
   <summary>epub无法正常规范/混淆/反混淆</summary><br>
+  <ol>
   <p>
-    1、优先解压文件，查看其中content.opf文件 或 使用本工具中的“格式化”按钮，查看日志文件，检查epub是否存在问题；删除或修复存在问题的文件（如content.opf）。若无法解决，在Issues区提交issue并附带原文件。<br>样例：[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10 https://github.com/cnwxi/epub_tool/issues/24]
-  </p>
-  <p>
-    2、若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。<br>样例：[https://github.com/cnwxi/epub_tool/issues/19]
-  </p>
+    <li>优先解压文件，查看其中content.opf文件 或 使用本工具中的“格式化”按钮，查看日志文件，检查epub是否存在问题；删除或修复存在问题的文件（如content.opf）。若无法解决，在Issues区提交issue并附带原文件。<br>样例：[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10 https://github.com/cnwxi/epub_tool/issues/24]</li>
+    <li>若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。<br>样例：[https://github.com/cnwxi/epub_tool/issues/19]</li>
+  </ol>
 </details>
 
 <details>
@@ -154,6 +153,15 @@ UI操作演示
     <li>仅可加密“epub 内实际嵌入的字体文件”。若样式里写的是系统字体（例如只写了“楷体”但书中未嵌入对应字体文件），则不会被加密。</li>
     <li>若结果不符合预期，建议先缩小处理范围（只选目标字体 + 目标 xhtml）排查；并将相关 CSS 规则和 xhtml 片段附在 issue 中便于定位。</li>
     <li>此功能并不完善，优先使用文件加密</li>
+  </ol>
+</details>
+
+<details>
+  <summary>如何有效反馈问题</summary><br>
+  <ol>
+    <li>创建新issue，简略描述问题；</li>
+    <li>压缩并上传存在问题的epub文件；</li>
+    <li>上传处理对应epub文件程序生成的log.txt日志文件。</li>
   </ol>
 </details>
 
