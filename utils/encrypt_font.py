@@ -678,10 +678,22 @@ class FontEncrypt:
                 trans_table = str.maketrans(char_replace_table)
                 for text_node in list(tag.find_all(string=True)):
                     text_node.replace_with(text_node.translate(trans_table))
-            formatted_html = soup.prettify(formatter="html")
+            # formatter="html" 会把部分标点转成 &hellip; / &mdash; 等实体，
+            # 这里保持字符本身，避免正文被意外替换。
+            formatted_html = soup.decode(formatter=None)
             self.target_epub.writestr(
                 one_html, formatted_html.encode("utf-8"), zipfile.ZIP_DEFLATED
             )
+        # 保留未参与混淆的字体文件，避免被遗漏导致阅读器缺字
+        untouched_fonts = [
+            font_file
+            for font_file in self.fonts
+            if font_file not in self.font_to_char_mapping
+        ]
+        for font_file in untouched_fonts:
+            with self.epub.open(font_file) as f:
+                content = f.read()
+            self.target_epub.writestr(font_file, content, zipfile.ZIP_DEFLATED)
         for item in self.ori_files:
             if item in self.epub.namelist():
                 with self.epub.open(item) as f:

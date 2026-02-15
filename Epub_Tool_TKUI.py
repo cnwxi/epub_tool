@@ -51,9 +51,8 @@ except ImportError:
 
 class FontEncryptSelectionDialog(simpledialog.Dialog):
 
-    def __init__(self, parent, font_options, html_options):
+    def __init__(self, parent, font_options):
         self.font_options = font_options
-        self.html_options = html_options
         self.result = None
         super().__init__(parent, title="字体加密筛选")
 
@@ -74,17 +73,17 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
 
         ttk.Label(
             master,
-            text="请勾选要参与字体加密的字体和 html/xhtml（默认全选）",
+            text="请勾选要参与字体加密的字体（默认全选，支持 Shift+鼠标左键范围多选）",
             bootstyle="secondary",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
 
         font_frame = ttk.Labelframe(master, text="字体 Family")
-        font_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        font_frame.grid(row=1, column=0, sticky="nsew")
         font_frame.grid_rowconfigure(0, weight=1)
         font_frame.grid_columnconfigure(0, weight=1)
 
         self.font_listbox = tk.Listbox(
-            font_frame, selectmode=tk.MULTIPLE, exportselection=False, height=15
+            font_frame, selectmode=tk.EXTENDED, exportselection=False, height=15
         )
         self.font_listbox.grid(row=0, column=0, sticky="nsew")
         font_scroll = ttk.Scrollbar(
@@ -115,53 +114,12 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
             width=8,
         ).pack(side=tk.LEFT, padx=(8, 0))
 
-        html_frame = ttk.Labelframe(master, text="HTML/XHTML 文件")
-        html_frame.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
-        html_frame.grid_rowconfigure(0, weight=1)
-        html_frame.grid_columnconfigure(0, weight=1)
-
-        self.html_listbox = tk.Listbox(
-            html_frame, selectmode=tk.MULTIPLE, exportselection=False, height=15
-        )
-        self.html_listbox.grid(row=0, column=0, sticky="nsew")
-        html_scroll = ttk.Scrollbar(
-            html_frame, orient=tk.VERTICAL, command=self.html_listbox.yview
-        )
-        html_scroll.grid(row=0, column=1, sticky="ns")
-        self.html_listbox.config(yscrollcommand=html_scroll.set)
-
-        for item in self.html_options:
-            self.html_listbox.insert(tk.END, item)
-        if self.html_options:
-            self.html_listbox.select_set(0, tk.END)
-
-        html_btns = ttk.Frame(html_frame)
-        html_btns.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        ttk.Button(
-            html_btns,
-            text="全选",
-            command=lambda: self._select_all(self.html_listbox),
-            bootstyle="secondary-outline",
-            width=8,
-        ).pack(side=tk.LEFT)
-        ttk.Button(
-            html_btns,
-            text="反选",
-            command=lambda: self._toggle_selection(self.html_listbox),
-            bootstyle="secondary-outline",
-            width=8,
-        ).pack(side=tk.LEFT, padx=(8, 0))
-
         return self.font_listbox
 
     def validate(self):
         selected_font_idx = self.font_listbox.curselection()
-        selected_html_idx = self.html_listbox.curselection()
         if self.font_options and not selected_font_idx:
             messagebox.showwarning("提示", "请至少选择一个字体 family")
-            return False
-        if self.html_options and not selected_html_idx:
-            messagebox.showwarning("提示", "请至少选择一个 html/xhtml 文件")
             return False
         return True
 
@@ -169,10 +127,7 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
         self.result = {
             "target_font_families": [
                 self.font_options[index] for index in self.font_listbox.curselection()
-            ],
-            "target_xhtml_files": [
-                self.html_options[index] for index in self.html_listbox.curselection()
-            ],
+            ]
         }
 
 
@@ -554,19 +509,16 @@ class ModernEpubTool(BaseClass):
 
     def _ask_font_encrypt_options(self, file_data):
         font_families = set()
-        xhtml_files = set()
         for one_file in file_data:
             try:
                 result = list_epub_font_encrypt_targets(one_file)
                 font_families.update(result.get("font_families", []))
-                xhtml_files.update(result.get("xhtml_files", []))
             except Exception:
                 continue
 
         dialog = FontEncryptSelectionDialog(
             self,
             sorted(font_families, key=str.lower),
-            sorted(xhtml_files, key=str.lower),
         )
         if dialog.result is None:
             return None
