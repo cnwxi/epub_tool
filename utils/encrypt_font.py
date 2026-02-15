@@ -145,7 +145,7 @@ class FontEncrypt:
         # self.font_to_unchanged_file_mapping = {}
         self.target_epub = None
         for file in self.epub.namelist():
-            if file.lower().endswith(".html") or file.endswith(".xhtml"):
+            if file.lower().endswith(".html") or file.lower().endswith(".xhtml"):
                 self.htmls.append(file)
             elif file.lower().endswith(".css"):
                 self.ori_files.append(file)
