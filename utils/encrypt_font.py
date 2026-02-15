@@ -12,6 +12,7 @@ from io import BytesIO
 import random
 import traceback
 from datetime import datetime
+import unicodedata
 
 try:
     from utils.log import logwriter
@@ -431,13 +432,14 @@ class FontEncrypt:
     def clean_text(self):
         for key in self.font_to_char_mapping:
             text = self.font_to_char_mapping[key]
-            # 去除转义字符和换行符
-            # self.font_to_char_mapping[key] = (
-            #     text.replace("\n", "").replace("\r", "").replace("\t", "")
-            # )
-            # 去除标点符号和特殊字符
-            self.font_to_char_mapping[key] = re.sub(r"[^\u4e00-\u9fa5]", "", text)
-            # self.font_to_char_mapping[key] = emoji.replace_emoji(text, replace="")
+            # 仅移除空白与控制字符，保留标点，避免因字体回退导致异常间距
+            filtered_chars = []
+            for char in text:
+                category = unicodedata.category(char)
+                if category.startswith("C") or category.startswith("Z"):
+                    continue
+                filtered_chars.append(char)
+            self.font_to_char_mapping[key] = self.remove_duplicates("".join(filtered_chars))
         logger.write(f"清理后的文本: {self.font_to_char_mapping}")
 
     # 修改自https://github.com/solarhell/fontObfuscator
