@@ -476,143 +476,161 @@ class FontEncrypt:
     def encrypt_font(self):
         self.create_target_epub()
         for i, (font_path, plain_text) in enumerate(self.font_to_char_mapping.items()):
-            original_font = TTFont(BytesIO(self.epub.read(font_path)))
-            name_table = original_font["name"]
-            family_name = None
-            style_name = None
-            for record in name_table.names:
-                if record.nameID == 1:
-                    family_name = record.string.decode(record.getEncoding())
-                elif record.nameID == 2:
-                    style_name = record.string.decode(record.getEncoding())
+            try:
+                original_bytes = self.epub.read(font_path)
+                original_font = TTFont(BytesIO(original_bytes))
+                # 部分字体（如部分 OTF/CFF/WOFF）没有 glyf 表，当前混淆流程不支持，回退为原字体
+                required_tables = ("glyf", "hmtx", "hhea", "head", "name", "maxp", "loca")
+                missing_tables = [table for table in required_tables if table not in original_font]
+                if missing_tables:
+                    raise ValueError(f"字体缺少必要表: {', '.join(missing_tables)}")
 
-                if family_name and style_name:
-                    break
-            if family_name is None:
-                family_name = f"ETFamily_{i}"
-            if style_name is None:
-                style_name = "Regular"
+                name_table = original_font["name"]
+                family_name = None
+                style_name = None
+                for record in name_table.names:
+                    if record.nameID == 1:
+                        family_name = record.string.decode(record.getEncoding())
+                    elif record.nameID == 2:
+                        style_name = record.string.decode(record.getEncoding())
 
-            NAME_STRING = {
-                "familyName": family_name,
-                "styleName": style_name,
-                "psName": family_name + "-" + style_name,
-                "copyright": "Created by EpubTool",
-                "version": "Version 1.0",
-                "vendorURL": "https://EpubTool.com/",
-            }
-            original_cmap: dict = original_font.getBestCmap()
-            miss_char, plain_text = self.ensure_cmap_has_all_text(
-                original_cmap, plain_text
-            )
-            if len(miss_char) > 0:
-                logger.write(f"字体文件{font_path}缺少字符{miss_char}")
-            available_ranges = [ord(char) for char in plain_text]
-            glyphs, metrics, cmap = {}, {}, {}
-            private_codes = random.sample(range(0xAC00, 0xD7AF), len(plain_text))
-            cjk_codes = random.sample(available_ranges, len(plain_text))
+                    if family_name and style_name:
+                        break
+                if family_name is None:
+                    family_name = f"ETFamily_{i}"
+                if style_name is None:
+                    style_name = "Regular"
 
-            glyph_set = original_font.getGlyphSet()
-            pen = TTGlyphPen(glyph_set)
-            glyph_order = original_font.getGlyphOrder()
-            final_shadow_text: list = []
-            spescial_glyphs = [
-                "null",
-                ".notdef",
-                "minus",
-                "dotlessi",
-                "uni0307",
-                "quotesingle",
-                "zero.dnom",
-                "fraction",
-                "uni0237",
-            ]
+                NAME_STRING = {
+                    "familyName": family_name,
+                    "styleName": style_name,
+                    "psName": family_name + "-" + style_name,
+                    "copyright": "Created by EpubTool",
+                    "version": "Version 1.0",
+                    "vendorURL": "https://EpubTool.com/",
+                }
+                original_cmap: dict = original_font.getBestCmap() or {}
+                miss_char, plain_text = self.ensure_cmap_has_all_text(
+                    original_cmap, plain_text
+                )
+                if len(miss_char) > 0:
+                    logger.write(f"字体文件{font_path}缺少字符{miss_char}")
+                if not plain_text:
+                    logger.write(f"字体文件{font_path}没有可混淆字符，保留原字体")
+                    self.target_epub.writestr(font_path, original_bytes, zipfile.ZIP_DEFLATED)
+                    self.font_to_char_mapping[font_path] = {}
+                    continue
 
-            for special_glyph in spescial_glyphs:
-                if special_glyph in glyph_order:
-                    glyph_set[special_glyph].draw(pen)
-                    glyphs[special_glyph] = pen.glyph()
-                    metrics[special_glyph] = original_font["hmtx"][special_glyph]
-                    final_shadow_text += [special_glyph]
+                available_ranges = [ord(char) for char in plain_text]
+                glyphs, metrics, cmap = {}, {}, {}
+                private_codes = random.sample(range(0xAC00, 0xD7AF), len(plain_text))
+                cjk_codes = random.sample(available_ranges, len(plain_text))
 
-            html_entities = []
-
-            for index, plain in enumerate(plain_text):
-                try:
-                    shadow_cmap_name = original_cmap[cjk_codes[index]]
-                except KeyError:
-                    logger.write(
-                        f"字体文件缺少字符，unicode:{cjk_codes[index]}，请检查"
-                    )
-
-                final_shadow_text += [shadow_cmap_name]
-                glyph_set[original_cmap[ord(plain)]].draw(pen)
-                glyphs[shadow_cmap_name] = pen.glyph()
-                metrics[shadow_cmap_name] = original_font["hmtx"][
-                    original_cmap[ord(plain)]
+                glyph_set = original_font.getGlyphSet()
+                glyph_order = original_font.getGlyphOrder()
+                final_shadow_text: list = []
+                spescial_glyphs = [
+                    "null",
+                    ".notdef",
+                    "minus",
+                    "dotlessi",
+                    "uni0307",
+                    "quotesingle",
+                    "zero.dnom",
+                    "fraction",
+                    "uni0237",
                 ]
-                cmap[private_codes[index]] = shadow_cmap_name
-                html_entities += [hex(private_codes[index]).replace("0x", "&#x")]
 
-            horizontal_header = {
-                "ascent": original_font["hhea"].ascent,
-                "descent": original_font["hhea"].descent,
-            }
-            missing_glyphs = [
-                glyph for glyph in final_shadow_text if glyph not in glyphs
-            ]
-            if missing_glyphs:
-                logger.write(f"以下字形在 glyphs 中缺失: {missing_glyphs}")
-                for glyph in missing_glyphs:
-                    glyphs[glyph] = pen.glyph()
-                    metrics[glyph] = (0, 0)
+                for special_glyph in spescial_glyphs:
+                    if special_glyph in glyph_order:
+                        pen = TTGlyphPen(glyph_set)
+                        glyph_set[special_glyph].draw(pen)
+                        glyphs[special_glyph] = pen.glyph()
+                        metrics[special_glyph] = original_font["hmtx"][special_glyph]
+                        final_shadow_text += [special_glyph]
 
-            glyf_table = original_font["glyf"]
-            glyphs_to_keep = set(glyphs.keys())
-            new_glyph_order = [
-                glyph for glyph in glyph_order if glyph in glyphs_to_keep
-            ]
-            original_font.setGlyphOrder(new_glyph_order)
+                html_entities = []
 
-            # 删除不必要的字形
-            for glyph in glyph_order:
-                if glyph not in glyphs_to_keep:
-                    if glyph in glyf_table.glyphs:
-                        del glyf_table.glyphs[glyph]
-                    if glyph in original_font["hmtx"].metrics:
-                        del original_font["hmtx"].metrics[glyph]
-                    loca_index = glyph_order.index(glyph)
-                    if 0 <= loca_index < len(original_font["loca"].locations):
-                        original_font["loca"].locations[loca_index] = 0
+                for index, plain in enumerate(plain_text):
+                    try:
+                        shadow_cmap_name = original_cmap[cjk_codes[index]]
+                    except KeyError:
+                        logger.write(
+                            f"字体文件缺少字符，unicode:{cjk_codes[index]}，请检查"
+                        )
+                        continue
 
-            # 更新 maxp 表
-            original_font["maxp"].numGlyphs = len(new_glyph_order)
+                    final_shadow_text += [shadow_cmap_name]
+                    pen = TTGlyphPen(glyph_set)
+                    glyph_set[original_cmap[ord(plain)]].draw(pen)
+                    glyphs[shadow_cmap_name] = pen.glyph()
+                    metrics[shadow_cmap_name] = original_font["hmtx"][
+                        original_cmap[ord(plain)]
+                    ]
+                    cmap[private_codes[index]] = shadow_cmap_name
+                    html_entities += [hex(private_codes[index]).replace("0x", "&#x")]
 
-            self.set_timestamps(original_font)
+                horizontal_header = {
+                    "ascent": original_font["hhea"].ascent,
+                    "descent": original_font["hhea"].descent,
+                }
+                missing_glyphs = [
+                    glyph for glyph in final_shadow_text if glyph not in glyphs
+                ]
+                if missing_glyphs:
+                    logger.write(f"以下字形在 glyphs 中缺失: {missing_glyphs}")
+                    for glyph in missing_glyphs:
+                        glyphs[glyph] = TTGlyphPen(glyph_set).glyph()
+                        metrics[glyph] = (0, 0)
 
-            fb = FontBuilder(original_font["head"].unitsPerEm, isTTF=True)
-            fb.setupGlyphOrder(new_glyph_order)
-            fb.setupCharacterMap(cmap)
-            fb.setupGlyf(glyphs)
-            fb.setupHorizontalMetrics(metrics)
-            fb.setupHorizontalHeader(**horizontal_header)
-            fb.setupNameTable(NAME_STRING)
-            fb.setupOS2()
-            fb.setupPost()
-            font_stream = BytesIO()
-            fb.save(font_stream)
-            # print(plain_text, html_entities)
-            # print(f"write {font_path}")
+                glyf_table = original_font["glyf"]
+                glyphs_to_keep = set(glyphs.keys())
+                new_glyph_order = [
+                    glyph for glyph in glyph_order if glyph in glyphs_to_keep
+                ]
+                original_font.setGlyphOrder(new_glyph_order)
 
-            self.target_epub.writestr(
-                font_path, font_stream.getvalue(), zipfile.ZIP_DEFLATED
-            )
-            text_list = list(plain_text)
-            replace_table = {}
-            for a0, a1 in zip(text_list, html_entities):
-                replace_table[a0] = a1
-            self.font_to_char_mapping[font_path] = replace_table
-            logger.write(f"字体文件{font_path}的加密映射: \n{replace_table}")
+                # 删除不必要的字形
+                for glyph in glyph_order:
+                    if glyph not in glyphs_to_keep:
+                        if glyph in glyf_table.glyphs:
+                            del glyf_table.glyphs[glyph]
+                        if glyph in original_font["hmtx"].metrics:
+                            del original_font["hmtx"].metrics[glyph]
+                        loca_index = glyph_order.index(glyph)
+                        if 0 <= loca_index < len(original_font["loca"].locations):
+                            original_font["loca"].locations[loca_index] = 0
+
+                # 更新 maxp 表
+                original_font["maxp"].numGlyphs = len(new_glyph_order)
+
+                self.set_timestamps(original_font)
+
+                fb = FontBuilder(original_font["head"].unitsPerEm, isTTF=True)
+                fb.setupGlyphOrder(new_glyph_order)
+                fb.setupCharacterMap(cmap)
+                fb.setupGlyf(glyphs)
+                fb.setupHorizontalMetrics(metrics)
+                fb.setupHorizontalHeader(**horizontal_header)
+                fb.setupNameTable(NAME_STRING)
+                fb.setupOS2()
+                fb.setupPost()
+                font_stream = BytesIO()
+                fb.save(font_stream)
+
+                self.target_epub.writestr(
+                    font_path, font_stream.getvalue(), zipfile.ZIP_DEFLATED
+                )
+                text_list = list(plain_text)
+                replace_table = {}
+                for a0, a1 in zip(text_list, html_entities):
+                    replace_table[a0] = a1
+                self.font_to_char_mapping[font_path] = replace_table
+                logger.write(f"字体文件{font_path}的加密映射: \n{replace_table}")
+            except Exception as e:
+                logger.write(f"字体文件{font_path}混淆失败，保留原字体，错误信息: {e}")
+                self.target_epub.writestr(font_path, self.epub.read(font_path), zipfile.ZIP_DEFLATED)
+                self.font_to_char_mapping[font_path] = {}
 
     def close_file(self):
         self.epub.close()
