@@ -69,7 +69,6 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
     def body(self, master):
         # simpledialog.Dialog 默认把 body frame 用 pack 且不扩展，这里改为可随窗口拉伸
         master.pack_configure(fill=tk.BOTH, expand=True)
-
         self.resizable(True, True)
         self.geometry("900x520")
         self.minsize(700, 420)
@@ -113,8 +112,10 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
 
         font_btns = ttk.Frame(font_frame)
         font_btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
         btn_group = ttk.Frame(font_btns)
         btn_group.pack(anchor=tk.CENTER)
+
         ttk.Button(
             btn_group,
             text="全选",
