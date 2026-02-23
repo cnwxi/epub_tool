@@ -70,8 +70,8 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
         # simpledialog.Dialog 默认把 body frame 用 pack 且不扩展，这里改为可随窗口拉伸
         master.pack_configure(fill=tk.BOTH, expand=True)
         self.resizable(True, True)
-        self.geometry("900x520")
-        self.minsize(700, 420)
+        self.geometry("700x500")
+        self.minsize(600, 400)
 
         master.grid_columnconfigure(0, weight=1)
         master.grid_columnconfigure(1, weight=0)
@@ -79,7 +79,7 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
 
         ttk.Label(
             master,
-            text="请勾选要参与字体加密的字体（默认全选，支持 Shift+鼠标左键范围多选）",
+            text="请勾选要参与字体加密的字体（默认全选，支持 Shift+鼠标左键范围选择、Ctrl+鼠标左键不连续多选）",
             bootstyle="secondary",
         ).grid(row=0, column=0, sticky="w", pady=(0, 10))
 
