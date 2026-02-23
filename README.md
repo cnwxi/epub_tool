@@ -135,7 +135,6 @@ UI操作演示
 <details>
   <summary>epub无法正常规范/混淆/反混淆</summary><br>
   <ol>
-  <p>
     <li>优先解压文件，查看其中content.opf文件 或 使用本工具中的“格式化”按钮，查看日志文件，检查epub是否存在问题；删除或修复存在问题的文件（如content.opf）。若无法解决，在Issues区提交issue并附带原文件。<br>样例：[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10 https://github.com/cnwxi/epub_tool/issues/24]</li>
     <li>若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。<br>样例：[https://github.com/cnwxi/epub_tool/issues/19]</li>
   </ol>
@@ -144,7 +143,7 @@ UI操作演示
 <details>
   <summary>epub字体混淆功能说明</summary><br>
   <ol>
-    <li>当前字体加密流程：点击“字体加密”后，程序会先扫描选中 epub 的可用字体 family 和 html/xhtml 文件，再弹出勾选列表（支持“全选/反选”）。确认后只处理勾选范围。</li>
+    <li>当前字体加密流程：点击“字体加密”后，程序会先扫描选中 epub 的可用字体 family，再弹出勾选列表（支持“全选/反选”）。确认后只处理勾选范围。</li>
     <li>字体匹配规则：支持 CSS 选择器（如 <code>p.inscribe</code>、<code>.p1</code>、<code>div p</code> 等）、<code>font-family</code>、<code>font</code> 简写、html/xhtml 内 <code>&lt;style&gt;</code> 与标签内联 <code>style</code>。如选择器语法不合法，会自动跳过该规则继续处理。</li>
     <li>仅可加密“epub 内实际嵌入的字体文件”。若样式里写的是系统字体（例如只写了“楷体”但书中未嵌入对应字体文件），则不会被加密。</li>
     <li>若结果不符合预期，建议先缩小处理范围（只选目标字体 + 目标 xhtml）排查；并将相关 CSS 规则和 xhtml 片段附在 issue 中便于定位。</li>
