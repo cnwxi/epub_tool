@@ -28,14 +28,6 @@ def list_epub_font_encrypt_targets(epub_path):
         raise Exception("EPUB文件不存在")
 
     with zipfile.ZipFile(epub_path) as epub:
-        html_files = sorted(
-            [
-                item
-                for item in epub.namelist()
-                if item.lower().endswith(".html") or item.lower().endswith(".xhtml")
-            ],
-            key=str.lower,
-        )
         css_files = [item for item in epub.namelist() if item.lower().endswith(".css")]
         font_file_names = {
             os.path.basename(item).lower()
@@ -83,10 +75,7 @@ def list_epub_font_encrypt_targets(epub_path):
                         font_families.add(font_family)
                         break
 
-    return {
-        "font_families": sorted(font_families, key=str.lower),
-        "xhtml_files": html_files,
-    }
+    return {"font_families": sorted(font_families, key=str.lower)}
 
 
 class FontEncrypt:
@@ -96,7 +85,6 @@ class FontEncrypt:
         epub_path,
         output_path,
         target_font_families=None,
-        target_xhtml_files=None,
     ):
         if not os.path.exists(epub_path):
             raise Exception("EPUB文件不存在")
@@ -135,15 +123,12 @@ class FontEncrypt:
             if target_font_families
             else None
         )
-        self.target_xhtml_files = (
-            {
-                item.replace("\\", "/").strip().strip("'\"").lower()
-                for item in target_xhtml_files
-                if item and item.strip()
-            }
-            if target_xhtml_files
-            else None
-        )
+        if self.target_font_families:
+            logger.write("本次目标字体 family 列表:")
+            for font_family in sorted(self.target_font_families):
+                logger.write(f" - {font_family}")
+        else:
+            logger.write("未指定目标字体 family，将按规则处理全部可匹配字体")
         # self.font_to_unchanged_file_mapping = {}
         self.target_epub = None
         for file in self.epub.namelist():
@@ -156,13 +141,6 @@ class FontEncrypt:
                 self.fonts.append(file)
             else:
                 self.ori_files.append(file)
-
-    def is_target_html(self, html_path):
-        if not self.target_xhtml_files:
-            return True
-        normalized = html_path.replace("\\", "/").lower()
-        basename = os.path.basename(normalized)
-        return normalized in self.target_xhtml_files or basename in self.target_xhtml_files
 
     def normalize_font_name(self, name):
         return re.sub(r"\s+", " ", (name or "").strip().strip("'\"")).lower()
@@ -333,8 +311,6 @@ class FontEncrypt:
             self.parse_css_selector_mapping(content, css, mapping)
 
         for one_html in self.htmls:
-            if not self.is_target_html(one_html):
-                continue
             with self.epub.open(one_html) as f:
                 html_content = f.read().decode("utf-8")
             soup = BeautifulSoup(html_content, "html.parser")
@@ -407,8 +383,6 @@ class FontEncrypt:
     def find_char_mapping(self):
         mapping = {}
         for one_html in self.htmls:
-            if not self.is_target_html(one_html):
-                continue
             with self.epub.open(one_html) as f:
                 content = f.read().decode("utf-8")
                 soup = BeautifulSoup(content, "html.parser")
@@ -697,11 +671,6 @@ class FontEncrypt:
             protected_content, placeholder_map = self.protect_escaped_angle_entities(content)
             soup = BeautifulSoup(protected_content, "html.parser")
 
-            if not self.is_target_html(one_html):
-                self.target_epub.writestr(
-                    one_html, content.encode("utf-8"), zipfile.ZIP_DEFLATED
-                )
-                continue
 
             for css_selector in self.css_selector_to_font_mapping.keys():
                 font_file = self.css_selector_to_font_mapping[css_selector]
@@ -778,14 +747,12 @@ def run_epub_font_encrypt(
     epub_path,
     output_path=None,
     target_font_families=None,
-    target_xhtml_files=None,
 ):
     logger.write(f"\n正在尝试加密EPUB字体: {epub_path}")
     fe = FontEncrypt(
         epub_path,
         output_path,
         target_font_families=target_font_families,
-        target_xhtml_files=target_xhtml_files,
     )
     if len(fe.fonts) == 0:
         logger.write("没有找到字体文件，退出")
