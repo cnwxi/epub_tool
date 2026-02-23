@@ -1,7 +1,7 @@
 import zipfile
 import os
 import posixpath
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment, NavigableString
 from tinycss2 import parse_stylesheet, serialize, parse_declaration_list
 # import emoji
 import re
@@ -394,6 +394,16 @@ class FontEncrypt:
             restored = restored.replace(placeholder, entity)
         return restored
 
+    def iter_direct_text_nodes(self, tag):
+        for child in tag.children:
+            if not isinstance(child, NavigableString):
+                continue
+            if isinstance(child, Comment):
+                continue
+            if not child.strip():
+                continue
+            yield child
+
     def find_char_mapping(self):
         mapping = {}
         for one_html in self.htmls:
@@ -412,10 +422,12 @@ class FontEncrypt:
                     except Exception:
                         continue
 
-                    # 提取每个标签的文字内容
-                    text_contents = [
-                        element.get_text(strip=True) for element in elements
-                    ]
+                    text_contents = []
+                    for element in elements:
+                        text_contents.extend(
+                            text_node.strip()
+                            for text_node in self.iter_direct_text_nodes(element)
+                        )
                     combined_sentence = "".join(text_contents)
                     if font_file not in mapping:
                         mapping[font_file] = self.remove_duplicates(combined_sentence)
@@ -437,7 +449,10 @@ class FontEncrypt:
                     font_file = self.pick_font_file_by_candidates(candidates)
                     if not font_file:
                         continue
-                    text = tag.get_text(strip=True)
+                    text = "".join(
+                        text_node.strip()
+                        for text_node in self.iter_direct_text_nodes(tag)
+                    )
                     if font_file not in mapping:
                         mapping[font_file] = self.remove_duplicates(text)
                     else:
@@ -703,7 +718,7 @@ class FontEncrypt:
                 except Exception:
                     continue
                 for tag in selector_tags:
-                    for text_node in list(tag.find_all(string=True)):
+                    for text_node in list(self.iter_direct_text_nodes(tag)):
                         text_node.replace_with(text_node.translate(trans_table))
             for tag in soup.find_all(style=True):
                 declarations = parse_declaration_list(tag.get("style", ""))
@@ -727,7 +742,7 @@ class FontEncrypt:
                     for source, target in replace_table.items()
                 }
                 trans_table = str.maketrans(char_replace_table)
-                for text_node in list(tag.find_all(string=True)):
+                for text_node in list(self.iter_direct_text_nodes(tag)):
                     text_node.replace_with(text_node.translate(trans_table))
             # 使用 minimal formatter：
             # 1) 会对文本中的 < / & 等进行最小必要转义，避免 &lt;script&gt; 变回真实标签导致 XHTML 结构损坏；
