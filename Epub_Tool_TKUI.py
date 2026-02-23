@@ -67,8 +67,12 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
         listbox.select_set(0, tk.END)
 
     def body(self, master):
+        self.resizable(True, True)
+        self.geometry("900x520")
+        self.minsize(700, 420)
+
         master.grid_columnconfigure(0, weight=1)
-        master.grid_columnconfigure(1, weight=1)
+        master.grid_columnconfigure(1, weight=0)
         master.grid_rowconfigure(1, weight=1)
 
         ttk.Label(
@@ -90,7 +94,14 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
             font_frame, orient=tk.VERTICAL, command=self.font_listbox.yview
         )
         font_scroll.grid(row=0, column=1, sticky="ns")
-        self.font_listbox.config(yscrollcommand=font_scroll.set)
+        font_scroll_x = ttk.Scrollbar(
+            font_frame, orient=tk.HORIZONTAL, command=self.font_listbox.xview
+        )
+        font_scroll_x.grid(row=1, column=0, sticky="ew")
+        self.font_listbox.config(
+            yscrollcommand=font_scroll.set,
+            xscrollcommand=font_scroll_x.set,
+        )
 
         for item in self.font_options:
             self.font_listbox.insert(tk.END, item["label"])
@@ -98,7 +109,7 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
             self.font_listbox.select_set(0, tk.END)
 
         font_btns = ttk.Frame(font_frame)
-        font_btns.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        font_btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         ttk.Button(
             font_btns,
             text="全选",
