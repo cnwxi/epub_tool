@@ -42,7 +42,7 @@ except ImportError:
         return 0
 
     def list_epub_font_encrypt_targets(epub_path):
-        return {"font_families": [], "xhtml_files": []}
+        return {"font_families": []}
 
     encrypt_run = decrypt_run = reformat_run = run_epub_font_encrypt = (
         run_epub_img_transfer
@@ -93,7 +93,7 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
         self.font_listbox.config(yscrollcommand=font_scroll.set)
 
         for item in self.font_options:
-            self.font_listbox.insert(tk.END, item)
+            self.font_listbox.insert(tk.END, item["label"])
         if self.font_options:
             self.font_listbox.select_set(0, tk.END)
 
@@ -125,7 +125,7 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
 
     def apply(self):
         self.result = {
-            "target_font_families": [
+            "selected_font_targets": [
                 self.font_options[index] for index in self.font_listbox.curselection()
             ]
         }
@@ -508,21 +508,45 @@ class ModernEpubTool(BaseClass):
         self.path_var.set("默认: 源文件同级目录")
 
     def _ask_font_encrypt_options(self, file_data):
-        font_families = set()
+        font_option_map = {}
         for one_file in file_data:
             try:
                 result = list_epub_font_encrypt_targets(one_file)
-                font_families.update(result.get("font_families", []))
+                epub_path = os.path.normpath(one_file)
+                epub_name = os.path.basename(epub_path)
+                for font_family in result.get("font_families", []):
+                    key = (epub_path.lower(), (font_family or "").lower())
+                    if key in font_option_map:
+                        continue
+                    font_option_map[key] = {
+                        "label": f"[{epub_name}] {font_family}",
+                        "font_family": font_family,
+                        "epub_path": epub_path,
+                    }
             except Exception:
                 continue
 
         dialog = FontEncryptSelectionDialog(
             self,
-            sorted(font_families, key=str.lower),
+            sorted(font_option_map.values(), key=lambda item: item["label"].lower()),
         )
         if dialog.result is None:
             return None
-        return dialog.result
+
+        target_font_families_by_file = {}
+        for item in dialog.result.get("selected_font_targets", []):
+            epub_path = os.path.normpath(item.get("epub_path", ""))
+            font_family = (item.get("font_family") or "").strip()
+            if not epub_path or not font_family:
+                continue
+            target_font_families_by_file.setdefault(epub_path, set()).add(font_family)
+
+        return {
+            "target_font_families_by_file": {
+                epub_path: sorted(fonts, key=str.lower)
+                for epub_path, fonts in target_font_families_by_file.items()
+            }
+        }
 
     def start_task(self, func, task_name):
         items = self.file_tree.get_children()
@@ -557,7 +581,17 @@ class ModernEpubTool(BaseClass):
             real_out_dir = out_dir if out_dir else os.path.dirname(f_path)
 
             try:
-                if task_kwargs:
+                if func == run_epub_font_encrypt and task_kwargs:
+                    target_map = task_kwargs.get("target_font_families_by_file", {})
+                    one_file_targets = target_map.get(os.path.normpath(f_path), [])
+                    if not one_file_targets:
+                        tag, status = ("skip", "跳过")
+                        msg = "未为该EPUB选择目标字体，已跳过"
+                        self.msg_queue.put((status, f_name, msg, real_out_dir, tag))
+                        self.msg_queue.put("step")
+                        continue
+                    ret = func(f_path, out_dir, target_font_families=one_file_targets)
+                elif task_kwargs:
                     ret = func(f_path, out_dir, **task_kwargs)
                 else:
                     ret = func(f_path, out_dir)
