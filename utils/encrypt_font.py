@@ -13,6 +13,7 @@ import random
 import traceback
 from datetime import datetime
 import unicodedata
+import uuid
 
 try:
     from utils.log import logwriter
@@ -364,6 +365,35 @@ class FontEncrypt:
             return chr(codepoint)
         return value
 
+
+    def protect_escaped_angle_entities(self, html_text):
+        placeholder_map = {}
+
+        def create_unique_placeholder(index):
+            while True:
+                placeholder = (
+                    f"__EPUB_TOOL_ESCAPED_ANGLE_{uuid.uuid4().hex}_{index}__"
+                )
+                if placeholder not in html_text and placeholder not in placeholder_map:
+                    return placeholder
+
+        def replace_entity(match):
+            entity = match.group(0)
+            placeholder = create_unique_placeholder(len(placeholder_map))
+            placeholder_map[placeholder] = entity
+            return placeholder
+
+        protected_html = re.sub(r"&lt;|&gt;", replace_entity, html_text)
+        return protected_html, placeholder_map
+
+    def restore_escaped_angle_entities(self, html_text, placeholder_map):
+        if not placeholder_map:
+            return html_text
+        restored = html_text
+        for placeholder, entity in placeholder_map.items():
+            restored = restored.replace(placeholder, entity)
+        return restored
+
     def find_char_mapping(self):
         mapping = {}
         for one_html in self.htmls:
@@ -649,7 +679,8 @@ class FontEncrypt:
         for one_html in self.htmls:
             with self.epub.open(one_html) as f:
                 content = f.read().decode("utf-8")
-            soup = BeautifulSoup(content, "html.parser")
+            protected_content, placeholder_map = self.protect_escaped_angle_entities(content)
+            soup = BeautifulSoup(protected_content, "html.parser")
 
             if not self.is_target_html(one_html):
                 self.target_epub.writestr(
@@ -698,11 +729,13 @@ class FontEncrypt:
                 trans_table = str.maketrans(char_replace_table)
                 for text_node in list(tag.find_all(string=True)):
                     text_node.replace_with(text_node.translate(trans_table))
-            # formatter="html" 会把部分标点转成 &hellip; / &mdash; 等实体，
-            # 这里保持字符本身，避免正文被意外替换。
-            formatted_html = soup.decode(formatter=None)
+            # 使用 minimal formatter：
+            # 1) 会对文本中的 < / & 等进行最小必要转义，避免 &lt;script&gt; 变回真实标签导致 XHTML 结构损坏；
+            # 2) 不会像 html formatter 那样把 … / — 等字符广泛替换为命名实体。
+            formatted_html = soup.decode(formatter="minimal")
+            restored_html = self.restore_escaped_angle_entities(formatted_html, placeholder_map)
             self.target_epub.writestr(
-                one_html, formatted_html.encode("utf-8"), zipfile.ZIP_DEFLATED
+                one_html, restored_html.encode("utf-8"), zipfile.ZIP_DEFLATED
             )
         # 保留未参与混淆的字体文件，避免被遗漏导致阅读器缺字
         untouched_fonts = [
