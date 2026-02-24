@@ -120,16 +120,16 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
             btn_group,
             text="全选",
             command=lambda: self._select_all(self.font_listbox),
-            bootstyle="secondary-outline",
+            bootstyle="secondary",
             width=8,
-        ).pack(side=tk.LEFT)
+        ).pack(side=tk.LEFT, pady=(0, 8))
         ttk.Button(
             btn_group,
             text="反选",
             command=lambda: self._toggle_selection(self.font_listbox),
-            bootstyle="secondary-outline",
+            bootstyle="secondary",
             width=8,
-        ).pack(side=tk.LEFT, padx=(8, 0))
+        ).pack(side=tk.LEFT, padx=(8, 0), pady=(0, 8))
 
         return self.font_listbox
 
@@ -146,6 +146,24 @@ class FontEncryptSelectionDialog(simpledialog.Dialog):
                 self.font_options[index] for index in self.font_listbox.curselection()
             ]
         }
+
+    def buttonbox(self):
+        box = ttk.Frame(self)
+
+        ok_button = ttk.Button(
+            box, text="确定", command=self.ok, bootstyle="primary", width=10
+        )
+        ok_button.pack(side=tk.LEFT, padx=5, pady=8)
+
+        cancel_button = ttk.Button(
+            box, text="取消", command=self.cancel, bootstyle="danger", width=10
+        )
+        cancel_button.pack(side=tk.LEFT, padx=5, pady=8)
+
+        self.bind("<Return>", self.ok)
+        self.bind("<Escape>", self.cancel)
+
+        box.pack()
 
 
 class ModernEpubTool(BaseClass):
@@ -202,7 +220,7 @@ class ModernEpubTool(BaseClass):
         btn_frame.pack(fill=X, padx=20)
 
         self.create_sidebar_btn(btn_frame, "添加文件", self.add_files, style="light")
-        self.create_sidebar_btn(btn_frame, "添加文件夹", self.add_dir, style="light")
+        self.create_sidebar_btn(btn_frame, "添加文件夹", self.add_dir, style="info")
 
         ttk.Separator(sidebar, bootstyle="light").pack(fill=X, padx=20, pady=15)
         self.create_sidebar_btn(btn_frame, "清空列表", self.clear_files, style="danger")
@@ -210,7 +228,7 @@ class ModernEpubTool(BaseClass):
         if DND_AVAILABLE:
             drag_tip = ttk.Label(
                 sidebar,
-                text="使用说明\n·\n点击上侧按钮添加删除文件\n本程序已支持文件拖拽功能\n·\n点击右侧按钮进行批量处理\n·\n右键框内文件项目查看更多\n·",
+                text="使用说明\n······························\n点击上侧按钮添加删除文件\n本程序已支持文件拖拽功能\n·\n点击右侧按钮进行批量处理\n·\n右键框内文件项目查看更多\n·\n优先进行「格式化」操作\n······························",
                 justify=CENTER,
                 font=("TkDefaultFont", 10),
                 bootstyle="inverse-secondary",
@@ -295,7 +313,7 @@ class ModernEpubTool(BaseClass):
         action_frame = ttk.Frame(main_content)
         action_frame.pack(fill=X, pady=(0, 20))
         actions = [
-            ("格式化", reformat_run, "格式化", "primary"),
+            ("格式化（优先）", reformat_run, "格式化", "primary"),
             ("文件解密", decrypt_run, "文件名解密", "success"),
             ("文件加密", encrypt_run, "文件名加密", "warning"),
             ("字体加密（不推荐）", run_epub_font_encrypt, "字体加密", "info"),
