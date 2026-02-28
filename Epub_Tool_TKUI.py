@@ -228,7 +228,7 @@ class ModernEpubTool(BaseClass):
         if DND_AVAILABLE:
             drag_tip = ttk.Label(
                 sidebar,
-                text="使用说明\n······························\n点击上侧按钮添加删除文件\n本程序已支持文件拖拽功能\n·\n点击右侧按钮进行批量处理\n·\n右键框内文件项目查看更多\n·\n优先进行「格式化」操作\n······························",
+                text="使用说明\n·\n点击上侧按钮添加删除文件\n本程序已支持文件拖拽功能\n·\n点击右侧按钮进行批量处理\n·\n右键框内文件项目查看更多\n·\n优先进行「格式化」操作\n·",
                 justify=CENTER,
                 font=("TkDefaultFont", 10),
                 bootstyle="inverse-secondary",

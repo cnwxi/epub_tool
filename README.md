@@ -119,13 +119,18 @@
 UI操作演示
 ![操作演示](./img/how_to_use_new.gif)
 
-<!-- - UI预览，具体界面可能随后续更新改动<br>
+  </p>
+</details>
 
-  - mac<br> 
-<img width="300" alt="mac" src="https://github.com/user-attachments/assets/dd3ba06c-5fb7-4439-88d6-4ff67ed1f0db" /><br> 
+<details>
+ <summary>功能扩展、界面美化的第三方UI【epub】(推荐)</summary>
+  <p>
 
-  - windows<br> 
-<img width="260" alt="windows" src="https://github.com/user-attachments/assets/99acedf7-2f41-44bb-9059-6de9d36dd1d0" /><br>  -->
+
+> Github仓库链接：https://github.com/wangyyyqw/epub  
+> PS：混淆加密功能更新可能存在延迟
+
+![UI界面](./img/epub.png)
 
   </p>
 </details>
