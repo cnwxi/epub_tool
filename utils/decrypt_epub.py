@@ -6,6 +6,7 @@
 
 import zipfile
 import re, sys
+import codecs
 from os import path
 from urllib.parse import unquote
 from xml.etree import ElementTree
@@ -26,6 +27,11 @@ class EpubTool:
 
     def __init__(self, epub_src):
         self.encrypted = False
+        self.encryption_uris = []
+        self.encryption_keynames = set()
+        self.encryption_algorithms = set()
+        self.encrypted_text_or_css = False
+        self.id_to_raw_href = {}
         self.epub = zipfile.ZipFile(epub_src)
         self.tgt_epub = None
         self.file_write_path = None
@@ -38,6 +44,7 @@ class EpubTool:
         self._init_namelist()
         self._init_mime_map()
         self._init_opf()
+        self._detect_encryption()
         self.manifest_list = []  # (id,opf_href,mime,properties)
         self.toc_rn = {}
         self.id_to_href = {}  # { id : href.lower, ... }
@@ -86,34 +93,293 @@ class EpubTool:
             ".pls": "application/pls+xml",
         }
 
+    def _decode_xml_bytes(self, data: bytes, default="utf-8") -> str:
+        decode_order = [default, "utf-8", "utf-8-sig", "utf-16", "utf-16le", "utf-16be"]
+        if data.startswith(codecs.BOM_UTF8):
+            decode_order = ["utf-8-sig"] + decode_order
+        elif data.startswith(codecs.BOM_UTF16_LE):
+            decode_order = ["utf-16", "utf-16le"] + decode_order
+        elif data.startswith(codecs.BOM_UTF16_BE):
+            decode_order = ["utf-16", "utf-16be"] + decode_order
+        seen = set()
+        for enc in decode_order:
+            if not enc or enc in seen:
+                continue
+            seen.add(enc)
+            try:
+                text = data.decode(enc)
+                return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+            except UnicodeDecodeError:
+                continue
+        try:
+            logger.write("XML decode fallback: utf decode failed, try gb18030")
+            return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", data.decode("gb18030"))
+        except UnicodeDecodeError:
+            logger.write("XML decode fallback: gb18030 failed, use latin-1")
+            return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", data.decode("latin-1"))
+
+    def _read_xml_text(self, zip_path: str) -> str:
+        try:
+            data = self.epub.read(zip_path)
+        except KeyError:
+            raise FileNotFoundError(f"zip内缺少XML文件: {zip_path}")
+        return self._decode_xml_bytes(data)
+
+    def _xml_parse_error_with_context(self, xml_text: str, label: str, err: Exception):
+        logger.write(f"XML parse error [{label}]: {err}")
+        pos = getattr(err, "position", None)
+        if not pos:
+            return
+        line_no, col_no = pos
+        logger.write(f"位置: line={line_no}, column={col_no}")
+        lines = xml_text.splitlines()
+        start = max(1, line_no - 2)
+        end = min(len(lines), line_no + 2)
+        logger.write(f"{label} 出错上下文:")
+        for idx in range(start, end + 1):
+            logger.write(f"{idx:>6}: {lines[idx - 1]}")
+
+    def _sanitize_attr_value(self, value: str) -> str:
+        value = re.sub(r"&(?!#\d+;|#x[0-9a-fA-F]+;|[a-zA-Z][\w.-]*;)", "&amp;", value)
+        value = value.replace("<", "&lt;").replace(">", "&gt;")
+        return value
+
+    def _sanitize_xml_attr_text(self, xml_text: str) -> str:
+        pattern = re.compile(r"(<[^>]+?)((?:\s+[^\s=>/]+(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'))?)+)(\s*/?>)", re.DOTALL)
+
+        def repl_tag(match):
+            prefix, attrs, suffix = match.groups()
+            attrs = re.sub(
+                r"(=\s*\")([^\"]*)(\")",
+                lambda m: m.group(1) + self._sanitize_attr_value(m.group(2)) + m.group(3),
+                attrs,
+                flags=re.DOTALL,
+            )
+            attrs = re.sub(
+                r"(=\s*')([^']*)(')",
+                lambda m: m.group(1) + self._sanitize_attr_value(m.group(2)) + m.group(3),
+                attrs,
+                flags=re.DOTALL,
+            )
+            return prefix + attrs + suffix
+
+        return pattern.sub(repl_tag, xml_text)
+
+    def _parse_xml_safe(self, xml_text: str, label: str, allow_sanitize=True):
+        first_err = None
+        try:
+            return ElementTree.fromstring(xml_text)
+        except ElementTree.ParseError as err:
+            first_err = err
+            self._xml_parse_error_with_context(xml_text, label, err)
+            if not allow_sanitize:
+                raise
+        sanitized = self._sanitize_xml_attr_text(xml_text)
+        if sanitized == xml_text:
+            raise first_err
+        try:
+            logger.write(f"XML sanitize retry: {label}")
+            return ElementTree.fromstring(sanitized)
+        except ElementTree.ParseError as err2:
+            self._xml_parse_error_with_context(sanitized, f"{label}[sanitized]", err2)
+            raise
+
+    def _parse_tag_attrs(self, text: str):
+        attrs = {}
+        for m in re.finditer(r"([:\w.-]+)\s*=\s*([\"'])(.*?)\2", text, flags=re.DOTALL):
+            attrs[m.group(1)] = m.group(3)
+        return attrs
+
+    def _fallback_parse_opf_manifest_spine(self):
+        logger.write("opf_malformed_fallback_used")
+        self.errorOPF_log.append(("opf_malformed_fallback_used", self.opfpath))
+        self.metadata = {
+            "title": "",
+            "creator": "",
+            "language": "",
+            "subject": "",
+            "source": "",
+            "identifier": "",
+            "cover": "",
+        }
+        self.id_to_h_m_p = {}
+        self.id_to_href = {}
+        self.href_to_id = {}
+        self.spine_list = []
+        self.id_to_raw_href = {}
+
+        cover_match = re.search(
+            r'(?is)<meta\b[^>]*\bname\s*=\s*(["\'])cover\1[^>]*\bcontent\s*=\s*(["\'])(.*?)\2',
+            self.opf,
+        )
+        if cover_match:
+            self.metadata["cover"] = cover_match.group(3)
+
+        manifest_match = re.search(r"(?is)<manifest\b[^>]*>(.*?)</manifest>", self.opf)
+        if manifest_match:
+            for item in re.finditer(r"(?is)<item\b(.*?)/?>", manifest_match.group(1)):
+                attrs = self._parse_tag_attrs(item.group(1))
+                item_id = attrs.get("id")
+                href_raw = attrs.get("href")
+                mime = attrs.get("media-type")
+                prop = attrs.get("properties", "")
+                if not item_id or href_raw is None:
+                    continue
+                href = unquote(href_raw)
+                self.id_to_h_m_p[item_id] = (href, mime, prop)
+                self.id_to_raw_href[item_id] = href_raw
+                self.id_to_href[item_id] = href.lower()
+                self.href_to_id[href.lower()] = item_id
+
+        spine_open = re.search(r"(?is)<spine\b([^>]*)>", self.opf)
+        self.tocid = ""
+        if spine_open:
+            spine_attrs = self._parse_tag_attrs(spine_open.group(1))
+            self.tocid = spine_attrs.get("toc", "")
+        spine_match = re.search(r"(?is)<spine\b[^>]*>(.*?)</spine>", self.opf)
+        if spine_match:
+            for itemref in re.finditer(r"(?is)<itemref\b(.*?)/?>", spine_match.group(1)):
+                attrs = self._parse_tag_attrs(itemref.group(1))
+                sid = attrs.get("idref")
+                if not sid:
+                    continue
+                linear = attrs.get("linear", "")
+                prop = attrs.get("properties", "")
+                self.spine_list.append((sid, linear, prop))
+
+        package = ElementTree.Element("package")
+        version_match = re.search(
+            r"(?is)<package\b[^>]*\bversion\s*=\s*([\"'])(.*?)\1", self.opf
+        )
+        if version_match:
+            package.set("version", version_match.group(2))
+        self.etree_opf = {
+            "package": package,
+            "metadata": ElementTree.Element("metadata"),
+            "manifest": ElementTree.Element("manifest"),
+            "spine": ElementTree.Element("spine"),
+        }
+        if self.tocid:
+            self.etree_opf["spine"].set("toc", self.tocid)
+
+    def _detect_encryption(self):
+        enc_name = None
+        for name in self.namelist:
+            if name.lower() == "meta-inf/encryption.xml":
+                enc_name = name
+                break
+        if not enc_name:
+            return
+        try:
+            encryption_xml = self._read_xml_text(enc_name)
+            root = self._parse_xml_safe(
+                encryption_xml,
+                label=f"ENCRYPTION:{enc_name}",
+                allow_sanitize=False,
+            )
+        except Exception as e:
+            logger.write(f"解析 encryption.xml 失败: {e}")
+            return
+
+        uris, keynames, algs = self._extract_encryption_info(root)
+
+        self.encryption_uris = uris
+        self.encryption_keynames = keynames
+        self.encryption_algorithms = algs
+        key_hits = any(k == "DuoKan.Inc" for k in keynames)
+        algo_hits = any("aes128-ctr" in a.lower() for a in algs)
+        important = []
+        for uri in uris:
+            u = uri.lower()
+            if (
+                "oebps/text/" in u
+                or "oebps/styles/" in u
+                or "oebps/images/" in u
+                or u.startswith("text/")
+                or u.startswith("styles/")
+                or u.startswith("images/")
+            ):
+                important.append(uri)
+        self.encrypted_text_or_css = any(
+            ("oebps/text/" in u.lower() or "oebps/styles/" in u.lower() or u.lower().startswith("text/") or u.lower().startswith("styles/"))
+            for u in uris
+        )
+        if uris:
+            self.encrypted = True
+            logger.write(f"检测到 encryption.xml 加密资源: {len(uris)} 项")
+            logger.write(f"加密资源示例(最多10条): {uris[:10]}")
+        if key_hits:
+            logger.write("检测到 DuoKan.Inc KeyName")
+        if algo_hits:
+            logger.write("检测到 aes128-ctr 加密算法标识")
+        if uris and important:
+            logger.write(
+                "提醒: 本工具仅做结构规范化/反混淆，不提供 DRM 解密；对加密内容将无法还原明文。"
+            )
+
+    def _extract_encryption_info(self, root):
+        uris = []
+        keynames = set()
+        algs = set()
+        for elem in root.iter():
+            tag = re.sub(r"\{.*?\}", "", elem.tag)
+            if tag == "CipherReference":
+                uri = elem.get("URI") or ""
+                if uri:
+                    uris.append(uri)
+            elif tag == "KeyName" and elem.text:
+                keynames.add(elem.text.strip())
+            elif tag == "EncryptionMethod":
+                alg = elem.get("Algorithm") or ""
+                if alg:
+                    algs.add(alg)
+        return uris, keynames, algs
+
     def _init_opf(self):
         # 通过 container.xml 读取 opf 文件
-        container_xml = self.epub.read("META-INF/container.xml").decode("utf-8")
-        rf = re.match(r'<rootfile[^>]*full-path="(?i:(.*?\.opf))"', container_xml)
-        if rf is not None:
-            self.opfpath = rf.group(1)
-            self.opf = self.epub.read(self.opfpath).decode("utf-8")
-            return
+        try:
+            container_xml = self._read_xml_text("META-INF/container.xml")
+            rf = re.search(
+                r'<rootfile[^>]*full-path\s*=\s*([\'"])(?i:(.*?\.opf))\1',
+                container_xml,
+            )
+            if rf is not None:
+                self.opfpath = rf.group(2)
+                self.opf = self._read_xml_text(self.opfpath)
+                return
+        except Exception as e:
+            logger.write(f"读取 container.xml 失败，将回退扫描opf: {e}")
         # 通过路径首个 opf 读取 opf 文件
         for bkpath in self.namelist:
             if bkpath.lower().endswith(".opf"):
                 self.opfpath = bkpath
-                self.opf = self.epub.read(self.opfpath).decode("utf-8")
+                self.opf = self._read_xml_text(self.opfpath)
                 return
         raise RuntimeError("无法发现opf文件")
 
     def _parse_opf(self):
-        self.etree_opf = {"package": ElementTree.fromstring(self.opf)}
+        parse_failed = False
+        try:
+            package = self._parse_xml_safe(self.opf, label=f"OPF:{self.opfpath}")
+            self.etree_opf = {"package": package}
+        except Exception as e:
+            logger.write(f"OPF 解析失败，启用降级解析: {e}")
+            self._fallback_parse_opf_manifest_spine()
+            parse_failed = True
 
-        for child in self.etree_opf["package"]:
-            tag = re.sub(r"\{.*?\}", r"", child.tag)
-            self.etree_opf[tag] = child
-        self._parse_metadata()
-        self._parse_manifest()
-        self._parse_spine()
-        self._clear_duplicate_id_href()
-        self._parse_hrefs_not_in_epub()
-        self._add_files_not_in_opf()
+        if not parse_failed:
+            for child in self.etree_opf["package"]:
+                tag = re.sub(r"\{.*?\}", r"", child.tag)
+                self.etree_opf[tag] = child
+            self._parse_metadata()
+            self._parse_manifest()
+            self._parse_spine()
+            self._clear_duplicate_id_href()
+            self._parse_hrefs_not_in_epub()
+            self._add_files_not_in_opf()
+        else:
+            self._parse_hrefs_not_in_epub()
+            self._add_files_not_in_opf()
 
         self.manifest_list = []  # (id,opf_href,mime,properties)
         for id in self.id_to_h_m_p:
@@ -124,13 +390,16 @@ class EpubTool:
 
         if epub_type is not None and epub_type in ["2.0", "3.0"]:
             self.epub_type = epub_type
+        elif parse_failed:
+            self.epub_type = "2.0"
+            logger.write("OPF 版本无法可靠识别，降级按 EPUB2 继续处理")
         else:
             raise RuntimeError("此脚本不支持该EPUB类型")
 
         # 寻找epub2 toc 文件的id。epub3的nav文件直接当做xhtml处理。
         self.tocpath = ""
         self.tocid = ""
-        tocid = self.etree_opf["spine"].get("toc")
+        tocid = self.etree_opf["spine"].get("toc") if "spine" in self.etree_opf else ""
         self.tocid = tocid if tocid is not None else ""
 
         # opf item分类
@@ -244,12 +513,14 @@ class EpubTool:
         self.id_to_h_m_p = {}  # { id : (href,mime,properties) , ... }
         self.id_to_href = {}  # { id : href.lower, ... }
         self.href_to_id = {}  # { href.lower : id, ...}
+        self.id_to_raw_href = {}
         if_error = False
         for item in self.etree_opf["manifest"]:
             # 检查opf文件中是否存在错误
             try:
                 id = item.get("id")
-                href = unquote(item.get("href"))
+                raw_href = item.get("href")
+                href = unquote(raw_href) if raw_href is not None else None
             except Exception as e:
                 str_item = (
                     ElementTree.tostring(item, encoding="unicode")
@@ -262,8 +533,12 @@ class EpubTool:
                 continue
             mime = item.get("media-type")
             properties = item.get("properties") if item.get("properties") else ""
+            if not id or href is None:
+                if_error = True
+                continue
 
             self.id_to_h_m_p[id] = (href, mime, properties)
+            self.id_to_raw_href[id] = raw_href if raw_href is not None else href
             self.id_to_href[id] = href.lower()
             self.href_to_id[href.lower()] = id
         if if_error:
@@ -392,12 +667,22 @@ class EpubTool:
 
     # 重构
     def restructure(self):
+        if self.encrypted and self.encrypted_text_or_css:
+            logger.write(
+                "检测到 encryption.xml 加密了 Text/Styles 资源，跳过重构。"
+            )
+            logger.write(
+                "本工具不提供 DRM 解密；请先使用具备授权能力的工具解密后再处理。"
+            )
+            self.close_files()
+            self.fail_del_target()
+            return "skip"
         self.tgt_epub = self.create_tgt_epub()
         # mimetype
         mimetype = self.epub.read("mimetype")
         self.tgt_epub.writestr("mimetype", mimetype, zipfile.ZIP_DEFLATED)
         # META-INF
-        metainf_data = self.epub.read("META-INF/container.xml").decode("utf-8")
+        metainf_data = self._read_xml_text("META-INF/container.xml")
         metainf_data = re.sub(
             r'<rootfile[^>]*media-type="application/oebps-[^>]*/>',
             r'<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>',
@@ -964,7 +1249,9 @@ def run(epub_src, output_path=None):
             epub.close_files()
             epub.fail_del_target()
             return "skip"
-        epub.restructure()  # 重构
+        ret = epub.restructure()  # 重构
+        if ret == "skip":
+            return "skip"
         el = epub.errorLink_log.copy()
         del_keys = []
         for file_path, log in epub.errorLink_log.items():
@@ -997,6 +1284,9 @@ def run(epub_src, output_path=None):
                     logger.write(
                         "措施: 自行检查该文件是否需要被spine引用。部分阅读器中，如果存在xhtml文件不被spine引用，可能导致epub无法打开。"
                     )
+                elif error_type == "opf_malformed_fallback_used":
+                    logger.write("问题: OPF 存在畸形XML，已启用正则降级解析。")
+                    logger.write("措施: 建议手工修复 OPF 后再重试，以避免遗漏元数据。")
 
         if el:
             for file_path, log in el.items():

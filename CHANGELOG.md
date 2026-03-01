@@ -1,5 +1,9 @@
 # 更新日志
 
+### 2026.03.01<br>
+处理opf文件href属性值里出现< / >XML 保留字符，并且是“裸字符”出现在属性值中（没有写成 `&lt;` / `&gt;`）的情况导致标准 XML 解析器（如xml.etree.ElementTree.fromstring）直接报 not well-formed的错误。  
+对DRM加密epub检测和忽略处理。
+
 ### 2026.02.28<br>
 修复‘·’字符串过长windows显示超出可视范围的问题；迁移不再使用的代码至backup文件夹；增加推荐的epub处理工具仓库[epub]。
 

@@ -1,10 +1,12 @@
 import zipfile
 import os
 import posixpath
+import codecs
 from bs4 import BeautifulSoup, Comment, NavigableString
 from tinycss2 import parse_stylesheet, serialize, parse_declaration_list
 # import emoji
 import re
+from xml.etree import ElementTree
 from fontTools.ttLib import TTFont
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
@@ -131,6 +133,9 @@ class FontEncrypt:
             logger.write("未指定目标字体 family，将按规则处理全部可匹配字体")
         # self.font_to_unchanged_file_mapping = {}
         self.target_epub = None
+        self.opf_path = None
+        self._init_opf_path()
+        self._validate_opf_safely()
         for file in self.epub.namelist():
             if file.lower().endswith(".html") or file.lower().endswith(".xhtml"):
                 self.htmls.append(file)
@@ -141,6 +146,124 @@ class FontEncrypt:
                 self.fonts.append(file)
             else:
                 self.ori_files.append(file)
+
+    def _decode_xml_bytes(self, data: bytes, default="utf-8") -> str:
+        decode_order = [default, "utf-8", "utf-8-sig", "utf-16", "utf-16le", "utf-16be"]
+        if data.startswith(codecs.BOM_UTF8):
+            decode_order = ["utf-8-sig"] + decode_order
+        elif data.startswith(codecs.BOM_UTF16_LE):
+            decode_order = ["utf-16", "utf-16le"] + decode_order
+        elif data.startswith(codecs.BOM_UTF16_BE):
+            decode_order = ["utf-16", "utf-16be"] + decode_order
+        seen = set()
+        for enc in decode_order:
+            if not enc or enc in seen:
+                continue
+            seen.add(enc)
+            try:
+                text = data.decode(enc)
+                return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+            except UnicodeDecodeError:
+                continue
+        try:
+            logger.write("XML decode fallback: utf decode failed, try gb18030")
+            return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", data.decode("gb18030"))
+        except UnicodeDecodeError:
+            logger.write("XML decode fallback: gb18030 failed, use latin-1")
+            return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", data.decode("latin-1"))
+
+    def _read_xml_text(self, zip_path: str) -> str:
+        try:
+            data = self.epub.read(zip_path)
+        except KeyError:
+            raise FileNotFoundError(f"zip内缺少XML文件: {zip_path}")
+        return self._decode_xml_bytes(data)
+
+    def _sanitize_attr_value(self, value: str) -> str:
+        value = re.sub(r"&(?!#\d+;|#x[0-9a-fA-F]+;|[a-zA-Z][\w.-]*;)", "&amp;", value)
+        value = value.replace("<", "&lt;").replace(">", "&gt;")
+        return value
+
+    def _sanitize_xml_attr_text(self, xml_text: str) -> str:
+        pattern = re.compile(
+            r"(<[^>]+?)((?:\s+[^\s=>/]+(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'))?)+)(\s*/?>)",
+            re.DOTALL,
+        )
+
+        def repl_tag(match):
+            prefix, attrs, suffix = match.groups()
+            attrs = re.sub(
+                r"(=\s*\")([^\"]*)(\")",
+                lambda m: m.group(1) + self._sanitize_attr_value(m.group(2)) + m.group(3),
+                attrs,
+                flags=re.DOTALL,
+            )
+            attrs = re.sub(
+                r"(=\s*')([^']*)(')",
+                lambda m: m.group(1) + self._sanitize_attr_value(m.group(2)) + m.group(3),
+                attrs,
+                flags=re.DOTALL,
+            )
+            return prefix + attrs + suffix
+
+        return pattern.sub(repl_tag, xml_text)
+
+    def _xml_parse_error_with_context(self, xml_text: str, label: str, err: Exception):
+        logger.write(f"XML parse error [{label}]: {err}")
+        pos = getattr(err, "position", None)
+        if not pos:
+            return
+        line_no, col_no = pos
+        logger.write(f"位置: line={line_no}, column={col_no}")
+        lines = xml_text.splitlines()
+        start = max(1, line_no - 2)
+        end = min(len(lines), line_no + 2)
+        logger.write(f"{label} 出错上下文:")
+        for idx in range(start, end + 1):
+            logger.write(f"{idx:>6}: {lines[idx - 1]}")
+
+    def _parse_xml_safe(self, xml_text: str, label: str):
+        first_err = None
+        try:
+            return ElementTree.fromstring(xml_text)
+        except ElementTree.ParseError as err:
+            first_err = err
+            self._xml_parse_error_with_context(xml_text, label, err)
+        sanitized = self._sanitize_xml_attr_text(xml_text)
+        if sanitized == xml_text:
+            raise first_err
+        try:
+            logger.write(f"XML sanitize retry: {label}")
+            return ElementTree.fromstring(sanitized)
+        except ElementTree.ParseError as err2:
+            self._xml_parse_error_with_context(sanitized, f"{label}[sanitized]", err2)
+            raise
+
+    def _init_opf_path(self):
+        try:
+            container_xml = self._read_xml_text("META-INF/container.xml")
+            rf = re.search(
+                r'<rootfile[^>]*full-path\s*=\s*([\'"])(?i:(.*?\.opf))\1',
+                container_xml,
+            )
+            if rf:
+                self.opf_path = rf.group(2)
+                return
+        except Exception as e:
+            logger.write(f"读取 container.xml 失败，将回退扫描opf: {e}")
+        for file in self.epub.namelist():
+            if file.lower().endswith(".opf"):
+                self.opf_path = file
+                return
+
+    def _validate_opf_safely(self):
+        if not self.opf_path:
+            return
+        try:
+            opf_text = self._read_xml_text(self.opf_path)
+            self._parse_xml_safe(opf_text, label=f"OPF:{self.opf_path}")
+        except Exception as e:
+            logger.write(f"opf_malformed_fallback_used: encrypt_font ({e})")
 
     def normalize_font_name(self, name):
         return re.sub(r"\s+", " ", (name or "").strip().strip("'\"")).lower()

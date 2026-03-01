@@ -1,6 +1,7 @@
 import zipfile
 import re
 import os
+import codecs
 from PIL import Image
 from io import BytesIO
 
@@ -59,6 +60,206 @@ class ImageTransfer:
                 self.opf = file
             else:
                 self.ori_files.append(file)
+        self._init_opf_path()
+
+    def _decode_xml_bytes(self, data: bytes, default="utf-8") -> str:
+        decode_order = [default, "utf-8", "utf-8-sig", "utf-16", "utf-16le", "utf-16be"]
+        if data.startswith(codecs.BOM_UTF8):
+            decode_order = ["utf-8-sig"] + decode_order
+        elif data.startswith(codecs.BOM_UTF16_LE):
+            decode_order = ["utf-16", "utf-16le"] + decode_order
+        elif data.startswith(codecs.BOM_UTF16_BE):
+            decode_order = ["utf-16", "utf-16be"] + decode_order
+        seen = set()
+        for enc in decode_order:
+            if not enc or enc in seen:
+                continue
+            seen.add(enc)
+            try:
+                text = data.decode(enc)
+                return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+            except UnicodeDecodeError:
+                continue
+        try:
+            logger.write("XML decode fallback: utf decode failed, try gb18030")
+            return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", data.decode("gb18030"))
+        except UnicodeDecodeError:
+            logger.write("XML decode fallback: gb18030 failed, use latin-1")
+            return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", data.decode("latin-1"))
+
+    def _read_xml_text(self, zip_path: str) -> str:
+        try:
+            data = self.epub.read(zip_path)
+        except KeyError:
+            raise FileNotFoundError(f"zip内缺少XML文件: {zip_path}")
+        return self._decode_xml_bytes(data)
+
+    def _sanitize_attr_value(self, value: str) -> str:
+        value = re.sub(r"&(?!#\d+;|#x[0-9a-fA-F]+;|[a-zA-Z][\w.-]*;)", "&amp;", value)
+        value = value.replace("<", "&lt;").replace(">", "&gt;")
+        return value
+
+    def _sanitize_xml_attr_text(self, xml_text: str) -> str:
+        pattern = re.compile(
+            r"(<[^>]+?)((?:\s+[^\s=>/]+(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'))?)+)(\s*/?>)",
+            re.DOTALL,
+        )
+
+        def repl_tag(match):
+            prefix, attrs, suffix = match.groups()
+            attrs = re.sub(
+                r"(=\s*\")([^\"]*)(\")",
+                lambda m: m.group(1) + self._sanitize_attr_value(m.group(2)) + m.group(3),
+                attrs,
+                flags=re.DOTALL,
+            )
+            attrs = re.sub(
+                r"(=\s*')([^']*)(')",
+                lambda m: m.group(1) + self._sanitize_attr_value(m.group(2)) + m.group(3),
+                attrs,
+                flags=re.DOTALL,
+            )
+            return prefix + attrs + suffix
+
+        return pattern.sub(repl_tag, xml_text)
+
+    def _xml_parse_error_with_context(self, xml_text: str, label: str, err: Exception):
+        logger.write(f"XML parse error [{label}]: {err}")
+        pos = getattr(err, "position", None)
+        if not pos:
+            return
+        line_no, col_no = pos
+        logger.write(f"位置: line={line_no}, column={col_no}")
+        lines = xml_text.splitlines()
+        start = max(1, line_no - 2)
+        end = min(len(lines), line_no + 2)
+        logger.write(f"{label} 出错上下文:")
+        for idx in range(start, end + 1):
+            logger.write(f"{idx:>6}: {lines[idx - 1]}")
+
+    def _parse_xml_safe(self, xml_text: str, label: str):
+        first_err = None
+        try:
+            return ElementTree.fromstring(xml_text)
+        except ElementTree.ParseError as err:
+            first_err = err
+            self._xml_parse_error_with_context(xml_text, label, err)
+        sanitized = self._sanitize_xml_attr_text(xml_text)
+        if sanitized == xml_text:
+            raise first_err
+        try:
+            logger.write(f"XML sanitize retry: {label}")
+            return ElementTree.fromstring(sanitized)
+        except ElementTree.ParseError as err2:
+            self._xml_parse_error_with_context(sanitized, f"{label}[sanitized]", err2)
+            raise
+
+    def _init_opf_path(self):
+        try:
+            container_xml = self._read_xml_text("META-INF/container.xml")
+            rf = re.search(
+                r'<rootfile[^>]*full-path\s*=\s*([\'"])(?i:(.*?\.opf))\1',
+                container_xml,
+            )
+            if rf:
+                self.opf = rf.group(2)
+                return
+        except Exception as e:
+            logger.write(f"读取 container.xml 失败，将回退扫描opf: {e}")
+        if self.opf:
+            return
+        for file in self.epub.namelist():
+            if file.lower().endswith(".opf"):
+                self.opf = file
+                return
+        raise RuntimeError("无法发现opf文件")
+
+    def _rewrite_opf_by_regex_fallback(self, opf_text: str) -> str:
+        logger.write("opf_malformed_fallback_used: transfer_img")
+
+        def re_meta_cover(match):
+            attrs = match.group(1)
+            c_match = re.search(r'content=(["\'])(.*?)\1', attrs, flags=re.IGNORECASE)
+            if not c_match:
+                return match.group(0)
+            content = c_match.group(2)
+            if not content.endswith(".webp"):
+                return match.group(0)
+            cover_basename = os.path.basename(content)
+            if cover_basename not in self.img_dict:
+                return match.group(0)
+            replace_name = self.img_dict[cover_basename][0]
+            new_content = content.replace(cover_basename, replace_name)
+            attrs2 = re.sub(
+                r'(content=(["\']))(.*?)(\2)',
+                r"\g<1>" + new_content + r"\4",
+                attrs,
+                count=1,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            logger.write(
+                f'{self.opf} 降级替换：<meta ... content="{content}"> -> content="{new_content}"'
+            )
+            return f"<meta{attrs2}>"
+
+        opf_text = re.sub(
+            r'<meta\b([^>]*\bname\s*=\s*(["\'])cover\2[^>]*)>',
+            re_meta_cover,
+            opf_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        def re_item_webp(match):
+            attrs = match.group(1)
+            media_match = re.search(
+                r'media-type\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE
+            )
+            href_match = re.search(r'href\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE)
+            if not media_match or not href_match:
+                return match.group(0)
+            if media_match.group(2).lower() != "image/webp":
+                return match.group(0)
+            href = href_match.group(2)
+            href_basename = os.path.basename(href)
+            if href_basename not in self.img_dict:
+                return match.group(0)
+            replace_name, replace_media_type = self.img_dict[href_basename]
+            new_href = href.replace(href_basename, replace_name)
+            attrs2 = re.sub(
+                r'(href\s*=\s*(["\']))(.*?)(\2)',
+                r"\g<1>" + new_href + r"\4",
+                attrs,
+                count=1,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            attrs2 = re.sub(
+                r'(media-type\s*=\s*(["\']))(.*?)(\2)',
+                r"\g<1>" + replace_media_type + r"\4",
+                attrs2,
+                count=1,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            id_match = re.search(r'id\s*=\s*(["\'])(.*?)\1', attrs2, flags=re.IGNORECASE)
+            if id_match:
+                attrs2 = re.sub(
+                    r'(id\s*=\s*(["\']))(.*?)(\2)',
+                    r"\g<1>" + replace_name + r"\4",
+                    attrs2,
+                    count=1,
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+            logger.write(f'{self.opf} 降级替换：<item href="{href}" ...> -> href="{new_href}"')
+            if match.group(0).endswith("/>"):
+                return f"<item{attrs2}/>"
+            return f"<item{attrs2}>"
+
+        opf_text = re.sub(
+            r"<item\b([^>]*?)\/?>",
+            re_item_webp,
+            opf_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        return opf_text
 
     def read_files(self):
         for img_path in self.images:
@@ -104,43 +305,47 @@ class ImageTransfer:
 
     def replace(self):
         ns = {"opf": "http://www.idpf.org/2007/opf"}
-        opf_file = self.epub.read(self.opf).decode("utf-8")
-        root = ElementTree.fromstring(opf_file)
-        for meta in root.findall('.//opf:meta[@name="cover"]', ns):
-            content = meta.get("content")
-            if content and content.endswith(".webp"):
-                logger.write(f"meta 替换cover：{content}")
-                cover_basename = os.path.basename(content)
-                if os.path.basename(content) in self.img_dict:
-                    replace_name = self.img_dict[cover_basename][0]
-                    new_content = content.replace(cover_basename, replace_name)
-                    meta.set("content", new_content)
+        opf_file = self._read_xml_text(self.opf)
+        try:
+            root = self._parse_xml_safe(opf_file, label=f"OPF:{self.opf}")
+        except Exception:
+            modified_opf = self._rewrite_opf_by_regex_fallback(opf_file).encode("utf-8")
+            self.target_epub.writestr(self.opf, modified_opf, zipfile.ZIP_DEFLATED)
+            root = None
+        if root is not None:
+            for meta in root.findall('.//opf:meta[@name="cover"]', ns):
+                content = meta.get("content")
+                if content and content.endswith(".webp"):
+                    logger.write(f"meta 替换cover：{content}")
+                    cover_basename = os.path.basename(content)
+                    if os.path.basename(content) in self.img_dict:
+                        replace_name = self.img_dict[cover_basename][0]
+                        new_content = content.replace(cover_basename, replace_name)
+                        meta.set("content", new_content)
+                        logger.write(
+                            f'{self.opf} 替换：<meta name="cover" content="{content}" /> -> <meta name="cover" content="{new_content}"'
+                        )
+            # 遍历所有 <item> 标签
+            for item in root.findall(".//opf:item", ns):
+                media_type = item.get("media-type")
+                if media_type == "image/webp":
+                    id = item.get("id")
+                    href = item.get("href")
+                    href_basename = os.path.basename(href)
+                    if href_basename in self.img_dict:
+                        replace_name, replace_media_type = self.img_dict[href_basename]
+                        item.set("id", replace_name)
+                        item.set(
+                            "href", item.get("href").replace(href_basename, replace_name)
+                        )
+                        item.set("media-type", replace_media_type)
                     logger.write(
-                        f'{self.opf} 替换：<meta name="cover" content="{content}" /> -> <meta name="cover" content="{new_content}"'
+                        f'{self.opf} 替换：<item id="{id}" href="{href}" media-type="{media_type}"/> -> <item id="{item.get("id")}" href="{item.get("href")}" media-type="{item.get("media-type")}"/>'
                     )
-        # 遍历所有 <item> 标签
-        for item in root.findall(".//opf:item", ns):
-            # 获取属性值
-            # item_id = item.get('id')
-            media_type = item.get("media-type")
-            if media_type == "image/webp":
-                id = item.get("id")
-                href = item.get("href")
-                href_basename = os.path.basename(href)
-                if href_basename in self.img_dict:
-                    replace_name, replace_media_type = self.img_dict[href_basename]
-                    item.set("id", replace_name)
-                    item.set(
-                        "href", item.get("href").replace(href_basename, replace_name)
-                    )
-                    item.set("media-type", replace_media_type)
-                logger.write(
-                    f'{self.opf} 替换：<item id="{id}" href="{href}" media-type="{media_type}"/> -> <item id="{item.get("id")}" href="{item.get("href")}" media-type="{item.get("media-type")}"/>'
-                )
-        modified_opf = ElementTree.tostring(
-            root, encoding="utf-8", xml_declaration=True
-        )
-        self.target_epub.writestr(self.opf, modified_opf, zipfile.ZIP_DEFLATED)
+            modified_opf = ElementTree.tostring(
+                root, encoding="utf-8", xml_declaration=True
+            )
+            self.target_epub.writestr(self.opf, modified_opf, zipfile.ZIP_DEFLATED)
         # logger.write(tree)
 
         for html_path in self.htmls:
