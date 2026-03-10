@@ -127,7 +127,7 @@ UI操作演示
   <p>
 
 
-> Github仓库链接：[epub-gadget](https://github.com/wangyyyqw/epub-gadget) 
+> Github仓库链接：[epub-gadget](https://github.com/wangyyyqw/epub-gadget)  
 > PS：混淆加密功能更新可能存在延迟
 
 ![UI界面](./img/epub.png)
