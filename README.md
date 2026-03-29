@@ -123,9 +123,8 @@ UI操作演示
 </details>
 
 <details>
- <summary>功能扩展、界面美化的第三方UI【epub-gadget】(推荐)</summary>
+ <summary>引用本仓库进行二次开发并扩展功能的项目 <b>epub-gadget</b>(推荐)</summary>
   <p>
-
 
 > Github仓库链接：[epub-gadget](https://github.com/wangyyyqw/epub-gadget)  
 > PS：混淆加密功能更新可能存在延迟
