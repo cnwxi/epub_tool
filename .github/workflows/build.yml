@@ -110,7 +110,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: .
-          tauriScript: npm run tauri:build
+          tauriScript: npm run tauri --
           tagName: ${{ steps.release_version.outputs.value }}
           releaseName: ${{ steps.release_version.outputs.value }}
           releaseBody: ${{ github.event.inputs.body }}
@@ -122,7 +122,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: .
-          tauriScript: npm run tauri:build
+          tauriScript: npm run tauri --
 
       - name: Upload workflow artifacts
         if: github.event.inputs.release != 'true'
