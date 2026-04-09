@@ -43,7 +43,7 @@ def ensure_pyinstaller() -> None:
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit(
-            "未检测到 PyInstaller。请先执行 `python -m pip install pyinstaller`。"
+            "PyInstaller is required. Run `python -m pip install pyinstaller` first."
         ) from exc
 
 
@@ -55,9 +55,9 @@ def ensure_runtime_dependencies() -> None:
     ]
     if missing:
         raise SystemExit(
-            "当前 Python 环境缺少 sidecar 运行依赖："
+            "Missing Python dependencies required for the sidecar build: "
             + ", ".join(missing)
-            + "。请在同一个解释器中执行 `python -m pip install -r requirements.txt pyinstaller`。"
+            + ". Run `python -m pip install -r requirements.txt pyinstaller` with the same interpreter."
         )
 
 
@@ -106,7 +106,7 @@ def build_sidecar() -> Path:
     subprocess.run(command, cwd=REPO_ROOT, check=True, env=env)
 
     if not target_path.exists():
-        raise SystemExit(f"sidecar 构建完成，但未找到产物：{target_path}")
+        raise SystemExit(f"Sidecar build finished but the output file was not found: {target_path}")
 
     if sys.platform != "win32":
         target_path.chmod(target_path.stat().st_mode | 0o755)
@@ -116,7 +116,7 @@ def build_sidecar() -> Path:
 
 def main() -> int:
     target_path = build_sidecar()
-    print(f"Python sidecar 已生成：{target_path}")
+    print(f"Python sidecar built: {target_path}")
     return 0
 
 

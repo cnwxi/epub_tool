@@ -19,6 +19,7 @@ import type {
   TaskRequest,
   TaskResult,
   TaskType,
+  UpdateCheckState,
 } from "./types";
 
 const sectionItems: Array<{
@@ -59,6 +60,14 @@ const defaultSettings: AppSettings = {
 const CURRENT_FALLBACK_VERSION = __APP_VERSION__;
 const RELEASES_API_URL = "https://api.github.com/repos/cnwxi/epub_tool/releases/latest";
 const LATEST_RELEASE_URL = "https://github.com/cnwxi/epub_tool/releases/latest";
+const UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
+const defaultUpdateCheckState: UpdateCheckState = {
+  checkedAt: "",
+  latestVersion: "",
+  latestReleaseUrl: LATEST_RELEASE_URL,
+  status: "idle",
+  message: "可手动检查是否有新版本。",
+};
 
 const { collectEpubFiles, isTauriRuntime, listFontTargets, openPath, runTask } =
   useTaskBridge();
@@ -89,6 +98,10 @@ const taskHistory = usePersistentState<TaskHistoryEntry[]>(
   "epub-tool.task-history",
   [],
 );
+const persistedUpdateCheckState = usePersistentState<UpdateCheckState>(
+  "epub-tool.update-check-state",
+  defaultUpdateCheckState,
+);
 const files = ref<QueuedFile[]>([]);
 const selectedFilePath = ref("");
 const logs = ref<TaskEvent[]>([]);
@@ -104,11 +117,17 @@ const fontProgressCurrent = ref(0);
 const fontProgressTotal = ref(0);
 const fontProgressFileName = ref("");
 const currentVersion = ref(CURRENT_FALLBACK_VERSION);
-const latestVersion = ref("");
-const latestReleaseUrl = ref(LATEST_RELEASE_URL);
-const updateMessage = ref("可手动检查是否有新版本。");
-const updateStatus = ref<"idle" | "checking" | "available" | "latest" | "error">("idle");
-const updateCheckedAt = ref("");
+const latestVersion = ref(persistedUpdateCheckState.value.latestVersion);
+const latestReleaseUrl = ref(
+  persistedUpdateCheckState.value.latestReleaseUrl || LATEST_RELEASE_URL,
+);
+const updateMessage = ref(
+  persistedUpdateCheckState.value.message || defaultUpdateCheckState.message,
+);
+const updateStatus = ref<"idle" | "checking" | "available" | "latest" | "error">(
+  persistedUpdateCheckState.value.status || "idle",
+);
+const updateCheckedAt = ref(persistedUpdateCheckState.value.checkedAt);
 const updateNoticeVisible = ref(false);
 const dragActive = ref(false);
 const browserFileInput = ref<HTMLInputElement | null>(null);
@@ -415,17 +434,49 @@ const openLatestReleasePage = () => {
   }
 };
 
-const checkForUpdates = async (options?: { silent?: boolean }) => {
+const persistUpdateCheckState = () => {
+  persistedUpdateCheckState.value = {
+    checkedAt: updateCheckedAt.value,
+    latestVersion: latestVersion.value,
+    latestReleaseUrl: latestReleaseUrl.value || LATEST_RELEASE_URL,
+    status: updateStatus.value,
+    message: updateMessage.value,
+  };
+};
+
+const shouldSkipAutomaticUpdateCheck = (): boolean => {
+  if (!updateCheckedAt.value) {
+    return false;
+  }
+
+  const checkedAt = new Date(updateCheckedAt.value).getTime();
+  if (!Number.isFinite(checkedAt)) {
+    return false;
+  }
+
+  return Date.now() - checkedAt < UPDATE_CHECK_INTERVAL_MS;
+};
+
+const checkForUpdates = async (options?: { silent?: boolean; automatic?: boolean }) => {
+  if (options?.automatic && shouldSkipAutomaticUpdateCheck()) {
+    return;
+  }
+
   updateStatus.value = "checking";
   updateMessage.value = "正在检查更新...";
+  persistUpdateCheckState();
 
   try {
     const response = await fetch(RELEASES_API_URL, {
       headers: {
         Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
       },
     });
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("GitHub 更新接口当前不可用或已触发频率限制，请稍后再试。");
+      }
       throw new Error(`更新检查失败（${response.status}）`);
     }
 
@@ -446,16 +497,21 @@ const checkForUpdates = async (options?: { silent?: boolean }) => {
       updateStatus.value = "available";
       updateMessage.value = `发现新版本 v${releaseVersion}，可前往 GitHub Release 下载。`;
       updateNoticeVisible.value = true;
+      persistUpdateCheckState();
       return;
     }
 
     updateStatus.value = "latest";
     updateMessage.value = `当前已是最新版本 v${currentVersion.value}。`;
     updateNoticeVisible.value = false;
+    persistUpdateCheckState();
   } catch (error) {
     updateStatus.value = "error";
     updateMessage.value = toErrorMessage(error, "检查更新失败，请稍后重试。");
+    updateCheckedAt.value = new Date().toISOString();
+    latestReleaseUrl.value = LATEST_RELEASE_URL;
     updateNoticeVisible.value = false;
+    persistUpdateCheckState();
     if (options?.silent) {
       return;
     }
@@ -899,7 +955,7 @@ watch(
   () => settings.value.autoCheckUpdates,
   (enabled, previous) => {
     if (enabled && previous === false) {
-      void checkForUpdates({ silent: true });
+      void checkForUpdates({ silent: true, automatic: true });
     }
   },
 );
@@ -916,7 +972,7 @@ onMounted(async () => {
   }
 
   if (settings.value.autoCheckUpdates) {
-    void checkForUpdates({ silent: true });
+    void checkForUpdates({ silent: true, automatic: true });
   }
 
   if (!isTauriRuntime()) {

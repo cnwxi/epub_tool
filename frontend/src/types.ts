@@ -60,6 +60,14 @@ export interface AppSettings {
   keepHistoryCount: number;
 }
 
+export interface UpdateCheckState {
+  checkedAt: string;
+  latestVersion: string;
+  latestReleaseUrl: string;
+  status: "idle" | "checking" | "available" | "latest" | "error";
+  message: string;
+}
+
 export interface TaskHistoryEntry {
   id: string;
   createdAt: string;

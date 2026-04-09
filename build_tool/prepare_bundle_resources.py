@@ -14,7 +14,7 @@ SIDECAR_NAME = "epub-tool-python.exe" if sys.platform == "win32" else "epub-tool
 def prepare_bundle_resources() -> Path:
     source_path = SOURCE_DIR / SIDECAR_NAME
     if not source_path.is_file():
-        raise SystemExit(f"未找到 sidecar：{source_path}")
+        raise SystemExit(f"Sidecar file not found: {source_path}")
 
     if STAGE_DIR.exists():
         shutil.rmtree(STAGE_DIR)
@@ -26,7 +26,7 @@ def prepare_bundle_resources() -> Path:
     if sys.platform != "win32":
         target_path.chmod(target_path.stat().st_mode | 0o755)
 
-    print(f"已准备 bundle 资源：{target_path}")
+    print(f"Bundle resources prepared: {target_path}")
     return target_path
 
 
