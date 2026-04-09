@@ -5,119 +5,103 @@
 [![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest)  [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers) [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
 </div>
 
-## Ⅰ 此仓库（epub_tool）介绍<br>
-
-<details>
-  <summary>包含一些可用的epub工具，用于epub文件的重构、解密、加密、字体混淆、WEBP图片转换。</summary>
+<details open>
+  <summary><strong>桌面版说明</strong></summary>
   <p>
 
-1. `重构epub为规范格式_v2.8.3.py`->`utils\reformat_epub.py`<br>
-作用：见原文件名。<br>
-原始的百度贴吧帖子链接：[遥遥心航的帖子](https://jump2.bdimg.com/p/8090221625)。<br>
-遥遥心航提供的原始文件：[蓝奏云网盘链接](https://wwb.lanzoub.com/b01k016hg) 密码：`i89p`。<br>
-2. `重构epub并反文件名混淆.py`->`utils\decrypt_epub.py`<br>
-作用：见原文件名。<br>
-3. `重构epub并加入文件名混淆.py`->`utils\encrypt_epub.py`<br>
-作用：见原文件名。<br>
-4. `Epub_Tool_Console.py`<br>
-作用：对上述工具（不包括字体混淆）的整合的命令行程序。（已不再更新，后续使用Epub_Tool_TKUI）https://github.com/cnwxi/epub_tool/issues/11<br>
-5. `utils\encrypt_font.py`<br>
-作用：对epub文件中指定内嵌字体的文字进行字体加密（混淆），支持按字体 family范围筛选处理。（部分代码来自[fontObfuscator](https://github.com/solarhell/fontObfuscator)）https://github.com/cnwxi/epub_tool/issues/21<br>
-6. `utils\transfer_img.py`<br>
-作用：对epub文件中WEBP格式图片进行转换以支持kindle的正常显示。（WEBP->JPG/PNG，转换后图像会进行压缩以控制文件大小）https://github.com/cnwxi/epub_tool/issues/25<br>
-7. `Epub_Tool_TKUI.py`<br>
-作用：对上述工具的整合的带操作界面的程序。<br>
+当前默认桌面版基于 `Tauri 2 + Vue 3 + TypeScript + Python 后端`。核心 EPUB 处理能力仍由 `utils/` 提供，并通过 `python_backend/` 统一为可调用的任务入口；桌面界面负责文件导入、参数配置、任务执行、日志与结果展示。<br>
 
-注：重构会严格保证文件夹分类和文件名后缀。[https://github.com/cnwxi/epub_tool/issues/13]
-  </p>
-</details>
+主要目录：
 
-## Ⅱ 怎么使用？（仅针对最新版本）<br>
+- `frontend/`：桌面前端界面
+- `src-tauri/`：Tauri 壳层与打包配置
+- `python_backend/`：统一 CLI、任务协议与运行器
+- `doc/`：运行、协议与打包说明
 
-<details>
-  <summary>python源码执行</summary>
-  <p>
+推荐先看：
 
-1. 下载python（推荐3.8或更高版本）；<br> 
-2. 使用`git clone https://github.com/cnwxi/epub_tool.git`克隆本仓库；或直接在网页下载源码压缩包，解压后得到py文件；<br>
-3. 准备依赖库，在终端输入`python -m pip install -r requirements.txt`;<br>
-4. 终端切换工作路径为解压后文件夹所在路径
-5. 执行py文件`python ./***.py`、`python ./utils/***.py`。<br> 
-    <!-- - 单个工具执行：<br> 
-    1. 使用命令行执行 `python 解压目标文件夹/epub_tool/utils/**.py` 。<br>
-    - 整合工具执行：<br> 
-    1. 使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -e/d/r` 其中e、d、r为不同的处理模式，分别是混淆`-e`、反混淆`-d`、重新格式化`-r`。<br> 
-    2. 也可使用命令行执行 `python 解压目标文件夹/epub_tool/epub_tool.py -i 需要处理的epub文件或者所在文件夹 -m 处理模式`，处理模式为e、d、r。<br>  -->
+- `doc/README.md`
+- `doc/CLI_USAGE.md`
+- `doc/TASK_PROTOCOL.md`
+- `doc/TAURI_PYTHON_BRIDGE.md`
+- `doc/BUILD_AND_BUNDLE.md`
 
-  </p>
+桌面版当前支持：
 
-  >（注：会在对应工作路径生成日志文件`log.txt`，每次执行py文件会覆盖写入该文件，无需担心此文件过分占用存储空间<br>
+- 选择单个或多个 EPUB 文件
+- 扫描目录并递归收集 `.epub`
+- 独立设置输出目录
+- 执行 `reformat / decrypt / encrypt / font_encrypt / transfer_img`
+- 查看处理日志、执行摘要、失败与跳过原因
+- 持久化保存常用设置与最近任务历史
 
-</details>
+本地开发启动：
 
-<!-- 
+1. 安装 Python 依赖：`python -m pip install -r requirements.txt`。<br>
+2. 安装 Node / npm / Rust toolchain。<br>
+3. 如使用 `nvm`，执行 `source "$HOME/.nvm/nvm.sh"` 与 `nvm use`。<br>
+4. 安装前端与 Tauri 依赖：`npm install`、`npm --prefix frontend install`。<br>
+5. 启动桌面应用：`npm run tauri:dev`。<br>
 
-<details> 
-  <summary>命令行程序</summary>
-  <p>
+本地打包：
 
-1. 从[releases](https://github.com/cnwxi/epub_tool/releases)下载对应的可执行文件；<br>
-2. Windows可以直接双击可执行文件；<br>
-![image](https://github.com/user-attachments/assets/53ed7c69-3f59-44fd-9c59-b754ada6c5a8)
-3. 或使用命令行工具`CMD、Power Shell、Terminal`执行；<br>
-4. 如提示无权限运行，可在终端输入 `chmod +x /可执行文件所在路径` （macOS：还需进入“设置-安全性与隐私-通用-允许从以下位置下载的APP”点击“仍要打开”）<br>
-参考如图：<br>
-![image](https://github.com/user-attachments/assets/18dd97fb-cc39-47d4-b5eb-fb48b01a28cd)
-![image](https://github.com/user-attachments/assets/e0f7e997-6912-4792-a72d-f415e0525e34)
-5. 参数列表参考如下：<br>
-\-i  后面接需要处理的epub文件或所在文件夹；<br>
-\-e  无需后接任何参数，指定程序对epub进行混淆处理；<br>
-\-d  无需后接任何参数，指定程序对epub进行反混淆处理；<br>
-\-r  无需后接任何参数，指定程序对epub进行格式化处理。<br>
-\-m  后接指定的处理模式，e、d、r。（可选，效果同上-e、-d、-r）
-6. 现在输入为文件夹路径时会提醒选择文件执行edr操作或所有文件执行edr操作。<br> 
- ![image](https://github.com/user-attachments/assets/4c5d6a6e-2e6e-427d-9251-8d9e4c2a3a68) 
+1. 安装 Python 依赖与 PyInstaller：`python -m pip install -r requirements.txt pyinstaller`。<br>
+2. 构建内置 Python sidecar：`python build_tool/build_python_sidecar.py`。<br>
+3. 执行 Tauri 打包：`npm run tauri:build`。<br>
 
-- 举例：<br>
-在可执行文件所在文件夹打开命令行工具（或打开命令行工具后切换到可执行文件所在文件夹）。<br>
-可使用的命令行工具如cmd/powershell/terminal等。<br>
-输入`Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -d`或`Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -m d`
-并回车（注意不同平台可执行文件名不一致）。<br>
-此命令行指定程序读取指定目录下所有epub文件，并对这些文件进行反混淆。<br>
+说明：打包产物会优先使用内置的 `src-tauri/binaries/epub-tool-python(.exe)`；只有本地开发时 sidecar 不存在，才会回退到系统 `python3` / `python`。应用版本号统一以 `src-tauri/Cargo.toml` 为准，GitHub Release 默认会自动派生为带 `v` 前缀的标签。<br>
 
   </p>
 </details>
 
-<details>
-  <summary>Windows系统CMD命令行操作演示</summary>
-  <p>
-    
-1. 可执行文件已下载至C:\Users\Administrator\Downloads\Programs位置，打开文件管理器，进入对应目录。如图：<br>
-<img src="https://github.com/user-attachments/assets/0cd71e92-714b-4f44-8060-ad5d353ebb7a" width="600"><br>
-2. 在最上方地址输入框输入cmd并回车，则可以直接在此目录下打开cmd。如图：<br>
-<img src="https://github.com/user-attachments/assets/2f23826d-480a-4526-9dbe-f3fb06f5fa35" width="600"><br>
-<img src="https://github.com/user-attachments/assets/8def1166-f7f6-4738-bed8-0b3057e1d81b" width="600"><br>
-3. 输入 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -d （注：此为演示命令行，具体的输入文件/文件夹和执行模式需要你自行指定）<br>
-或 Windows_epub_tool.exe -i epub文件路径或所在文件夹路径 -m d 。如图：<br>
-<img src="https://github.com/user-attachments/assets/0e1c703f-1c78-4242-9dce-480219805005" width="600"><br>
-  
-  </p>
-</details> 
-
--->
-
-<details>
-  <summary>可视化界面程序（推荐）</summary>
+<details open>
+  <summary><strong>怎么使用？</strong></summary>
   <p>
 
-    
->（注：同样会在可执行程序所在路径生成日志文件`log.txt`，每次启动程序会覆盖写入该文件，无需担心此文件过分占用存储空间，mac文件写入位置为`/Applications/Epub_Tool_TKUI.app/Contents/MacOS/log.txt`，win文件写入位置为`Epub_Tool_TKUI.exe所在目录`）<br>
+桌面版使用（推荐）：
 
+1. 从 [Releases](https://github.com/cnwxi/epub_tool/releases/latest) 下载对应系统的桌面版安装包或压缩包。<br>
+2. 安装并启动桌面应用。首次运行如遇系统安全提示，请按系统提示允许应用启动。<br>
+3. 在桌面界面中导入 EPUB 文件或扫描目录。<br>
+4. 选择输出目录与处理模式，然后执行任务。<br>
+5. 处理完成后，可在结果区打开输出文件夹，并查看失败或跳过原因。<br>
 
-> （Mac安装后运行若提示无法验证安全性，请参考[Apple 无法检查 App 是否包含恶意软件（来自Apple官网Mac使用手册）](https://support.apple.com/zh-cn/guide/mac-help/mchleab3a043/mac)，进入系统设置-隐私与安全性-安全性-点击“仍要打开”；Windows若报告病毒文件请忽略警告，允许文件保留本地。）
+桌面版支持：
 
-UI操作演示
+- 格式化
+- 文件解密
+- 文件加密
+- 字体加密
+- 图片转换
+
+UI 操作演示：
 ![操作演示](./img/how_to_use_new.gif)
+
+Python 脚本调试方式：
+
+1. 安装 Python（推荐 3.8 或更高版本）。<br>
+2. 安装依赖：`python -m pip install -r requirements.txt`。<br>
+3. 单独调试处理脚本时，可直接执行 `python utils/*.py`。<br>
+
+说明：
+
+- Python 脚本入口主要用于排障与单功能调试，不作为默认使用入口。
+- 执行脚本时，仍会在工作路径生成 `log.txt`。<br>
+
+  </p>
+</details>
+
+<details>
+  <summary><strong>仓库包含哪些能力？</strong></summary>
+  <p>
+
+当前仓库主要提供以下 EPUB 处理能力：
+
+- `utils/reformat_epub.py`：重构 EPUB 结构并标准化文件布局
+- `utils/decrypt_epub.py`：处理文件名混淆
+- `utils/encrypt_epub.py`：生成文件加密版本
+- `utils/encrypt_font.py`：按字体范围执行字体加密
+- `utils/transfer_img.py`：转换 EPUB 内 WEBP 图片
 
   </p>
 </details>
@@ -135,42 +119,45 @@ UI操作演示
   </p>
 </details>
 
-## Ⅲ 执行遇到错误？
-
 <details>
-  <summary>epub无法正常规范/混淆/反混淆</summary><br>
-  <ol>
-    <li>优先解压文件，查看其中content.opf文件 或 使用本工具中的“格式化”按钮，查看日志文件，检查epub是否存在问题；删除或修复存在问题的文件（如content.opf）。若无法解决，在Issues区提交issue并附带原文件。<br>样例：[https://github.com/cnwxi/epub_tool/issues/8 https://github.com/cnwxi/epub_tool/issues/10 https://github.com/cnwxi/epub_tool/issues/24]</li>
-    <li>若下载文件名带“精品”二字，且解压后文件夹内包含“/META-INF/encryption.xml”，检查此文件内是否有“ZhangYue.Inc”字样。若满足则此文件为掌阅加密书籍，为规避版权问题，此处不提供解密程序，请使用「掌阅」打开阅读。<br>样例：[https://github.com/cnwxi/epub_tool/issues/19]</li>
-  </ol>
+  <summary><strong>执行遇到错误怎么办？</strong></summary>
+  <p>
+
+常见排查建议：
+
+1. 先尝试使用“格式化”功能重新整理 EPUB 结构，再查看结果区与 `log.txt` 提示。<br>
+2. 若处理失败，优先检查 EPUB 内部是否缺少或损坏关键文件，例如 `content.opf`。<br>
+3. 字体加密仅处理 EPUB 内已嵌入的字体文件；如果样式引用的是系统字体，不会被加密。<br>
+4. 若书籍包含特殊加密信息，例如掌阅相关加密标记，本仓库不提供对应解密能力。<br>
+
+反馈问题时建议一并提供：
+
+- 出现问题的 EPUB 文件或最小可复现样本
+- 对应处理模式
+- 生成的 `log.txt`
+- 结果区显示的失败或跳过原因
+
+  </p>
 </details>
 
 <details>
-  <summary>epub字体混淆功能说明</summary><br>
-  <ol>
-    <li>当前字体加密流程：点击“字体加密”后，程序会先扫描选中 epub 的可用字体 family，再弹出勾选列表（支持“全选/反选”）。确认后只处理勾选范围。</li>
-    <li>字体匹配规则：支持 CSS 选择器（如 <code>p.inscribe</code>、<code>.p1</code>、<code>div p</code> 等）、<code>font-family</code>、<code>font</code> 简写、html/xhtml 内 <code>&lt;style&gt;</code> 与标签内联 <code>style</code>。如选择器语法不合法，会自动跳过该规则继续处理。</li>
-    <li>仅可加密“epub 内实际嵌入的字体文件”。若样式里写的是系统字体（例如只写了“楷体”但书中未嵌入对应字体文件），则不会被加密。</li>
-    <li>若结果不符合预期，建议先缩小处理范围（只选目标字体 + 目标 xhtml）排查；并将相关 CSS 规则和 xhtml 片段附在 issue 中便于定位。</li>
-    <li>此功能并不完善，优先使用文件加密</li>
-  </ol>
+  <summary><strong>更新日志</strong></summary>
+  <p>
+
+[点击查看 CHANGELOG](./CHANGELOG.md)
+
+  </p>
 </details>
 
 <details>
-  <summary>如何有效反馈问题</summary><br>
-  <ol>
-    <li>创建新issue，简略描述问题；</li>
-    <li>压缩并上传存在问题的epub文件；</li>
-    <li>上传处理对应epub文件程序生成的log.txt日志文件。</li>
-  </ol>
-</details>
+  <summary><strong>鸣谢</strong></summary>
+  <p>
 
-## Ⅳ 更新日志<br>
-[点击以查看](./CHANGELOG.md)
+感谢以下用户和项目对此仓库的贡献：
 
-
-## Ⅴ 鸣谢<br>
-感谢以下用户/项目对此仓库的贡献：
-- [遥遥心航](https://tieba.baidu.com/home/main?id=tb.1.7f262ae1.5_dXQ2Jp0F0MH9YJtgM2Ew)  
+- [遥遥心航](https://tieba.baidu.com/home/main?id=tb.1.7f262ae1.5_dXQ2Jp0F0MH9YJtgM2Ew)
 - [lgernier](https://github.com/lgernierO)
-- [fontObfuscator](https://github.com/solarhell/fontObfuscator)  
+- [fontObfuscator](https://github.com/solarhell/fontObfuscator)
+
+  </p>
+</details>

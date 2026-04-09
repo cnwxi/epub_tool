@@ -1,5 +1,13 @@
 # 更新日志
 
+### 2026.04.09<br>
+新增 Tauri 桌面版界面，统一接入 `reformat`、`decrypt`、`encrypt`、`font_encrypt`、`transfer_img` 五类 EPUB 处理能力。<br>
+新增 `python_backend/` 统一 CLI、JSON Lines 任务协议与运行器，桌面界面可显示任务进度、处理日志、执行摘要、失败与跳过原因。<br>
+新增 Python sidecar 打包链路，桌面版打包时优先使用内置后端；本地开发环境下 sidecar 不存在时回退系统 Python。<br>
+新增版本检查与 GitHub Release 跳转能力，支持自动检查更新、手动检查更新与下载最新版本。<br>
+更新 GitHub Actions 打包 workflow，支持 Linux x64、Windows x64、macOS x64、macOS arm64 构建矩阵。<br>
+整理 README 与核心文档，收口迁移期说明。by codex
+
 ### 2026.03.01<br>
 处理opf文件href属性值里出现< / >XML 保留字符，并且是“裸字符”出现在属性值中（没有写成 `&lt;` / `&gt;`）的情况导致标准 XML 解析器（如xml.etree.ElementTree.fromstring）直接报 not well-formed的错误。  
 对DRM加密epub检测和忽略处理。
@@ -60,7 +68,7 @@ Update build.yml。<br>
 ### 2024.12.17<br>
 修复UI显示问题,分支整合。<br>
 ### 2024.12.16<br>
-创建新分支TKUI，实现基本UI DEMO，功能已整合。<br>
+创建新分支并实现基本桌面 UI DEMO，功能已整合。<br>
 ### 2024.11.17<br>
 添加文件夹手动选择需要处理文件，输入文件序号进行选择，不再是默认处理文件夹内全部epub文件，添加了输入检测提示，错误后会返回重新输入。<br>
 ### 2024.10.24<br>

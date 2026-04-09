@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Epub Tool NewUI",
+  "identifier": "com.cnwxi.epubtool.newui",
+  "build": {
+    "beforeDevCommand": {
+      "cwd": "../frontend",
+      "script": "npm run dev -- --host"
+    },
+    "beforeBuildCommand": {
+      "cwd": "..",
+      "script": "npm run build:bundle-assets"
+    },
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Epub Tool NewUI",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1100,
+        "minHeight": 740,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "capabilities": ["main-capability"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": ["binaries"],
+    "icon": [
+      "../img/icon.png",
+      "../img/icon.ico",
+      "../img/icon.icns"
+    ]
+  }
+}

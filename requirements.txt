@@ -4,5 +4,3 @@ fonttools
 tinycss2
 tqdm
 pillow
-ttkbootstrap
-tkinterdnd2
