@@ -26,6 +26,7 @@ npm run tauri:build
 ```
 
 打包时，桌面应用会优先调用内置的 `src-tauri/binaries/epub-tool-python(.exe)`；只有本地开发环境中 sidecar 不存在时，才会回退到系统 Python。
+正式 bundle 前会自动生成一份独立的 `src-tauri/bundle-resources/` 资源目录，只复制当前平台的 sidecar，避免把 `.gitkeep`、日志文件等无关文件打进安装包。
 
 ## CI 构建矩阵
 
@@ -33,7 +34,6 @@ npm run tauri:build
 
 - Linux x64
 - Windows x64
-- macOS x64
 - macOS arm64
 
 workflow 支持两种运行方式：
@@ -54,5 +54,6 @@ workflow 支持两种运行方式：
 ## 维护注意事项
 
 - 发布前先确认 `python build_tool/build_python_sidecar.py` 能正常生成 sidecar
+- 发布前可执行 `python build_tool/prepare_bundle_resources.py` 检查 bundle 资源目录是否只包含当前平台 sidecar
 - 发布前至少在目标平台上验证一次安装包启动、任务执行与输出目录打开
 - 如需升级版本，只修改 `src-tauri/Cargo.toml`

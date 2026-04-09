@@ -31,6 +31,7 @@ src-tauri/target/
 src-tauri/gen/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
+src-tauri/bundle-resources/
 *.tsbuildinfo
 
 # 日志与本地结果

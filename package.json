@@ -5,7 +5,8 @@
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "build:python-sidecar": "python build_tool/build_python_sidecar.py",
-    "build:bundle-assets": "npm run build && npm run build:python-sidecar",
+    "build:prepare-bundle-resources": "python build_tool/prepare_bundle_resources.py",
+    "build:bundle-assets": "npm run build && npm run build:python-sidecar && npm run build:prepare-bundle-resources",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

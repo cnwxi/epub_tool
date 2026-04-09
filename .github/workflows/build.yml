@@ -36,10 +36,6 @@ jobs:
             runner: windows-2022
             artifact_name: windows-x64-bundle
           - platform: macos
-            arch: x64
-            runner: macos-13
-            artifact_name: macos-x64-bundle
-          - platform: macos
             arch: arm64
             runner: macos-14
             artifact_name: macos-arm64-bundle
@@ -114,6 +110,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: .
+          tauriScript: npm run tauri:build
           tagName: ${{ steps.release_version.outputs.value }}
           releaseName: ${{ steps.release_version.outputs.value }}
           releaseBody: ${{ github.event.inputs.body }}
@@ -125,6 +122,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: .
+          tauriScript: npm run tauri:build
 
       - name: Upload workflow artifacts
         if: github.event.inputs.release != 'true'

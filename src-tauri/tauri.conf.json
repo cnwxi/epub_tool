@@ -34,11 +34,16 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": ["binaries"],
+    "resources": {
+      "bundle-resources/binaries/*": "binaries/"
+    },
     "icon": [
       "../img/icon.png",
       "../img/icon.ico",
       "../img/icon.icns"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
   }
 }
