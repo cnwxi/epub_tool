@@ -1,13 +1,55 @@
-build
-dist
-test
-epub_tool.spec
-log.txt
-result.txt
-log_file
-epub_tool_TKUI.spec
-.DS_Store
-*.epub
-.vscode
+# Python 缓存与虚拟环境
 __pycache__/
-.pycache
+*.py[cod]
+.pycache/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+
+# Node 与前端包管理缓存
+.npm/
+.pnpm-store/
+.yarn/
+.parcel-cache/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# 打包与构建产物
+build/
+dist/
+build/python-sidecar/
+*.spec
+frontend/dist/
+frontend/node_modules/
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+src-tauri/bundle-resources/
+*.tsbuildinfo
+
+# 日志与本地结果
+log.txt
+*.log
+log_file/
+result.txt
+test/out/
+
+# 本地样本与临时文件
+*.epub
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 编辑器配置
+.vscode/
+.idea/
+
+# 工具配置
+.black

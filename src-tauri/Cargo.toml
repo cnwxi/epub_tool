@@ -1,0 +1,15 @@
+[package]
+name = "epub_tool_newui"
+version = "26.4.9"
+description = "Tauri 2 shell for epub_tool"
+authors = ["cnwxi"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0.3", features = [] }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.2.5", features = [] }
+tauri-plugin-dialog = "2.2.0"
