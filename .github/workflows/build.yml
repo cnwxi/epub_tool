@@ -114,6 +114,7 @@ jobs:
           tagName: ${{ steps.release_version.outputs.value }}
           releaseName: ${{ steps.release_version.outputs.value }}
           releaseBody: ${{ github.event.inputs.body }}
+          releaseAssetNamePattern: "[name]_[version]_[platform]_[arch][_setup][ext]"
 
       - name: Build Tauri app without release
         if: github.event.inputs.release != 'true'
