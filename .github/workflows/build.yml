@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       app_version: ${{ steps.release_version.outputs.app_version }}
+      asset_version: ${{ steps.release_version.outputs.asset_version }}
       release_version: ${{ steps.release_version.outputs.release_version }}
     steps:
       - name: Checkout
@@ -38,13 +39,17 @@ jobs:
             exit 1
           fi
 
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            release_version="${{ github.event.inputs.version }}"
+          if [ -n "${{ inputs.version }}" ]; then
+            asset_version="${{ inputs.version }}"
+            asset_version="${asset_version#v}"
           else
-            release_version="v$app_version"
+            asset_version="$app_version"
           fi
 
+          release_version="v$asset_version"
+
           echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
+          echo "asset_version=$asset_version" >> "$GITHUB_OUTPUT"
           echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
 
   build:
@@ -124,10 +129,10 @@ jobs:
           tauriScript: npm run tauri --
 
       - name: Prepare renamed release assets
-        if: github.event.inputs.release == 'true'
+        if: inputs.release
         shell: bash
         env:
-          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
+          ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
           PRODUCT_STEM: Epub.Tool.NewUI
@@ -138,31 +143,29 @@ jobs:
           release_dir="release-assets"
           mkdir -p "$release_dir"
 
-          shopt -s globstar nullglob
-          for file in "$bundle_dir"/**/*; do
-            [ -f "$file" ] || continue
+          while IFS= read -r -d '' file; do
             filename="$(basename "$file")"
             case "$filename" in
               *.AppImage)
-                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.AppImage"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.AppImage"
                 ;;
               *.deb)
-                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.deb"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.deb"
                 ;;
               *.rpm)
-                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.rpm"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.rpm"
                 ;;
               *.dmg)
-                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.dmg"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.dmg"
                 ;;
               *.app.tar.gz)
-                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.app.tar.gz"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.app.tar.gz"
                 ;;
               *-setup.exe)
-                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}_setup.exe"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_setup.exe"
                 ;;
               *.msi)
-                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.msi"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.msi"
                 ;;
               *)
                 continue
@@ -170,7 +173,7 @@ jobs:
             esac
 
             cp "$file" "$release_dir/$target"
-          done
+          done < <(find "$bundle_dir" -type f -print0)
 
           if [ -z "$(find "$release_dir" -type f -print -quit)" ]; then
             echo "未找到可上传的 release 资产" >&2
@@ -180,7 +183,7 @@ jobs:
           ls -la "$release_dir"
 
       - name: Upload renamed release assets
-        if: github.event.inputs.release == 'true'
+        if: inputs.release
         uses: actions/upload-artifact@v4
         with:
           name: release-assets-${{ matrix.platform }}-${{ matrix.arch }}
@@ -188,7 +191,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload workflow artifacts
-        if: github.event.inputs.release != 'true'
+        if: ${{ !inputs.release }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
@@ -197,7 +200,7 @@ jobs:
 
   publish_release:
     name: Publish Release
-    if: github.event.inputs.release == 'true'
+    if: inputs.release
     runs-on: ubuntu-22.04
     needs:
       - prepare
@@ -217,7 +220,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.release_version }}
           name: ${{ needs.prepare.outputs.release_version }}
-          body: ${{ github.event.inputs.body }}
+          body: ${{ inputs.body }}
           files: release-assets/*
           fail_on_unmatched_files: true
           overwrite_files: true
