@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { TaskEvent, TaskResult } from "../types";
 
-defineProps<{
+const props = defineProps<{
   logs: TaskEvent[];
   result: TaskResult | null;
 }>();
+
+const visibleLogs = computed(() => [...props.logs].reverse());
 
 const formatFileName = (path: string): string => path.split(/[\\/]/).pop() ?? path;
 
@@ -35,7 +38,7 @@ const emit = defineEmits<{
       <div class="log-list">
         <div v-if="logs.length === 0" class="log-empty">尚未执行任务。</div>
         <div
-          v-for="(log, index) in logs"
+          v-for="(log, index) in visibleLogs"
           :key="`${log.event}-${index}`"
           class="log-row"
           :class="log.level ?? log.status"

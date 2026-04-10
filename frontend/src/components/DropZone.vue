@@ -8,16 +8,44 @@ const emit = defineEmits<{
   (event: "pick-files"): void;
   (event: "scan-directory"): void;
   (event: "clear"): void;
+  (event: "drag-state", active: boolean): void;
+  (event: "drop-files", files: File[]): void;
 }>();
+
+const handleDragEnter = () => {
+  emit("drag-state", true);
+};
+
+const handleDragLeave = (event: DragEvent) => {
+  const nextTarget = event.relatedTarget;
+  if (nextTarget instanceof Node && event.currentTarget instanceof Node) {
+    if (event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+  }
+  emit("drag-state", false);
+};
+
+const handleDrop = (event: DragEvent) => {
+  emit("drag-state", false);
+  emit("drop-files", Array.from(event.dataTransfer?.files ?? []));
+};
 </script>
 
 <template>
-  <section class="dropzone" :class="{ active: isActive }">
+  <section
+    class="dropzone"
+    :class="{ active: isActive }"
+    @dragenter.prevent="handleDragEnter"
+    @dragleave.prevent="handleDragLeave"
+    @dragover.prevent="handleDragEnter"
+    @drop.prevent="handleDrop"
+  >
     <div>
       <p class="eyebrow">输入源</p>
-      <h2>拖入 EPUB 或直接从系统选择</h2>
+      <h2>拖入 EPUB、文件夹或直接从系统选择</h2>
       <p class="muted">
-        支持单文件、多文件或目录扫描。当前队列 {{ fileCount }} 个文件。
+        支持单文件、多文件、拖拽文件夹或目录扫描。当前队列 {{ fileCount }} 个文件。
       </p>
     </div>
     <div class="dropzone-actions">

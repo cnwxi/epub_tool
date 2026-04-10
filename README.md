@@ -74,9 +74,6 @@
 - 字体加密
 - 图片转换
 
-UI 操作演示：
-![操作演示](./img/how_to_use_new.gif)
-
 Python 脚本调试方式：
 
 1. 安装 Python（推荐 3.8 或更高版本）。<br>

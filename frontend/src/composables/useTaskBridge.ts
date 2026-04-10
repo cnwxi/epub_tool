@@ -44,6 +44,22 @@ export function useTaskBridge() {
     });
   };
 
+  const getLogPath = async (): Promise<string> => {
+    if (!isTauriRuntime()) {
+      return "";
+    }
+    return invoke<string>("get_log_path");
+  };
+
+  const resolveInputSources = async (inputPaths: string[]): Promise<string[]> => {
+    if (!isTauriRuntime()) {
+      return inputPaths;
+    }
+    return invoke<string[]>("resolve_input_sources", {
+      inputPaths,
+    });
+  };
+
   const openPath = async (path: string): Promise<void> => {
     if (!isTauriRuntime()) {
       return;
@@ -53,9 +69,11 @@ export function useTaskBridge() {
 
   return {
     collectEpubFiles,
+    getLogPath,
     isTauriRuntime,
     listFontTargets,
     openPath,
+    resolveInputSources,
     runTask,
   };
 }

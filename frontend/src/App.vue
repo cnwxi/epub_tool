@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -57,7 +57,16 @@ const defaultSettings: AppSettings = {
   keepHistoryCount: 10,
 };
 
+const createTaskRecord = <T,>(factory: () => T): Record<TaskType, T> => ({
+  reformat: factory(),
+  decrypt: factory(),
+  encrypt: factory(),
+  font_encrypt: factory(),
+  transfer_img: factory(),
+});
+
 const CURRENT_FALLBACK_VERSION = __APP_VERSION__;
+const APP_IDENTIFIER = "com.cnwxi.epubtool.newui";
 const RELEASES_API_URL = "https://api.github.com/repos/cnwxi/epub_tool/releases/latest";
 const LATEST_RELEASE_URL = "https://github.com/cnwxi/epub_tool/releases/latest";
 const UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
@@ -69,8 +78,15 @@ const defaultUpdateCheckState: UpdateCheckState = {
   message: "可手动检查是否有新版本。",
 };
 
-const { collectEpubFiles, isTauriRuntime, listFontTargets, openPath, runTask } =
-  useTaskBridge();
+const {
+  collectEpubFiles,
+  getLogPath,
+  isTauriRuntime,
+  listFontTargets,
+  openPath,
+  resolveInputSources,
+  runTask,
+} = useTaskBridge();
 
 const normalizeSectionKey = (value: unknown): SectionKey => {
   if (typeof value !== "string") {
@@ -102,12 +118,15 @@ const persistedUpdateCheckState = usePersistentState<UpdateCheckState>(
   "epub-tool.update-check-state",
   defaultUpdateCheckState,
 );
-const files = ref<QueuedFile[]>([]);
-const selectedFilePath = ref("");
-const logs = ref<TaskEvent[]>([]);
-const result = ref<TaskResult | null>(null);
+const taskFilesByType = ref<Record<TaskType, QueuedFile[]>>(createTaskRecord(() => []));
+const selectedFilePathByType = ref<Record<TaskType, string>>(createTaskRecord(() => ""));
+const taskLogsByType = ref<Record<TaskType, TaskEvent[]>>(createTaskRecord(() => []));
+const taskResultByType = ref<Record<TaskType, TaskResult | null>>(
+  createTaskRecord(() => null),
+);
 const progress = ref(0);
 const taskRunning = ref(false);
+const runningTaskType = ref<TaskType | null>(null);
 const taskStatus = ref("待命");
 const fontLoading = ref(false);
 const taskProgressCurrent = ref(0);
@@ -116,6 +135,7 @@ const taskProgressFileName = ref("");
 const fontProgressCurrent = ref(0);
 const fontProgressTotal = ref(0);
 const fontProgressFileName = ref("");
+let fontLoadRequestId = 0;
 const currentVersion = ref(CURRENT_FALLBACK_VERSION);
 const latestVersion = ref(persistedUpdateCheckState.value.latestVersion);
 const latestReleaseUrl = ref(
@@ -131,6 +151,21 @@ const updateCheckedAt = ref(persistedUpdateCheckState.value.checkedAt);
 const updateNoticeVisible = ref(false);
 const dragActive = ref(false);
 const browserFileInput = ref<HTMLInputElement | null>(null);
+const currentLogPath = ref("");
+const defaultLogPaths = [
+  {
+    platform: "Windows",
+    path: `%LOCALAPPDATA%\\${APP_IDENTIFIER}\\logs\\log.txt`,
+  },
+  {
+    platform: "macOS",
+    path: `~/Library/Logs/${APP_IDENTIFIER}/log.txt`,
+  },
+  {
+    platform: "Linux",
+    path: `~/.local/share/${APP_IDENTIFIER}/logs/log.txt`,
+  },
+];
 
 const normalizeSettings = (value: unknown): AppSettings => {
   const raw =
@@ -236,6 +271,38 @@ const isTaskSection = computed(() =>
 const activeTask = computed<TaskType | null>(() =>
   isTaskSection.value ? (activeSection.value as TaskType) : null,
 );
+const files = computed<QueuedFile[]>({
+  get: () => (activeTask.value ? taskFilesByType.value[activeTask.value] : []),
+  set: (value) => {
+    if (activeTask.value) {
+      taskFilesByType.value[activeTask.value] = value;
+    }
+  },
+});
+const selectedFilePath = computed<string>({
+  get: () => (activeTask.value ? selectedFilePathByType.value[activeTask.value] : ""),
+  set: (value) => {
+    if (activeTask.value) {
+      selectedFilePathByType.value[activeTask.value] = value;
+    }
+  },
+});
+const logs = computed<TaskEvent[]>({
+  get: () => (activeTask.value ? taskLogsByType.value[activeTask.value] : []),
+  set: (value) => {
+    if (activeTask.value) {
+      taskLogsByType.value[activeTask.value] = value;
+    }
+  },
+});
+const result = computed<TaskResult | null>({
+  get: () => (activeTask.value ? taskResultByType.value[activeTask.value] : null),
+  set: (value) => {
+    if (activeTask.value) {
+      taskResultByType.value[activeTask.value] = value;
+    }
+  },
+});
 const activeTaskLabel = computed(() => {
   if (!activeTask.value) {
     return "";
@@ -258,6 +325,19 @@ const activeTaskDescription = computed(() => {
       return "";
   }
 });
+const runningTaskLabel = computed(() => {
+  if (!runningTaskType.value) {
+    return "";
+  }
+
+  return formatTaskType(runningTaskType.value);
+});
+const isViewingRunningTask = computed(
+  () => taskRunning.value && !!activeTask.value && activeTask.value === runningTaskType.value,
+);
+const isOtherTaskRunning = computed(
+  () => taskRunning.value && !!runningTaskType.value && !isViewingRunningTask.value,
+);
 
 const activeTitle = computed(() => {
   switch (activeSection.value) {
@@ -294,7 +374,7 @@ const activeDescription = computed(() => {
 });
 
 const visibleProgressValue = computed(() => {
-  if (taskRunning.value) {
+  if (isViewingRunningTask.value) {
     return Math.max(0, Math.min(100, progress.value));
   }
 
@@ -306,19 +386,19 @@ const visibleProgressValue = computed(() => {
 });
 
 const visibleProgressText = computed(() => {
-  if (taskRunning.value && taskProgressTotal.value > 0) {
-    return `第 ${taskProgressCurrent.value}/${taskProgressTotal.value} 本`;
+  if (isViewingRunningTask.value && taskProgressTotal.value > 0) {
+    return `已完成 ${taskProgressCurrent.value}/${taskProgressTotal.value} 本`;
   }
 
   if (fontLoading.value && fontProgressTotal.value > 0) {
-    return `正在读取第 ${fontProgressCurrent.value}/${fontProgressTotal.value} 本`;
+    return `已完成 ${fontProgressCurrent.value}/${fontProgressTotal.value} 本`;
   }
 
   return "";
 });
 
 const visibleProgressMessage = computed(() => {
-  if (taskRunning.value && taskProgressFileName.value) {
+  if (isViewingRunningTask.value && taskProgressFileName.value) {
     return `当前处理：${taskProgressFileName.value}`;
   }
 
@@ -349,6 +429,33 @@ const pickNeighborPath = (snapshot: QueuedFile[], currentPath: string): string =
   }
 
   return snapshot[currentIndex + 1]?.path ?? snapshot[currentIndex - 1]?.path ?? "";
+};
+
+const syncTaskQueueWithFinishedFile = (
+  taskType: TaskType,
+  finishedPath: string,
+  keepInQueue: boolean,
+) => {
+  if (keepInQueue) {
+    return;
+  }
+
+  const snapshot = [...taskFilesByType.value[taskType]];
+  const currentSelectedPath = selectedFilePathByType.value[taskType];
+  const nextSelectedPath =
+    currentSelectedPath === finishedPath
+      ? pickNeighborPath(snapshot, finishedPath)
+      : currentSelectedPath;
+
+  taskFilesByType.value[taskType] = snapshot.filter((item) => item.path !== finishedPath);
+
+  if (
+    !taskFilesByType.value[taskType].some(
+      (item) => item.path === selectedFilePathByType.value[taskType],
+    )
+  ) {
+    selectedFilePathByType.value[taskType] = nextSelectedPath;
+  }
 };
 
 const selectFile = (path: string) => {
@@ -527,6 +634,7 @@ const queuePaths = (paths: string[]) => {
     (item) => item.path === selectedFilePath.value,
   );
   let firstQueuedPath = "";
+  const addedPaths: string[] = [];
   const valid = paths
     .map((path) => path.trim())
     .filter((path) => path.toLowerCase().endsWith(".epub"));
@@ -543,6 +651,7 @@ const queuePaths = (paths: string[]) => {
       fontLoadStatus: "idle",
       fontLoadError: "",
     });
+    addedPaths.push(path);
     if (!firstQueuedPath) {
       firstQueuedPath = path;
     }
@@ -550,10 +659,33 @@ const queuePaths = (paths: string[]) => {
 
   if (hadSelectedFile) {
     ensureSelectedFile();
+  } else {
+    ensureSelectedFile(firstQueuedPath);
+  }
+
+  if (activeSection.value === "font_encrypt" && addedPaths.length > 0) {
+    void nextTick(async () => {
+      await loadFontFamilies({
+        filePaths: addedPaths,
+        silent: true,
+      });
+    });
+  }
+};
+
+const resolveAndQueuePaths = async (paths: string[]) => {
+  const normalized = paths.map((path) => path.trim()).filter(Boolean);
+  if (normalized.length === 0) {
     return;
   }
 
-  ensureSelectedFile(firstQueuedPath);
+  if (isTauriRuntime()) {
+    const resolved = await resolveInputSources(normalized);
+    queuePaths(resolved);
+    return;
+  }
+
+  queuePaths(normalized);
 };
 
 const pickFiles = async () => {
@@ -571,7 +703,7 @@ const pickFiles = async () => {
     return;
   }
 
-  queuePaths(Array.isArray(selected) ? selected : [selected]);
+  await resolveAndQueuePaths(Array.isArray(selected) ? selected : [selected]);
 };
 
 const scanInputDirectory = async () => {
@@ -638,6 +770,14 @@ const handleBrowserFiles = (event: Event) => {
   input.value = "";
 };
 
+const handleDropZoneFiles = (droppedFiles: File[]) => {
+  if (isTauriRuntime()) {
+    return;
+  }
+
+  queuePaths(droppedFiles.map((file) => file.name));
+};
+
 const syncFontFamilies = (
   item: QueuedFile,
   families: string[],
@@ -668,25 +808,28 @@ const loadFontFamilies = async (options?: {
   const targets = options?.filePaths?.length
     ? files.value.filter((item) => options.filePaths?.includes(item.path))
     : files.value;
-  if (targets.length === 0) {
+  const pendingTargets = options?.force
+    ? targets
+    : targets.filter((item) => item.fontLoadStatus !== "loaded");
+  if (pendingTargets.length === 0) {
     return;
   }
 
+  const requestId = ++fontLoadRequestId;
   fontLoading.value = true;
   fontProgressCurrent.value = 0;
-  fontProgressTotal.value = targets.length;
+  fontProgressTotal.value = pendingTargets.length;
   fontProgressFileName.value = "";
   let refreshedCount = 0;
   let emptyCount = 0;
   let errorCount = 0;
+  let completedCount = 0;
 
   try {
-    for (const [index, item] of targets.entries()) {
-      if (!options?.force && item.fontLoadStatus === "loaded") {
-        continue;
+    for (const item of pendingTargets) {
+      if (requestId !== fontLoadRequestId) {
+        return;
       }
-
-      fontProgressCurrent.value = index + 1;
       fontProgressFileName.value = item.name;
 
       const previousStatus = item.fontLoadStatus;
@@ -695,6 +838,9 @@ const loadFontFamilies = async (options?: {
 
       try {
         const families = await listFontTargets(item.path);
+        if (requestId !== fontLoadRequestId) {
+          return;
+        }
         syncFontFamilies(item, families, previousStatus);
         item.fontLoadStatus = "loaded";
         refreshedCount += 1;
@@ -702,18 +848,30 @@ const loadFontFamilies = async (options?: {
           emptyCount += 1;
         }
       } catch (error) {
+        if (requestId !== fontLoadRequestId) {
+          return;
+        }
         item.fontFamilies = [];
         item.selectedFontFamilies = [];
         item.fontLoadStatus = "error";
         item.fontLoadError = toErrorMessage(error, "读取字体列表失败，请重试。");
         errorCount += 1;
       }
+
+      completedCount += 1;
+      fontProgressCurrent.value = completedCount;
     }
   } finally {
-    fontLoading.value = false;
-    fontProgressCurrent.value = 0;
-    fontProgressTotal.value = 0;
-    fontProgressFileName.value = "";
+    if (requestId === fontLoadRequestId) {
+      fontLoading.value = false;
+      fontProgressCurrent.value = 0;
+      fontProgressTotal.value = 0;
+      fontProgressFileName.value = "";
+    }
+  }
+
+  if (requestId !== fontLoadRequestId) {
+    return;
   }
 
   if (options?.silent) {
@@ -796,19 +954,40 @@ const rememberTask = (taskType: TaskType, taskResult: TaskResult) => {
   taskHistory.value = [entry, ...taskHistory.value].slice(0, historyLimit.value);
 };
 
-const syncQueueWithResult = (taskResult: TaskResult) => {
-  const snapshot = [...files.value];
-  const nextSelectedPath = pickNeighborPath(snapshot, selectedFilePath.value);
+const syncQueueWithResult = (taskType: TaskType, taskResult: TaskResult) => {
+  const snapshot = [...taskFilesByType.value[taskType]];
+  const nextSelectedPath = pickNeighborPath(snapshot, selectedFilePathByType.value[taskType]);
   const blockedPaths = new Set(taskResult.errors.map((item) => item.input_file));
 
-  files.value = files.value.filter((item) => blockedPaths.has(item.path));
-  if (!files.value.some((item) => item.path === selectedFilePath.value)) {
-    ensureSelectedFile(nextSelectedPath);
+  taskFilesByType.value[taskType] = snapshot.filter((item) => blockedPaths.has(item.path));
+  if (
+    !taskFilesByType.value[taskType].some(
+      (item) => item.path === selectedFilePathByType.value[taskType],
+    )
+  ) {
+    selectedFilePathByType.value[taskType] = nextSelectedPath;
     return;
   }
 
-  ensureSelectedFile();
+  if (!taskFilesByType.value[taskType].some((item) => item.path === nextSelectedPath)) {
+    return;
+  }
 };
+
+const createRunningTaskResult = (total: number): TaskResult => ({
+  ok: false,
+  status: "running",
+  outputs: [],
+  errors: [],
+  skipped: [],
+  summary: {
+    total,
+    success: 0,
+    failed: 0,
+    skipped: 0,
+  },
+  log_path: null,
+});
 
 const clearHistory = () => {
   taskHistory.value = [];
@@ -827,16 +1006,68 @@ const maybeOpenFollowUpTargets = (taskResult: TaskResult) => {
 };
 
 const pushLog = (event: TaskEvent) => {
-  logs.value = [...logs.value, event].slice(-300);
+  const targetTaskType = runningTaskType.value;
+  if (targetTaskType) {
+    taskLogsByType.value[targetTaskType] = [...taskLogsByType.value[targetTaskType], event].slice(
+      -300,
+    );
+  }
   progress.value = event.progress;
   taskStatus.value = event.message;
-  taskProgressCurrent.value = event.current_index ?? taskProgressCurrent.value;
+  if (event.event === "task.started") {
+    taskProgressCurrent.value = 0;
+  } else if (event.event === "task.file.started") {
+    taskProgressCurrent.value = Math.max((event.current_index ?? 1) - 1, 0);
+  } else if (event.event === "task.file.finished") {
+    taskProgressCurrent.value = event.current_index ?? taskProgressCurrent.value;
+  } else if (event.event === "task.finished") {
+    taskProgressCurrent.value =
+      event.result?.summary.total ?? event.total_files ?? taskProgressCurrent.value;
+  }
   taskProgressTotal.value = event.total_files ?? taskProgressTotal.value;
   taskProgressFileName.value = event.current_file
     ? event.current_file.split(/[\\/]/).pop() ?? event.current_file
     : taskProgressFileName.value;
-  if (event.result) {
-    result.value = event.result;
+  if (targetTaskType && event.event === "task.file.finished" && event.current_file) {
+    const currentResult =
+      taskResultByType.value[targetTaskType] ??
+      createRunningTaskResult(event.total_files ?? taskProgressTotal.value);
+    const nextResult: TaskResult = {
+      ...currentResult,
+      outputs: [...currentResult.outputs],
+      errors: [...currentResult.errors],
+      skipped: [...currentResult.skipped],
+      summary: { ...currentResult.summary },
+    };
+
+    if (event.status === "success") {
+      nextResult.summary.success += 1;
+      if (event.output_path) {
+        nextResult.outputs.push(event.output_path);
+      }
+    } else if (event.status === "skip") {
+      nextResult.summary.skipped += 1;
+      nextResult.skipped.push({
+        input_file: event.current_file,
+        message: event.message,
+      });
+    } else if (event.status === "error") {
+      nextResult.summary.failed += 1;
+      nextResult.errors.push({
+        input_file: event.current_file,
+        message: event.message,
+      });
+    }
+
+    taskResultByType.value[targetTaskType] = nextResult;
+    syncTaskQueueWithFinishedFile(
+      targetTaskType,
+      event.current_file,
+      event.status === "error",
+    );
+  }
+  if (targetTaskType && event.result) {
+    taskResultByType.value[targetTaskType] = event.result;
   }
 };
 
@@ -844,23 +1075,25 @@ const runSelectedTask = async () => {
   if (files.value.length === 0 || taskRunning.value || !activeTask.value) {
     return;
   }
-  if (activeTask.value === "font_encrypt") {
+  const taskType = activeTask.value;
+  if (taskType === "font_encrypt") {
     await loadFontFamilies();
   }
 
   taskRunning.value = true;
+  runningTaskType.value = taskType;
   progress.value = 0;
   taskProgressCurrent.value = 0;
   taskProgressTotal.value = files.value.length;
   taskProgressFileName.value = "";
-  logs.value = [];
-  result.value = null;
+  taskLogsByType.value[taskType] = [];
+  taskResultByType.value[taskType] = createRunningTaskResult(files.value.length);
   const request = buildRequest();
 
   try {
     const taskResult = await runTask(request, pushLog);
-    result.value = taskResult;
-    syncQueueWithResult(taskResult);
+    taskResultByType.value[taskType] = taskResult;
+    syncQueueWithResult(taskType, taskResult);
     rememberTask(request.taskType, taskResult);
     maybeOpenFollowUpTargets(taskResult);
     taskStatus.value = taskResult.ok ? "任务完成" : "任务结束，但存在失败项";
@@ -877,6 +1110,7 @@ const runSelectedTask = async () => {
     taskStatus.value = message;
   } finally {
     taskRunning.value = false;
+    runningTaskType.value = null;
     taskProgressCurrent.value = 0;
     taskProgressTotal.value = 0;
     taskProgressFileName.value = "";
@@ -889,6 +1123,14 @@ const clearLogs = () => {
 
 const openLogFile = () => {
   void openPath("log.txt");
+};
+
+const openCurrentLogDirectory = () => {
+  if (!currentLogPath.value) {
+    return;
+  }
+
+  void openPath(getContainingDirectory(currentLogPath.value));
 };
 
 const openOutputFolder = (path: string) => {
@@ -911,9 +1153,11 @@ const toggleFontFamily = (filePath: string, family: string) => {
 
 watch(activeSection, async (section) => {
   activeSection.value = normalizeSectionKey(section);
-  if (activeSection.value === "font_encrypt" && selectedFilePath.value) {
+  if (activeSection.value === "font_encrypt" && files.value.length > 0) {
     await loadFontFamilies({
-      filePaths: [selectedFilePath.value],
+      filePaths: files.value
+        .filter((item) => item.fontLoadStatus !== "loaded")
+        .map((item) => item.path),
       silent: true,
     });
   }
@@ -921,11 +1165,26 @@ watch(activeSection, async (section) => {
 
 watch(
   () => files.value.map((item) => item.path).join("|"),
-  async () => {
+  async (currentPaths, previousPaths) => {
     ensureSelectedFile();
-    if (activeSection.value === "font_encrypt" && selectedFilePath.value) {
+    if (activeSection.value === "font_encrypt") {
+      const previous = new Set(
+        previousPaths
+          .split("|")
+          .map((path) => path.trim())
+          .filter(Boolean),
+      );
+      const addedPaths = currentPaths
+        .split("|")
+        .map((path) => path.trim())
+        .filter((path) => path && !previous.has(path));
+
+      if (addedPaths.length === 0) {
+        return;
+      }
+
       await loadFontFamilies({
-        filePaths: [selectedFilePath.value],
+        filePaths: addedPaths,
         silent: true,
       });
     }
@@ -969,6 +1228,11 @@ onMounted(async () => {
     } catch {
       currentVersion.value = CURRENT_FALLBACK_VERSION;
     }
+    try {
+      currentLogPath.value = await getLogPath();
+    } catch {
+      currentLogPath.value = "";
+    }
   }
 
   if (settings.value.autoCheckUpdates) {
@@ -989,7 +1253,7 @@ onMounted(async () => {
     }
     if (event.payload.type === "drop") {
       dragActive.value = false;
-      queuePaths(event.payload.paths);
+      void resolveAndQueuePaths(event.payload.paths);
       return;
     }
     dragActive.value = false;
@@ -1040,6 +1304,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
         <DropZone
           :is-active="dragActive"
           :file-count="files.length"
+          @drag-state="dragActive = $event"
+          @drop-files="handleDropZoneFiles"
           @pick-files="pickFiles"
           @scan-directory="scanInputDirectory"
           @clear="clearFiles"
@@ -1216,6 +1482,43 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             <span>历史记录条数</span>
             <input v-model.number="settings.keepHistoryCount" min="1" max="30" type="number" />
           </label>
+        </div>
+        <div class="panel-head panel-head-sub">
+          <div>
+            <p class="eyebrow">日志</p>
+            <h3>日志位置</h3>
+          </div>
+          <div class="panel-actions">
+            <button
+              v-if="currentLogPath"
+              class="ghost-btn"
+              type="button"
+              @click="openLogFile"
+            >
+              打开日志文件
+            </button>
+            <button
+              v-if="currentLogPath"
+              class="ghost-btn"
+              type="button"
+              @click="openCurrentLogDirectory"
+            >
+              打开日志目录
+            </button>
+          </div>
+        </div>
+        <div class="task-callout">
+          <strong>当前实际日志文件</strong>
+          <span v-if="currentLogPath">{{ currentLogPath }}</span>
+          <span v-else>开发环境默认写入仓库根目录的 log.txt，打包版写入系统应用日志目录。</span>
+        </div>
+        <div class="history-list">
+          <div v-for="item in defaultLogPaths" :key="item.platform" class="history-row">
+            <div>
+              <strong>{{ item.platform }}</strong>
+              <p>{{ item.path }}</p>
+            </div>
+          </div>
         </div>
         <div class="panel-head panel-head-sub">
           <div>

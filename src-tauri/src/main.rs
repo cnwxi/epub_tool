@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -41,6 +43,10 @@ struct FontTargetResponse {
 }
 
 fn workspace_root() -> Option<PathBuf> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root = manifest_dir.parent()?.to_path_buf();
     root.exists().then_some(root)
@@ -243,9 +249,12 @@ fn configure_backend_command(command: &mut Command, log_path: &Path) {
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
-fn read_utf8ish_lines<R: Read>(reader: R) -> Result<Vec<String>, String> {
+fn stream_utf8ish_lines<R, F>(reader: R, mut on_line: F) -> Result<(), String>
+where
+    R: Read,
+    F: FnMut(String) -> Result<(), String>,
+{
     let mut reader = BufReader::new(reader);
-    let mut lines = Vec::new();
 
     loop {
         let mut buffer = Vec::new();
@@ -264,10 +273,28 @@ fn read_utf8ish_lines<R: Read>(reader: R) -> Result<Vec<String>, String> {
             }
         }
 
-        lines.push(String::from_utf8_lossy(&buffer).into_owned());
+        on_line(String::from_utf8_lossy(&buffer).into_owned())?;
     }
 
-    Ok(lines)
+    Ok(())
+}
+
+fn append_input_source(path: &Path, result: &mut Vec<String>) -> Result<(), String> {
+    if path.is_dir() {
+        collect_epubs_recursive(path, result)?;
+        return Ok(());
+    }
+
+    let is_epub = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("epub"))
+        .unwrap_or(false);
+    if is_epub && path.is_file() {
+        result.push(path.to_string_lossy().to_string());
+    }
+
+    Ok(())
 }
 
 fn parse_json_line(line: &str) -> Value {
@@ -331,6 +358,11 @@ async fn open_path(app: AppHandle, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn get_log_path(app: AppHandle) -> Result<String, String> {
+    Ok(resolve_log_path(&app)?.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 async fn collect_epub_files(app: AppHandle, directory_path: String) -> Result<Vec<String>, String> {
     let resolved = resolve_path(&app, &directory_path)?;
     if !resolved.is_dir() {
@@ -340,6 +372,20 @@ async fn collect_epub_files(app: AppHandle, directory_path: String) -> Result<Ve
     let mut files = Vec::new();
     collect_epubs_recursive(&resolved, &mut files)?;
     files.sort();
+    Ok(files)
+}
+
+#[tauri::command]
+async fn resolve_input_sources(app: AppHandle, input_paths: Vec<String>) -> Result<Vec<String>, String> {
+    let mut files = Vec::new();
+
+    for input_path in input_paths {
+        let resolved = resolve_path(&app, &input_path)?;
+        append_input_source(&resolved, &mut files)?;
+    }
+
+    files.sort();
+    files.dedup();
     Ok(files)
 }
 
@@ -377,9 +423,7 @@ async fn run_epub_task(
             "summary": { "total": 0, "success": 0, "failed": 0, "skipped": 0 }
         });
 
-        for line in read_utf8ish_lines(stdout)
-            .map_err(|error| format!("读取 Python stdout 失败: {error}"))?
-        {
+        stream_utf8ish_lines(stdout, |line| {
             let payload = parse_json_line(&line);
             if payload.get("event") == Some(&Value::String("task.finished".into())) {
                 if let Some(result) = payload.get("result") {
@@ -388,12 +432,11 @@ async fn run_epub_task(
             }
             on_event
                 .send(payload)
-                .map_err(|error| format!("推送任务事件失败: {error}"))?;
-        }
+                .map_err(|error| format!("推送任务事件失败: {error}"))
+        })
+        .map_err(|error| format!("读取 Python stdout 失败: {error}"))?;
 
-        for line in read_utf8ish_lines(stderr)
-            .map_err(|error| format!("读取 Python stderr 失败: {error}"))?
-        {
+        stream_utf8ish_lines(stderr, |line| {
             on_event
                 .send(json!({
                     "event": "task.stderr",
@@ -403,8 +446,9 @@ async fn run_epub_task(
                     "message": line,
                     "level": "error"
                 }))
-                .map_err(|error| format!("推送 stderr 失败: {error}"))?;
-        }
+                .map_err(|error| format!("推送 stderr 失败: {error}"))
+        })
+        .map_err(|error| format!("读取 Python stderr 失败: {error}"))?;
 
         let status = child
             .wait()
@@ -425,8 +469,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             collect_epub_files,
+            get_log_path,
             list_font_targets,
             open_path,
+            resolve_input_sources,
             run_epub_task
         ])
         .run(tauri::generate_context!())
