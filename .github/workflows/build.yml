@@ -1,5 +1,8 @@
 name: Build And Release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   workflow_dispatch:
     inputs:
@@ -27,7 +30,7 @@ jobs:
       release_version: ${{ steps.release_version.outputs.release_version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Resolve release version
         id: release_version
@@ -77,15 +80,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version-file: ".nvmrc"
           cache: npm
@@ -184,7 +187,7 @@ jobs:
 
       - name: Upload renamed release assets
         if: inputs.release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-assets-${{ matrix.platform }}-${{ matrix.arch }}
           path: release-assets
@@ -192,7 +195,7 @@ jobs:
 
       - name: Upload workflow artifacts
         if: ${{ !inputs.release }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
           path: src-tauri/target/release/bundle
@@ -209,7 +212,7 @@ jobs:
       contents: write
     steps:
       - name: Download renamed release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-assets-*
           path: release-assets
