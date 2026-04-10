@@ -18,11 +18,41 @@ on:
         default: "详情请查看 README 与 doc/ 下的核心说明文档。当前 NEWUI 分支基于 Tauri 2 + Vue 3 + Python 后端桥接。"
 
 jobs:
+  prepare:
+    name: Resolve Release Version
+    runs-on: ubuntu-22.04
+    outputs:
+      app_version: ${{ steps.release_version.outputs.app_version }}
+      release_version: ${{ steps.release_version.outputs.release_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: release_version
+        shell: bash
+        run: |
+          app_version=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)
+          if [ -z "$app_version" ]; then
+            echo "无法从 src-tauri/Cargo.toml 读取应用版本" >&2
+            exit 1
+          fi
+
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            release_version="${{ github.event.inputs.version }}"
+          else
+            release_version="v$app_version"
+          fi
+
+          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.platform }}-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+    needs: prepare
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -61,24 +91,6 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Resolve release version
-        id: release_version
-        shell: bash
-        run: |
-          app_version=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)
-          if [ -z "$app_version" ]; then
-            echo "无法从 src-tauri/Cargo.toml 读取应用版本" >&2
-            exit 1
-          fi
-
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            release_version="${{ github.event.inputs.version }}"
-          else
-            release_version="v$app_version"
-          fi
-
-          echo "value=$release_version" >> "$GITHUB_OUTPUT"
-
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -103,27 +115,77 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt pyinstaller
 
-      - name: Build Tauri app and create release
-        if: github.event.inputs.release == 'true'
+      - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: .
           tauriScript: npm run tauri --
-          tagName: ${{ steps.release_version.outputs.value }}
-          releaseName: ${{ steps.release_version.outputs.value }}
-          releaseBody: ${{ github.event.inputs.body }}
-          releaseAssetNamePattern: "[name]_[version]_[platform]_[arch][_setup][ext]"
 
-      - name: Build Tauri app without release
-        if: github.event.inputs.release != 'true'
-        uses: tauri-apps/tauri-action@v0.6.0
+      - name: Prepare renamed release assets
+        if: github.event.inputs.release == 'true'
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          PRODUCT_STEM: Epub.Tool.NewUI
+        run: |
+          set -euo pipefail
+
+          bundle_dir="src-tauri/target/release/bundle"
+          release_dir="release-assets"
+          mkdir -p "$release_dir"
+
+          shopt -s globstar nullglob
+          for file in "$bundle_dir"/**/*; do
+            [ -f "$file" ] || continue
+            filename="$(basename "$file")"
+            case "$filename" in
+              *.AppImage)
+                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.AppImage"
+                ;;
+              *.deb)
+                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.deb"
+                ;;
+              *.rpm)
+                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.rpm"
+                ;;
+              *.dmg)
+                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.dmg"
+                ;;
+              *.app.tar.gz)
+                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.app.tar.gz"
+                ;;
+              *-setup.exe)
+                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}_setup.exe"
+                ;;
+              *.msi)
+                target="${PRODUCT_STEM}_${APP_VERSION}_${PLATFORM}_${ARCH}.msi"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            cp "$file" "$release_dir/$target"
+          done
+
+          if [ -z "$(find "$release_dir" -type f -print -quit)" ]; then
+            echo "未找到可上传的 release 资产" >&2
+            exit 1
+          fi
+
+          ls -la "$release_dir"
+
+      - name: Upload renamed release assets
+        if: github.event.inputs.release == 'true'
+        uses: actions/upload-artifact@v4
         with:
-          projectPath: .
-          tauriScript: npm run tauri --
+          name: release-assets-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-assets
+          if-no-files-found: error
 
       - name: Upload workflow artifacts
         if: github.event.inputs.release != 'true'
@@ -132,3 +194,30 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: src-tauri/target/release/bundle
           if-no-files-found: error
+
+  publish_release:
+    name: Publish Release
+    if: github.event.inputs.release == 'true'
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+      - build
+    permissions:
+      contents: write
+    steps:
+      - name: Download renamed release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_version }}
+          name: ${{ needs.prepare.outputs.release_version }}
+          body: ${{ github.event.inputs.body }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
