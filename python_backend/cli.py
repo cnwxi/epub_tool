@@ -11,6 +11,14 @@ from python_backend.protocol import TaskRequest
 from python_backend.task_runner import list_font_targets, run_task
 
 
+def configure_stdio() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def pick_payload_value(payload: dict[str, Any], *keys: str, default: Any = None) -> Any:
     for key in keys:
         if key in payload and payload[key] is not None:
@@ -83,6 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

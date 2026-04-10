@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     fs,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -10,12 +10,17 @@ use tauri::{ipc::Channel, AppHandle, Manager};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
     "epub-tool-python.exe"
 } else {
     "epub-tool-python"
 };
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -208,7 +213,7 @@ fn build_backend_command(app: &AppHandle, subcommand: &str) -> Result<Command, S
         let mut command = Command::new(sidecar_path);
         command.current_dir(&work_dir);
         command.arg(subcommand);
-        command.env("EPUB_TOOL_LOG_PATH", &log_path);
+        configure_backend_command(&mut command, &log_path);
         return Ok(command);
     }
 
@@ -226,8 +231,43 @@ fn build_backend_command(app: &AppHandle, subcommand: &str) -> Result<Command, S
     let mut command = Command::new(bin);
     command.current_dir(workspace);
     command.args(prefix);
-    command.env("EPUB_TOOL_LOG_PATH", &log_path);
+    configure_backend_command(&mut command, &log_path);
     Ok(command)
+}
+
+fn configure_backend_command(command: &mut Command, log_path: &Path) {
+    command.env("EPUB_TOOL_LOG_PATH", log_path);
+    command.env("PYTHONUTF8", "1");
+    command.env("PYTHONIOENCODING", "utf-8");
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+fn read_utf8ish_lines<R: Read>(reader: R) -> Result<Vec<String>, String> {
+    let mut reader = BufReader::new(reader);
+    let mut lines = Vec::new();
+
+    loop {
+        let mut buffer = Vec::new();
+        let bytes_read = reader
+            .read_until(b'\n', &mut buffer)
+            .map_err(|error| error.to_string())?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        if buffer.ends_with(b"\n") {
+            buffer.pop();
+            if buffer.ends_with(b"\r") {
+                buffer.pop();
+            }
+        }
+
+        lines.push(String::from_utf8_lossy(&buffer).into_owned());
+    }
+
+    Ok(lines)
 }
 
 fn parse_json_line(line: &str) -> Value {
@@ -337,8 +377,9 @@ async fn run_epub_task(
             "summary": { "total": 0, "success": 0, "failed": 0, "skipped": 0 }
         });
 
-        for line in BufReader::new(stdout).lines() {
-            let line = line.map_err(|error| format!("读取 Python stdout 失败: {error}"))?;
+        for line in read_utf8ish_lines(stdout)
+            .map_err(|error| format!("读取 Python stdout 失败: {error}"))?
+        {
             let payload = parse_json_line(&line);
             if payload.get("event") == Some(&Value::String("task.finished".into())) {
                 if let Some(result) = payload.get("result") {
@@ -350,8 +391,9 @@ async fn run_epub_task(
                 .map_err(|error| format!("推送任务事件失败: {error}"))?;
         }
 
-        for line in BufReader::new(stderr).lines() {
-            let line = line.map_err(|error| format!("读取 Python stderr 失败: {error}"))?;
+        for line in read_utf8ish_lines(stderr)
+            .map_err(|error| format!("读取 Python stderr 失败: {error}"))?
+        {
             on_event
                 .send(json!({
                     "event": "task.stderr",

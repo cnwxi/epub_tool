@@ -46,6 +46,7 @@ test/out/
 .DS_Store
 .AppleDouble
 .LSOverride
+test
 
 # 编辑器配置
 .vscode/
