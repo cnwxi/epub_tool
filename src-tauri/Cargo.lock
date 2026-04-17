@@ -706,6 +706,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "window-vibrancy",
 ]
 
 [[package]]

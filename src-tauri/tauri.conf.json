@@ -22,11 +22,14 @@
         "title": "Epub Tool NewUI",
         "width": 1440,
         "height": 920,
-        "minWidth": 1100,
-        "minHeight": 740,
-        "resizable": true
+        "minWidth": 960,
+        "minHeight": 920,
+        "resizable": true,
+        "transparent": true,
+        "decorations": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "capabilities": ["main-capability"]
     }
