@@ -6,7 +6,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import DropZone from "./components/DropZone.vue";
 import SideNav from "./components/SideNav.vue";
-import TaskConsole from "./components/TaskConsole.vue";
 import { usePersistentState } from "./composables/usePersistentState";
 import { useTaskBridge } from "./composables/useTaskBridge";
 import type {
@@ -23,6 +22,14 @@ import type {
   TaskType,
   UpdateCheckState,
 } from "./types";
+
+type MasonryCardKey = "task-config" | "font-panel" | "file-queue" | "task-log" | "task-result";
+
+type MasonryCard = {
+  key: MasonryCardKey;
+  weight: number;
+  preferredColumn?: number;
+};
 
 const sectionItems: Array<{
   key: SectionKey;
@@ -183,6 +190,27 @@ const defaultLogPaths = [
     path: `~/.local/share/${APP_IDENTIFIER}/logs/log.txt`,
   },
 ];
+
+const masonryBoardRef = ref<HTMLElement | null>(null);
+const masonryBoardWidth = ref(0);
+let masonryResizeObserver: ResizeObserver | null = null;
+const handleMasonryWindowResize = () => {
+  void measureMasonryBoard();
+};
+const observeMasonryBoard = () => {
+  if (!masonryResizeObserver) {
+    return;
+  }
+  masonryResizeObserver.disconnect();
+  if (masonryBoardRef.value) {
+    masonryResizeObserver.observe(masonryBoardRef.value);
+  }
+};
+const measureMasonryBoard = async () => {
+  await nextTick();
+  observeMasonryBoard();
+  masonryBoardWidth.value = masonryBoardRef.value?.clientWidth ?? 0;
+};
 
 const normalizeSettings = (value: unknown): AppSettings => {
   const raw =
@@ -378,6 +406,63 @@ const activeTaskLabel = computed(() => {
     return "";
   }
   return formatTaskType(activeTask.value);
+});
+const masonryColumnsCount = computed(() => {
+  const width = masonryBoardWidth.value;
+  if (width >= 1100) {
+    return 2;
+  }
+  return 1;
+});
+const masonryCards = computed<MasonryCard[]>(() => {
+  if (!isTaskSection.value) {
+    return [];
+  }
+
+  const cards: MasonryCard[] = [
+    { key: "task-config", weight: 380, preferredColumn: 0 },
+    { key: "file-queue", weight:300 ,preferredColumn: 1 },
+    { key: "task-log", weight: 320 ,preferredColumn: 0},
+    { key: "task-result", weight: 220 },
+  ];
+
+  if (activeTask.value === "font_encrypt") {
+    cards.splice(2, 0, { key: "font-panel", weight: 340, preferredColumn: 0 });
+  }
+
+  return cards;
+});
+const masonryColumns = computed<MasonryCard[][]>(() => {
+  const columnCount = masonryColumnsCount.value;
+  const columns: MasonryCard[][] = Array.from({ length: columnCount }, () => []);
+  const columnHeights = Array.from({ length: columnCount }, () => 0);
+
+  for (const card of masonryCards.value) {
+    let targetIndex = 0;
+
+    if (
+      columnCount > 1 &&
+      typeof card.preferredColumn === "number" &&
+      card.preferredColumn >= 0 &&
+      card.preferredColumn < columnCount
+    ) {
+      targetIndex = card.preferredColumn;
+    } else {
+      let minHeight = columnHeights[0] ?? 0;
+      for (let index = 1; index < columnHeights.length; index += 1) {
+        const currentHeight = columnHeights[index] ?? 0;
+        if (currentHeight < minHeight) {
+          minHeight = currentHeight;
+          targetIndex = index;
+        }
+      }
+    }
+
+    columns[targetIndex]?.push(card);
+    columnHeights[targetIndex] += card.weight;
+  }
+
+  return columns;
 });
 const activeTaskDescription = computed(() => {
   switch (activeTask.value) {
@@ -1418,7 +1503,16 @@ watch(activeSection, async (section) => {
       silent: true,
     });
   }
-});
+  await measureMasonryBoard();
+}, { flush: "post" });
+
+watch(activeTask, async () => {
+  await measureMasonryBoard();
+}, { flush: "post" });
+
+watch(() => masonryBoardRef.value, async () => {
+  await measureMasonryBoard();
+}, { flush: "post" });
 
 watch(
   () => files.value.map((item) => item.path).join("|"),
@@ -1491,6 +1585,7 @@ watch(
 let unlistenDrop: (() => void) | null = null;
 let motionMediaQuery: MediaQueryList | null = null;
 let removeMotionPreferenceListener: (() => void) | null = null;
+let removeMasonryResizeListener: (() => void) | null = null;
 
 onMounted(async () => {
   if (typeof window !== "undefined") {
@@ -1511,6 +1606,23 @@ onMounted(async () => {
       motionMediaQuery.addListener(handleMotionPreferenceChange);
       removeMotionPreferenceListener = () =>
         motionMediaQuery?.removeListener(handleMotionPreferenceChange);
+    }
+
+    if (typeof ResizeObserver !== "undefined") {
+      masonryResizeObserver = new ResizeObserver(() => {
+        void measureMasonryBoard();
+      });
+      window.addEventListener("resize", handleMasonryWindowResize);
+      removeMasonryResizeListener = () => {
+        masonryResizeObserver?.disconnect();
+        masonryResizeObserver = null;
+        window.removeEventListener("resize", handleMasonryWindowResize);
+      };
+    } else {
+      window.addEventListener("resize", handleMasonryWindowResize);
+      removeMasonryResizeListener = () => {
+        window.removeEventListener("resize", handleMasonryWindowResize);
+      };
     }
   }
 
@@ -1534,6 +1646,7 @@ onMounted(async () => {
   }
 
   if (!isTauriRuntime()) {
+    await measureMasonryBoard();
     return;
   }
   unlistenDrop = await getCurrentWindow().onDragDropEvent((event) => {
@@ -1552,6 +1665,8 @@ onMounted(async () => {
     }
     dragActive.value = false;
   });
+
+  await measureMasonryBoard();
 });
 
 onBeforeUnmount(() => {
@@ -1559,6 +1674,7 @@ onBeforeUnmount(() => {
     window.cancelAnimationFrame(aboutAnimationFrame);
   }
   removeMotionPreferenceListener?.();
+  removeMasonryResizeListener?.();
   unlistenDrop?.();
 });
 
@@ -1612,149 +1728,292 @@ activeSection.value = normalizeSectionKey(activeSection.value);
           @clear="clearFiles"
         />
 
-        <section class="work-grid content-animated-grid">
-          <div class="masonry-column">
-            <article class="panel task-panel glass-medium content-animated-block">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">任务配置</p>
-                  <h3>输出与执行</h3>
-                </div>
-                <div class="panel-actions">
-                  <button class="ghost-btn task-action-btn" type="button" @click="pickOutputDirectory">
-                    选择输出目录
-                  </button>
-                  <button class="ghost-btn task-action-btn" type="button" @click="resetOutput">
-                    重置输出路径
-                  </button>
-                </div>
-              </div>
-
-              <div class="settings-stack">
-                <label class="field glass-soft task-field-card">
-                  <span>输出目录</span>
-                  <input
-                    :value="outputDir || '默认：源文件同级目录'"
-                    readonly
-                    type="text"
-                  />
-                </label>
-
-                <div class="task-callout glass-soft">
-                  <strong class="content-animated-value">{{ activeTaskLabel }}</strong>
-                  <span class="content-animated-value">{{ activeTaskDescription }}</span>
-                </div>
-
-                <div v-if="taskRunning || fontLoading" class="task-progress glass-soft">
-                  <div class="task-progress-head">
-                    <strong class="content-animated-value">{{ visibleProgressText }}</strong>
-                    <span class="content-animated-value">{{ visibleProgressValue }}%</span>
+        <section
+          ref="masonryBoardRef"
+          class="masonry-board content-animated-grid"
+          :style="{ '--masonry-columns': String(masonryColumnsCount) }"
+        >
+          <div
+            v-for="(column, columnIndex) in masonryColumns"
+            :key="`masonry-col-${columnIndex}`"
+            class="masonry-column"
+          >
+            <template v-for="card in column" :key="card.key">
+              <article
+                v-if="card.key === 'task-config'"
+                class="panel task-panel glass-medium content-animated-block"
+              >
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">任务配置</p>
+                    <h3>输出与执行</h3>
                   </div>
-                  <div class="task-progress-track">
-                    <div
-                      class="task-progress-fill"
-                      :style="{ width: `${visibleProgressValue}%` }"
-                    />
+                  <div class="panel-actions">
+                    <button class="ghost-btn task-action-btn" type="button" @click="pickOutputDirectory">
+                      选择输出目录
+                    </button>
+                    <button class="ghost-btn task-action-btn" type="button" @click="resetOutput">
+                      重置输出路径
+                    </button>
                   </div>
-                  <p v-if="visibleProgressMessage" class="task-progress-message">
-                    <span class="content-animated-value">{{ visibleProgressMessage }}</span>
-                  </p>
                 </div>
 
-                <button
-                  class="primary-btn wide"
-                  :disabled="taskRunning || files.length === 0"
-                  type="button"
-                  @click="runSelectedTask"
-                >
-                  {{ taskRunning ? "处理中..." : "开始执行" }}
-                </button>
-              </div>
-            </article>
-
-            <section
-              v-if="activeTask === 'font_encrypt'"
-              class="panel font-panel glass-medium content-animated-block"
-            >
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">字体范围</p>
-                  <h3>文件级选择</h3>
-                  <p class="muted">
-                    {{ selectedFile ? `当前聚焦：${selectedFile.name}` : "先从右侧队列选择一本 EPUB。" }}
-                  </p>
-                </div>
-                <div class="panel-actions">
-                  <button
-                    class="ghost-btn task-action-btn"
-                    :disabled="fontLoading || files.length === 0"
-                    type="button"
-                    @click="loadFontFamilies({ force: true })"
-                  >
-                    {{ fontLoading ? "刷新中..." : "刷新字体列表" }}
-                  </button>
-                </div>
-              </div>
-              <div class="font-grid">
-                <div v-if="!selectedFile" class="empty-state">
-                  队列为空，暂时没有可配置的字体目标。
-                </div>
-                <div v-else class="font-card font-card-focus glass-soft">
-                  <strong>{{ selectedFile.name }}</strong>
-                  <p>{{ selectedFile.fontFamilies.length }} 个可选字体</p>
-                  <label
-                    v-for="family in selectedFile.fontFamilies"
-                    :key="`${selectedFile.path}-${family}`"
-                    class="font-option"
-                  >
+                <div class="settings-stack">
+                  <label class="field glass-soft task-field-card">
+                    <span>输出目录</span>
                     <input
-                      :disabled="selectedFile.fontLoadStatus === 'loading'"
-                      :checked="selectedFile.selectedFontFamilies.includes(family)"
-                      type="checkbox"
-                      @change="toggleFontFamily(selectedFile.path, family)"
+                      :value="outputDir || '默认：源文件同级目录'"
+                      readonly
+                      type="text"
                     />
-                    <span>{{ family }}</span>
                   </label>
-                  <p v-if="selectedFileFontMessage" class="muted">
-                    {{ selectedFileFontMessage }}
-                  </p>
-                </div>
-              </div>
-            </section>
-          </div>
 
-          <div class="masonry-column">
-            <article class="panel task-panel glass-medium content-animated-block">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">文件队列</p>
-                  <h3>待处理列表</h3>
-                </div>
-              </div>
+                  <div class="task-callout glass-soft">
+                    <strong class="content-animated-value">{{ activeTaskLabel }}</strong>
+                    <span class="content-animated-value">{{ activeTaskDescription }}</span>
+                  </div>
 
-              <div class="file-table glass-soft">
-                <div v-if="files.length === 0" class="empty-state">
-                  还没有加入 EPUB 文件。
-                </div>
-                <div
-                  v-for="file in files"
-                  :key="file.path"
-                  class="file-row"
-                  :class="{ active: file.path === selectedFilePath }"
-                >
-                  <button class="file-select" type="button" @click="selectFile(file.path)">
-                    <span class="file-row-head">
-                      <strong>{{ file.name }}</strong>
-                      <span v-if="file.path === selectedFilePath" class="file-tag">当前</span>
-                    </span>
-                    <p>{{ file.path }}</p>
-                  </button>
-                  <button class="ghost-btn" type="button" @click.stop="removeFile(file.path)">
-                    移除
+                  <div v-if="taskRunning || fontLoading" class="task-progress glass-soft">
+                    <div class="task-progress-head">
+                      <strong class="content-animated-value">{{ visibleProgressText }}</strong>
+                      <span class="content-animated-value">{{ visibleProgressValue }}%</span>
+                    </div>
+                    <div class="task-progress-track">
+                      <div
+                        class="task-progress-fill"
+                        :style="{ width: `${visibleProgressValue}%` }"
+                      />
+                    </div>
+                    <p v-if="visibleProgressMessage" class="task-progress-message">
+                      <span class="content-animated-value">{{ visibleProgressMessage }}</span>
+                    </p>
+                  </div>
+
+                  <button
+                    class="primary-btn wide"
+                    :disabled="taskRunning || files.length === 0"
+                    type="button"
+                    @click="runSelectedTask"
+                  >
+                    {{ taskRunning ? "处理中..." : "开始执行" }}
                   </button>
                 </div>
-              </div>
-            </article>
+              </article>
+
+              <section
+                v-else-if="card.key === 'font-panel'"
+                class="panel font-panel glass-medium content-animated-block"
+              >
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">字体范围</p>
+                    <h3>文件级选择</h3>
+                    <p class="muted">
+                      {{ selectedFile ? `当前聚焦：${selectedFile.name}` : "先从右侧队列选择一本 EPUB。" }}
+                    </p>
+                  </div>
+                  <div class="panel-actions">
+                    <button
+                      class="ghost-btn task-action-btn"
+                      :disabled="fontLoading || files.length === 0"
+                      type="button"
+                      @click="loadFontFamilies({ force: true })"
+                    >
+                      {{ fontLoading ? "刷新中..." : "刷新字体列表" }}
+                    </button>
+                  </div>
+                </div>
+                <div class="font-grid">
+                  <div v-if="!selectedFile" class="empty-state">
+                    队列为空，暂时没有可配置的字体目标。
+                  </div>
+                  <div v-else class="font-card font-card-focus glass-soft">
+                    <strong>{{ selectedFile.name }}</strong>
+                    <p>{{ selectedFile.fontFamilies.length }} 个可选字体</p>
+                    <label
+                      v-for="family in selectedFile.fontFamilies"
+                      :key="`${selectedFile.path}-${family}`"
+                      class="font-option"
+                    >
+                      <input
+                        :disabled="selectedFile.fontLoadStatus === 'loading'"
+                        :checked="selectedFile.selectedFontFamilies.includes(family)"
+                        type="checkbox"
+                        @change="toggleFontFamily(selectedFile.path, family)"
+                      />
+                      <span>{{ family }}</span>
+                    </label>
+                    <p v-if="selectedFileFontMessage" class="muted">
+                      {{ selectedFileFontMessage }}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <article
+                v-else-if="card.key === 'file-queue'"
+                class="panel task-panel glass-medium content-animated-block"
+              >
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">文件队列</p>
+                    <h3>待处理列表</h3>
+                  </div>
+                </div>
+
+                <div class="file-table">
+                  <div v-if="files.length === 0" class="empty-state">
+                    还没有加入 EPUB 文件。
+                  </div>
+                  <div
+                    v-for="file in files"
+                    :key="file.path"
+                    class="file-row"
+                    :class="{ active: file.path === selectedFilePath }"
+                  >
+                    <button class="file-select" type="button" @click="selectFile(file.path)">
+                      <span class="file-row-head">
+                        <strong>{{ file.name }}</strong>
+                        <span v-if="file.path === selectedFilePath" class="file-tag">当前</span>
+                      </span>
+                      <p>{{ file.path }}</p>
+                    </button>
+                    <button class="ghost-btn" type="button" @click.stop="removeFile(file.path)">
+                      移除
+                    </button>
+                  </div>
+                </div>
+              </article>
+
+              <article
+                v-else-if="card.key === 'task-log'"
+                class="panel panel-console glass-medium content-animated-block"
+              >
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">过程</p>
+                    <h3>处理日志</h3>
+                  </div>
+                  <div class="panel-actions">
+                    <button class="ghost-btn task-action-btn" type="button" @click="openLogFile">
+                      打开处理日志
+                    </button>
+                    <button class="ghost-btn task-action-btn" type="button" @click="clearLogs">
+                      清空面板
+                    </button>
+                  </div>
+                </div>
+                <div class="log-list">
+                  <div v-if="logs.length === 0" class="log-empty">尚未执行任务。</div>
+                  <div
+                    v-for="(log, index) in [...logs].reverse()"
+                    :key="`${log.event}-${index}`"
+                    class="log-row glass-soft"
+                    :class="log.level ?? log.status"
+                  >
+                    <span class="log-event">{{ log.event }}</span>
+                    <span class="log-message">{{ log.message }}</span>
+                  </div>
+                </div>
+              </article>
+
+              <article
+                v-else-if="card.key === 'task-result'"
+                class="panel panel-result glass-medium content-animated-block"
+              >
+                <div class="panel-head">
+                  <div>
+                    <p class="eyebrow">结果</p>
+                    <h3>最近一次执行摘要</h3>
+                  </div>
+                </div>
+                <div v-if="!result" class="result-empty">还没有可展示的执行结果。</div>
+                <div v-else class="result-block">
+                  <div class="result-metrics">
+                    <div class="result-metric-card total">
+                      <strong class="content-animated-value">{{ result.summary.total }}</strong>
+                      <span>总文件</span>
+                    </div>
+                    <div class="result-metric-card success">
+                      <strong class="content-animated-value">{{ result.summary.success }}</strong>
+                      <span>成功</span>
+                    </div>
+                    <div class="result-metric-card error">
+                      <strong class="content-animated-value">{{ result.summary.failed }}</strong>
+                      <span>失败</span>
+                    </div>
+                    <div class="result-metric-card skip">
+                      <strong class="content-animated-value">{{ result.summary.skipped }}</strong>
+                      <span>跳过</span>
+                    </div>
+                  </div>
+
+                  <div v-if="result.outputs.length > 0" class="result-detail-block">
+                    <div class="result-detail-head">
+                      <strong>成功</strong>
+                      <span class="content-animated-value">{{ result.outputs.length }} 项</span>
+                    </div>
+                    <div class="result-output-list">
+                      <button
+                        v-for="output in result.outputs"
+                        :key="output"
+                        class="result-output-row success glass-soft"
+                        type="button"
+                        @click="openOutputFolder(output)"
+                      >
+                        <div class="result-row-head">
+                          <strong>{{ output.split(/[\\/]/).pop() ?? output }}</strong>
+                          <span class="result-status-tag success">成功</span>
+                        </div>
+                        <span>{{ output }}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="result.errors.length > 0" class="result-detail-block">
+                    <div class="result-detail-head">
+                      <strong>失败</strong>
+                      <span class="content-animated-value">{{ result.errors.length }} 项</span>
+                    </div>
+                    <div class="result-detail-list">
+                      <div
+                        v-for="item in result.errors"
+                        :key="`${item.input_file}-${item.message}`"
+                        class="result-detail-row error glass-soft"
+                      >
+                        <div class="result-row-head">
+                          <strong>{{ item.input_file.split(/[\\/]/).pop() ?? item.input_file }}</strong>
+                          <span class="result-status-tag error">失败</span>
+                        </div>
+                        <p>{{ item.message }}</p>
+                        <span>{{ item.input_file }}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="result.skipped.length > 0" class="result-detail-block">
+                    <div class="result-detail-head">
+                      <strong>跳过</strong>
+                      <span class="content-animated-value">{{ result.skipped.length }} 项</span>
+                    </div>
+                    <div class="result-detail-list">
+                      <div
+                        v-for="item in result.skipped"
+                        :key="`${item.input_file}-${item.message}`"
+                        class="result-detail-row skip glass-soft"
+                      >
+                        <div class="result-row-head">
+                          <strong>{{ item.input_file.split(/[\\/]/).pop() ?? item.input_file }}</strong>
+                          <span class="result-status-tag skip">跳过</span>
+                        </div>
+                        <p>{{ item.message }}</p>
+                        <span>{{ item.input_file }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </template>
           </div>
         </section>
       </template>
@@ -2104,14 +2363,6 @@ activeSection.value = normalizeSectionKey(activeSection.value);
         </article>
       </section>
 
-      <TaskConsole
-        v-if="isTaskSection"
-        :logs="logs"
-        :result="result"
-        @clear-log="clearLogs"
-        @open-log="openLogFile"
-        @open-output-folder="openOutputFolder"
-      />
     </main>
 
     <input

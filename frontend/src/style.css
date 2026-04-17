@@ -121,10 +121,11 @@
 
 body {
   margin: 0;
-  min-width: 1100px;
+  min-width: 320px;
   min-height: 100vh;
   font-size: 15px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   color: var(--text-primary);
   background:
     radial-gradient(circle at top left, rgba(232, 194, 122, 0.38), transparent 28%),
@@ -137,20 +138,26 @@ input {
 }
 
 #app {
-  height: 100vh;
+  min-height: 100vh;
+  height: auto;
 }
 
 .app-shell {
   display: grid;
-  grid-template-columns: 272px minmax(0, 1fr);
-  height: 100vh;
-  overflow: hidden;
+  grid-template-columns: clamp(220px, 16vw, 280px) minmax(0, 1fr);
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
+  align-items: start;
 }
 
 .side-nav {
   display: grid;
   align-content: start;
   gap: 18px;
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
   height: 100vh;
   overflow: auto;
   padding: 26px 18px;
@@ -324,9 +331,13 @@ input {
 
 .workspace {
   display: grid;
-  align-content: space-between;
-  min-height: 0;
-  overflow: auto;
+  align-content: start;
+  justify-items: stretch;
+  width: min(100%, 1720px);
+  min-height: 100vh;
+  height: auto;
+  margin: 0 auto;
+  overflow: visible;
   gap: 14px;
   padding: 22px;
   grid-auto-rows: min-content;
@@ -527,17 +538,18 @@ input {
   opacity: 0.58;
 }
 
-.work-grid,
-.console-grid {
+.masonry-board {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--masonry-columns, 2), minmax(0, 1fr));
   gap: 14px;
   align-items: start;
+  min-width: 0;
 }
 
 .masonry-column {
   display: grid;
   gap: 14px;
+  align-content: start;
   min-width: 0;
 }
 
@@ -546,27 +558,13 @@ input {
   border-radius: var(--layout-radius-xl);
   min-width: 0;
   min-height: 0;
+  align-self: start;
 }
 
-.work-grid > .panel,
-.console-grid > .panel,
 .masonry-column > .panel {
   display: grid;
   grid-template-rows: auto auto;
   width: 100%;
-}
-
-.work-grid > .panel > :last-child {
-  min-height: 0;
-}
-
-.work-grid > .panel .file-table {
-  min-height: 0;
-  max-height: none;
-}
-
-.work-grid > .panel .settings-stack {
-  min-height: 0;
 }
 
 .panel-head {
@@ -696,12 +694,10 @@ input {
 }
 
 .file-table,
-.log-list {
+.log-list,
+.result-block {
   display: grid;
   gap: var(--layout-gap-2);
-}
-
-.file-table {
   min-height: 0;
   height: auto;
   overflow: auto;
@@ -709,10 +705,11 @@ input {
   border-radius: var(--layout-radius-lg);
   border: 1px solid var(--glass-soft-border);
   background: var(--layout-surface-bg-soft);
-  box-shadow: var(--layout-shadow-surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
   scrollbar-gutter: stable;
-  backdrop-filter: blur(16px) saturate(1.12);
-  -webkit-backdrop-filter: blur(16px) saturate(1.12);
+  backdrop-filter: blur(16px) saturate(1.08);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  align-content: start;
 }
 
 .panel-console,
@@ -720,33 +717,6 @@ input {
   display: grid;
   grid-template-rows: auto auto;
   min-height: 0;
-}
-
-.panel-console > .log-list,
-.panel-result > .result-block {
-  min-height: 0;
-  height: auto;
-  overflow: auto;
-  padding: var(--layout-pad-sm);
-  border-radius: var(--layout-radius-lg);
-  border: 1px solid var(--glass-soft-border);
-  background: var(--layout-surface-bg-soft);
-  box-shadow: var(--layout-shadow-surface);
-  backdrop-filter: blur(16px) saturate(1.12);
-  -webkit-backdrop-filter: blur(16px) saturate(1.12);
-}
-
-.log-list {
-  min-height: 0;
-  height: auto;
-  padding: var(--layout-pad-sm);
-  overflow: auto;
-  border-radius: var(--layout-radius-lg);
-  border: 1px solid var(--glass-soft-border);
-  background: var(--layout-surface-bg-soft);
-  box-shadow: var(--layout-shadow-surface);
-  backdrop-filter: blur(16px) saturate(1.12);
-  -webkit-backdrop-filter: blur(16px) saturate(1.12);
 }
 
 .file-row,
@@ -924,9 +894,9 @@ input {
   gap: var(--layout-gap-3);
   padding: var(--layout-pad-lg);
   border-radius: var(--layout-radius-lg);
-  border: 1px solid var(--glass-medium-border);
-  background: var(--layout-surface-bg-muted);
-  box-shadow: var(--layout-shadow-strong);
+  border: 1px solid var(--glass-soft-border);
+  background: var(--layout-surface-bg-soft);
+  box-shadow: var(--layout-shadow-surface);
   transition:
     transform 220ms ease,
     box-shadow 220ms ease,
@@ -937,8 +907,18 @@ input {
   isolation: isolate;
 }
 
+.settings-panel,
+.about-panel {
+  display: grid;
+  gap: 14px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
 .settings-overview {
-  border-color: var(--glass-medium-border);
+  border-color: var(--glass-soft-border);
 }
 
 .settings-overview::before,
@@ -1277,9 +1257,9 @@ input {
   gap: var(--layout-gap-2);
   padding: var(--layout-pad-xl) var(--layout-pad-2xl);
   border-radius: var(--layout-radius-lg);
-  border: 1px solid var(--glass-medium-border);
-  background: var(--layout-surface-bg-muted);
-  box-shadow: var(--layout-shadow-strong);
+  border: 1px solid var(--glass-soft-border);
+  background: var(--layout-surface-bg-soft);
+  box-shadow: var(--layout-shadow-surface);
   position: relative;
   overflow: visible;
   isolation: isolate;
@@ -1535,7 +1515,7 @@ input {
 }
 
 .about-summary-card {
-  background: var(--layout-surface-bg-muted);
+  background: var(--layout-surface-bg-soft);
 }
 
 .about-summary-card strong {
@@ -1550,6 +1530,10 @@ input {
 
 .about-card {
   gap: var(--layout-gap-3);
+}
+
+.about-card,
+.about-path-card {
   background: var(--layout-surface-bg-soft);
 }
 
@@ -1578,6 +1562,11 @@ input {
 .about-path-card p {
   margin: 0;
   word-break: break-all;
+}
+
+.settings-overview,
+.about-hero {
+  background: var(--layout-surface-bg-soft);
 }
 
 .font-grid {
@@ -1866,8 +1855,10 @@ input {
 }
 
 @media (max-width: 1180px) {
-  .work-grid,
-  .console-grid,
+  .workspace {
+    width: 100%;
+  }
+
   .about-summary-grid,
   .about-grid,
   .about-dashboard-body {
@@ -1932,10 +1923,13 @@ input {
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
   body {
-    min-width: 0;
-    overflow: auto;
+    min-width: 320px;
   }
 
   #app,
@@ -1945,22 +1939,40 @@ input {
   }
 
   .app-shell {
-    grid-template-columns: 1fr;
     overflow: visible;
   }
 
   .side-nav {
+    position: static;
     gap: 14px;
     overflow: visible;
     padding-bottom: 10px;
+    height: auto;
   }
 
   .workspace {
     overflow: visible;
   }
 
-  .work-grid,
-  .console-grid {
+  .workspace {
+    padding: 18px;
+  }
+
+  .panel-head {
+    gap: var(--layout-gap-3);
+  }
+
+  .panel-actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace {
+    padding: 16px;
+  }
+
+  .masonry-board {
     grid-template-columns: 1fr;
   }
 }
