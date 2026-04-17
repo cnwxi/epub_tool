@@ -4,8 +4,8 @@
   "identifier": "com.cnwxi.epubtool.newui",
   "build": {
     "beforeDevCommand": {
-      "cwd": "../frontend",
-      "script": "npm run dev -- --host"
+      "cwd": "..",
+      "script": "npm run dev:desktop"
     },
     "beforeBuildCommand": {
       "cwd": "..",

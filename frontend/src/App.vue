@@ -14,8 +14,10 @@ import type {
   FontLoadStatus,
   QueuedFile,
   SectionKey,
+  TaskAggregateStats,
   TaskEvent,
   TaskHistoryEntry,
+  TaskOutputDirectoryMap,
   TaskRequest,
   TaskResult,
   TaskType,
@@ -64,6 +66,7 @@ const createTaskRecord = <T,>(factory: () => T): Record<TaskType, T> => ({
   font_encrypt: factory(),
   transfer_img: factory(),
 });
+const createOutputDirectoryMap = (): TaskOutputDirectoryMap => createTaskRecord(() => "");
 
 const CURRENT_FALLBACK_VERSION = __APP_VERSION__;
 const APP_IDENTIFIER = "com.cnwxi.epubtool.newui";
@@ -76,6 +79,12 @@ const defaultUpdateCheckState: UpdateCheckState = {
   latestReleaseUrl: LATEST_RELEASE_URL,
   status: "idle",
   message: "可手动检查是否有新版本。",
+};
+const defaultTaskAggregateStats: TaskAggregateStats = {
+  total: 0,
+  success: 0,
+  failed: 0,
+  skipped: 0,
 };
 
 const {
@@ -105,7 +114,10 @@ const activeSection = usePersistentState<SectionKey>(
   "epub-tool.active-section",
   "reformat",
 );
-const outputDir = usePersistentState<string>("epub-tool.output-dir", "");
+const outputDirs = usePersistentState<TaskOutputDirectoryMap>(
+  "epub-tool.output-dirs",
+  createOutputDirectoryMap(),
+);
 const settings = usePersistentState<AppSettings>(
   "epub-tool.settings",
   defaultSettings,
@@ -113,6 +125,10 @@ const settings = usePersistentState<AppSettings>(
 const taskHistory = usePersistentState<TaskHistoryEntry[]>(
   "epub-tool.task-history",
   [],
+);
+const taskAggregateStats = usePersistentState<TaskAggregateStats>(
+  "epub-tool.aggregate-stats",
+  defaultTaskAggregateStats,
 );
 const persistedUpdateCheckState = usePersistentState<UpdateCheckState>(
   "epub-tool.update-check-state",
@@ -152,6 +168,7 @@ const updateNoticeVisible = ref(false);
 const dragActive = ref(false);
 const browserFileInput = ref<HTMLInputElement | null>(null);
 const currentLogPath = ref("");
+const prefersReducedMotion = ref(false);
 const defaultLogPaths = [
   {
     platform: "Windows",
@@ -201,6 +218,50 @@ const normalizeSettings = (value: unknown): AppSettings => {
 };
 
 settings.value = normalizeSettings(settings.value);
+outputDirs.value = {
+  ...createOutputDirectoryMap(),
+  ...(outputDirs.value ?? {}),
+};
+taskAggregateStats.value = {
+  ...defaultTaskAggregateStats,
+  ...(taskAggregateStats.value ?? {}),
+};
+
+if (typeof window !== "undefined") {
+  const legacyOutputDirKey = "epub-tool.output-dir";
+  const hasTaskSpecificOutputDir = taskSections.some((taskType) =>
+    Boolean(outputDirs.value[taskType]),
+  );
+
+  if (!hasTaskSpecificOutputDir) {
+    try {
+      const rawLegacyOutputDir = window.localStorage.getItem(legacyOutputDirKey);
+      if (rawLegacyOutputDir) {
+        const parsedLegacyOutputDir = JSON.parse(rawLegacyOutputDir);
+        if (typeof parsedLegacyOutputDir === "string" && parsedLegacyOutputDir.trim()) {
+          outputDirs.value = createTaskRecord(() => parsedLegacyOutputDir);
+        }
+      }
+    } catch {
+      // 忽略旧版单值配置解析失败，继续使用当前默认值。
+    }
+  }
+
+  window.localStorage.removeItem(legacyOutputDirKey);
+}
+
+const hasAggregateStats = Object.values(taskAggregateStats.value).some((value) => value > 0);
+if (!hasAggregateStats && taskHistory.value.length > 0) {
+  taskAggregateStats.value = taskHistory.value.reduce<TaskAggregateStats>(
+    (accumulator, entry) => ({
+      total: accumulator.total + entry.summary.total,
+      success: accumulator.success + entry.summary.success,
+      failed: accumulator.failed + entry.summary.failed,
+      skipped: accumulator.skipped + entry.summary.skipped,
+    }),
+    { ...defaultTaskAggregateStats },
+  );
+}
 
 const headerEyebrow = computed(() => {
   switch (activeSection.value) {
@@ -271,6 +332,15 @@ const isTaskSection = computed(() =>
 const activeTask = computed<TaskType | null>(() =>
   isTaskSection.value ? (activeSection.value as TaskType) : null,
 );
+const outputDir = computed<string>({
+  get: () => (activeTask.value ? outputDirs.value[activeTask.value] : ""),
+  set: (value) => {
+    if (!activeTask.value) {
+      return;
+    }
+    outputDirs.value[activeTask.value] = value;
+  },
+});
 const files = computed<QueuedFile[]>({
   get: () => (activeTask.value ? taskFilesByType.value[activeTask.value] : []),
   set: (value) => {
@@ -332,6 +402,168 @@ const runningTaskLabel = computed(() => {
 
   return formatTaskType(runningTaskType.value);
 });
+const outputDirectorySummary = computed(() =>
+  taskSections.map((taskType) => ({
+    taskType,
+    label: formatTaskType(taskType),
+    path: outputDirs.value[taskType] || "源文件同级目录",
+  })),
+);
+const aboutStats = computed(() => taskAggregateStats.value);
+const aboutAnimatedStats = ref<TaskAggregateStats>({ ...defaultTaskAggregateStats });
+const aboutAnimationProgress = ref(1);
+let aboutAnimationFrame = 0;
+const aboutSummary = computed(() => {
+  const { total, success, skipped, failed } = aboutStats.value;
+  if (total === 0) {
+    return "当前还没有累计处理记录，开始执行任务后会在这里展示统计结果。";
+  }
+  return `累计已处理 ${total} 本 EPUB，其中成功 ${success} 本，跳过 ${skipped} 本，失败 ${failed} 本。`;
+});
+const settingsStatusItems = computed(() => [
+  {
+    label: "当前版本",
+    value: `v${currentVersion.value}`,
+  },
+  {
+    label: "更新状态",
+    value: updateStatusLabel.value,
+  },
+  {
+    label: "自动检查更新",
+    value: settings.value.autoCheckUpdates ? "已开启" : "已关闭",
+  },
+  {
+    label: "自动打开输出目录",
+    value: settings.value.autoOpenOutputFolder ? "已开启" : "已关闭",
+  },
+  {
+    label: "自动打开日志",
+    value: settings.value.autoOpenLogFile ? "已开启" : "已关闭",
+  },
+  {
+    label: "历史记录条数",
+    value: `${historyLimit.value} 条`,
+  },
+]);
+const aboutHasStats = computed(() => aboutStats.value.total > 0);
+const toPercentText = (value: number, total: number): string => {
+  if (total <= 0) {
+    return "0%";
+  }
+  return `${((value / total) * 100).toFixed(1)}%`;
+};
+const aboutMetricDistribution = computed(() => {
+  const total = Math.max(aboutStats.value.total, 1);
+  const minimumWeight = Math.max(total * 0.16, 1);
+  const interpolateWeight = (value: number) => {
+    const targetWeight = Math.max(value, minimumWeight);
+    const currentWeight = 1 + (targetWeight - 1) * aboutAnimationProgress.value;
+    return {
+      flexGrow: currentWeight.toFixed(3),
+      flexShrink: "1",
+      flexBasis: "0px",
+    };
+  };
+
+  return {
+    success: {
+      percent: toPercentText(aboutStats.value.success, aboutStats.value.total),
+      style: interpolateWeight(aboutStats.value.success),
+    },
+    skipped: {
+      percent: toPercentText(aboutStats.value.skipped, aboutStats.value.total),
+      style: interpolateWeight(aboutStats.value.skipped),
+    },
+    failed: {
+      percent: toPercentText(aboutStats.value.failed, aboutStats.value.total),
+      style: interpolateWeight(aboutStats.value.failed),
+    },
+  };
+});
+const aboutChartStyle = computed(() => {
+  const total = aboutStats.value.total;
+  if (total <= 0) {
+    return {
+      background: "conic-gradient(rgba(20, 33, 61, 0.08) 0deg 360deg)",
+    };
+  }
+
+  const successRatio = aboutStats.value.success / total;
+  const skippedRatio = aboutStats.value.skipped / total;
+  const failedRatio = aboutStats.value.failed / total;
+  const baseRatio = 1 / 3;
+  const progress = aboutAnimationProgress.value;
+
+  const successDeg =
+    (baseRatio + (successRatio - baseRatio) * progress) * 360;
+  const skippedDeg =
+    (baseRatio + (skippedRatio - baseRatio) * progress) * 360;
+  const failedDeg = Math.max(360 - successDeg - skippedDeg, 0);
+
+  return {
+    background: `conic-gradient(
+      rgba(188, 227, 208, 0.98) 0deg ${successDeg}deg,
+      rgba(247, 220, 166, 0.98) ${successDeg}deg ${successDeg + skippedDeg}deg,
+      rgba(244, 191, 183, 0.98) ${successDeg + skippedDeg}deg ${successDeg + skippedDeg + failedDeg}deg,
+      rgba(20, 33, 61, 0.08) ${successDeg + skippedDeg + failedDeg}deg 360deg
+    )`,
+  };
+});
+
+const animateAboutDashboard = () => {
+  if (typeof window === "undefined") {
+    aboutAnimatedStats.value = { ...aboutStats.value };
+    return;
+  }
+
+  if (prefersReducedMotion.value) {
+    aboutAnimatedStats.value = { ...aboutStats.value };
+    aboutAnimationProgress.value = 1;
+    return;
+  }
+
+  if (aboutAnimationFrame) {
+    window.cancelAnimationFrame(aboutAnimationFrame);
+    aboutAnimationFrame = 0;
+  }
+
+  const target = { ...aboutStats.value };
+  const start =
+    activeSection.value === "about"
+      ? { ...defaultTaskAggregateStats }
+      : { ...aboutAnimatedStats.value };
+  aboutAnimationProgress.value = activeSection.value === "about" ? 0 : 1;
+  const duration = 1580;
+  const startedAt = performance.now();
+
+  const step = (now: number) => {
+    const progressValue = Math.min((now - startedAt) / duration, 1);
+    const easedProgress =
+      progressValue < 0.5
+        ? 4 * progressValue * progressValue * progressValue
+        : 1 - Math.pow(-2 * progressValue + 2, 3) / 2;
+    aboutAnimationProgress.value = easedProgress;
+
+    aboutAnimatedStats.value = {
+      total: Math.round(start.total + (target.total - start.total) * easedProgress),
+      success: Math.round(start.success + (target.success - start.success) * easedProgress),
+      failed: Math.round(start.failed + (target.failed - start.failed) * easedProgress),
+      skipped: Math.round(start.skipped + (target.skipped - start.skipped) * easedProgress),
+    };
+
+    if (progressValue < 1) {
+      aboutAnimationFrame = window.requestAnimationFrame(step);
+      return;
+    }
+
+    aboutAnimatedStats.value = target;
+    aboutAnimationProgress.value = 1;
+    aboutAnimationFrame = 0;
+  };
+
+  aboutAnimationFrame = window.requestAnimationFrame(step);
+};
 const isViewingRunningTask = computed(
   () => taskRunning.value && !!activeTask.value && activeTask.value === runningTaskType.value,
 );
@@ -367,9 +599,9 @@ const activeDescription = computed(() => {
     case "transfer_img":
       return activeTaskDescription.value;
     case "settings":
-      return "管理输出位置、自动打开选项与历史记录。";
+      return "集中管理版本更新、使用偏好、日志入口与最近任务。";
     default:
-      return "查看软件支持范围、使用方式与处理提示。";
+      return "查看功能范围、输出规则和日志位置说明。";
   }
 });
 
@@ -564,8 +796,24 @@ const shouldSkipAutomaticUpdateCheck = (): boolean => {
   return Date.now() - checkedAt < UPDATE_CHECK_INTERVAL_MS;
 };
 
+const syncPersistedUpdateStateWithCurrentVersion = () => {
+  if (!latestVersion.value) {
+    return;
+  }
+
+  if (compareVersions(latestVersion.value, currentVersion.value) > 0) {
+    return;
+  }
+
+  updateStatus.value = "latest";
+  updateMessage.value = `当前已是最新版本 v${currentVersion.value}。`;
+  updateNoticeVisible.value = false;
+  persistUpdateCheckState();
+};
+
 const checkForUpdates = async (options?: { silent?: boolean; automatic?: boolean }) => {
   if (options?.automatic && shouldSkipAutomaticUpdateCheck()) {
+    syncPersistedUpdateStateWithCurrentVersion();
     return;
   }
 
@@ -952,6 +1200,12 @@ const rememberTask = (taskType: TaskType, taskResult: TaskResult) => {
     firstOutput: taskResult.outputs[0] ?? null,
   };
   taskHistory.value = [entry, ...taskHistory.value].slice(0, historyLimit.value);
+  taskAggregateStats.value = {
+    total: taskAggregateStats.value.total + taskResult.summary.total,
+    success: taskAggregateStats.value.success + taskResult.summary.success,
+    failed: taskAggregateStats.value.failed + taskResult.summary.failed,
+    skipped: taskAggregateStats.value.skipped + taskResult.summary.skipped,
+  };
 };
 
 const syncQueueWithResult = (taskType: TaskType, taskResult: TaskResult) => {
@@ -1153,6 +1407,9 @@ const toggleFontFamily = (filePath: string, family: string) => {
 
 watch(activeSection, async (section) => {
   activeSection.value = normalizeSectionKey(section);
+  if (activeSection.value === "about") {
+    animateAboutDashboard();
+  }
   if (activeSection.value === "font_encrypt" && files.value.length > 0) {
     await loadFontFamilies({
       filePaths: files.value
@@ -1219,12 +1476,49 @@ watch(
   },
 );
 
+watch(
+  aboutStats,
+  () => {
+    if (activeSection.value === "about") {
+      animateAboutDashboard();
+      return;
+    }
+    aboutAnimatedStats.value = { ...aboutStats.value };
+  },
+  { deep: true },
+);
+
 let unlistenDrop: (() => void) | null = null;
+let motionMediaQuery: MediaQueryList | null = null;
+let removeMotionPreferenceListener: (() => void) | null = null;
 
 onMounted(async () => {
+  if (typeof window !== "undefined") {
+    motionMediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    prefersReducedMotion.value = motionMediaQuery.matches;
+    const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
+      prefersReducedMotion.value = event.matches;
+      if (event.matches) {
+        aboutAnimatedStats.value = { ...aboutStats.value };
+      }
+    };
+
+    if (typeof motionMediaQuery.addEventListener === "function") {
+      motionMediaQuery.addEventListener("change", handleMotionPreferenceChange);
+      removeMotionPreferenceListener = () =>
+        motionMediaQuery?.removeEventListener("change", handleMotionPreferenceChange);
+    } else {
+      motionMediaQuery.addListener(handleMotionPreferenceChange);
+      removeMotionPreferenceListener = () =>
+        motionMediaQuery?.removeListener(handleMotionPreferenceChange);
+    }
+  }
+
+  aboutAnimatedStats.value = { ...aboutStats.value };
   if (isTauriRuntime()) {
     try {
       currentVersion.value = normalizeVersion(await getVersion());
+      syncPersistedUpdateStateWithCurrentVersion();
     } catch {
       currentVersion.value = CURRENT_FALLBACK_VERSION;
     }
@@ -1261,6 +1555,10 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (aboutAnimationFrame && typeof window !== "undefined") {
+    window.cancelAnimationFrame(aboutAnimationFrame);
+  }
+  removeMotionPreferenceListener?.();
   unlistenDrop?.();
 });
 
@@ -1276,11 +1574,14 @@ activeSection.value = normalizeSectionKey(activeSection.value);
     />
 
     <main class="workspace">
-      <section v-if="updateNoticeVisible && updateStatus === 'available'" class="update-toast">
+      <section
+        v-if="updateNoticeVisible && updateStatus === 'available'"
+        class="update-toast glass-strong workspace-animated-block"
+      >
         <div class="update-toast-copy">
           <p class="eyebrow">版本更新</p>
-          <strong>发现新版本 v{{ latestVersion }}</strong>
-          <p>{{ updateMessage }}</p>
+          <strong class="content-animated-value">发现新版本 v{{ latestVersion }}</strong>
+          <p class="content-animated-value">{{ updateMessage }}</p>
         </div>
         <div class="update-toast-actions">
           <button class="ghost-btn" type="button" @click="dismissUpdateNotice">
@@ -1292,11 +1593,11 @@ activeSection.value = normalizeSectionKey(activeSection.value);
         </div>
       </section>
 
-      <header class="workspace-header">
+      <header class="workspace-header workspace-animated-header">
         <div>
           <p class="eyebrow">{{ headerEyebrow }}</p>
-          <h2>{{ activeTitle }}</h2>
-          <p class="muted">{{ activeDescription }}</p>
+          <h2 class="content-animated-value">{{ activeTitle }}</h2>
+          <p class="muted content-animated-value">{{ activeDescription }}</p>
         </div>
       </header>
 
@@ -1311,289 +1612,496 @@ activeSection.value = normalizeSectionKey(activeSection.value);
           @clear="clearFiles"
         />
 
-        <section class="work-grid">
-          <article class="panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">任务配置</p>
-                <h3>输出与执行</h3>
-              </div>
-              <div class="panel-actions">
-                <button class="ghost-btn" type="button" @click="pickOutputDirectory">
-                  选择输出目录
-                </button>
-                <button class="ghost-btn" type="button" @click="resetOutput">
-                  重置输出路径
-                </button>
-              </div>
-            </div>
-
-            <div class="settings-stack">
-              <label class="field">
-                <span>输出目录</span>
-                <input
-                  :value="outputDir || '默认：源文件同级目录'"
-                  readonly
-                  type="text"
-                />
-              </label>
-
-              <div class="task-callout">
-                <strong>{{ activeTaskLabel }}</strong>
-                <span>{{ activeTaskDescription }}</span>
-              </div>
-
-              <div v-if="taskRunning || fontLoading" class="task-progress">
-                <div class="task-progress-head">
-                  <strong>{{ visibleProgressText }}</strong>
-                  <span>{{ visibleProgressValue }}%</span>
+        <section class="work-grid content-animated-grid">
+          <div class="masonry-column">
+            <article class="panel task-panel glass-medium content-animated-block">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">任务配置</p>
+                  <h3>输出与执行</h3>
                 </div>
-                <div class="task-progress-track">
-                  <div
-                    class="task-progress-fill"
-                    :style="{ width: `${visibleProgressValue}%` }"
+                <div class="panel-actions">
+                  <button class="ghost-btn task-action-btn" type="button" @click="pickOutputDirectory">
+                    选择输出目录
+                  </button>
+                  <button class="ghost-btn task-action-btn" type="button" @click="resetOutput">
+                    重置输出路径
+                  </button>
+                </div>
+              </div>
+
+              <div class="settings-stack">
+                <label class="field glass-soft task-field-card">
+                  <span>输出目录</span>
+                  <input
+                    :value="outputDir || '默认：源文件同级目录'"
+                    readonly
+                    type="text"
                   />
+                </label>
+
+                <div class="task-callout glass-soft">
+                  <strong class="content-animated-value">{{ activeTaskLabel }}</strong>
+                  <span class="content-animated-value">{{ activeTaskDescription }}</span>
                 </div>
-                <p v-if="visibleProgressMessage" class="task-progress-message">
-                  {{ visibleProgressMessage }}
-                </p>
-              </div>
 
-              <button
-                class="primary-btn wide"
-                :disabled="taskRunning || files.length === 0"
-                type="button"
-                @click="runSelectedTask"
-              >
-                {{ taskRunning ? "处理中..." : "开始执行" }}
-              </button>
-            </div>
-          </article>
+                <div v-if="taskRunning || fontLoading" class="task-progress glass-soft">
+                  <div class="task-progress-head">
+                    <strong class="content-animated-value">{{ visibleProgressText }}</strong>
+                    <span class="content-animated-value">{{ visibleProgressValue }}%</span>
+                  </div>
+                  <div class="task-progress-track">
+                    <div
+                      class="task-progress-fill"
+                      :style="{ width: `${visibleProgressValue}%` }"
+                    />
+                  </div>
+                  <p v-if="visibleProgressMessage" class="task-progress-message">
+                    <span class="content-animated-value">{{ visibleProgressMessage }}</span>
+                  </p>
+                </div>
 
-          <article class="panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">文件队列</p>
-                <h3>待处理列表</h3>
-              </div>
-            </div>
-
-            <div class="file-table">
-              <div v-if="files.length === 0" class="empty-state">
-                还没有加入 EPUB 文件。
-              </div>
-              <div
-                v-for="file in files"
-                :key="file.path"
-                class="file-row"
-                :class="{ active: file.path === selectedFilePath }"
-              >
-                <button class="file-select" type="button" @click="selectFile(file.path)">
-                  <span class="file-row-head">
-                    <strong>{{ file.name }}</strong>
-                    <span v-if="file.path === selectedFilePath" class="file-tag">当前</span>
-                  </span>
-                  <p>{{ file.path }}</p>
-                </button>
-                <button class="ghost-btn" type="button" @click.stop="removeFile(file.path)">
-                  移除
+                <button
+                  class="primary-btn wide"
+                  :disabled="taskRunning || files.length === 0"
+                  type="button"
+                  @click="runSelectedTask"
+                >
+                  {{ taskRunning ? "处理中..." : "开始执行" }}
                 </button>
               </div>
-            </div>
-          </article>
-        </section>
+            </article>
 
-        <section v-if="activeTask === 'font_encrypt'" class="panel font-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">字体范围</p>
-              <h3>文件级选择</h3>
-              <p class="muted">
-                {{ selectedFile ? `当前聚焦：${selectedFile.name}` : "先从右侧队列选择一本 EPUB。" }}
-              </p>
-            </div>
-            <div class="panel-actions">
-              <button
-                class="ghost-btn"
-                :disabled="fontLoading || files.length === 0"
-                type="button"
-                @click="loadFontFamilies({ force: true })"
-              >
-                {{ fontLoading ? "刷新中..." : "刷新字体列表" }}
-              </button>
-            </div>
+            <section
+              v-if="activeTask === 'font_encrypt'"
+              class="panel font-panel glass-medium content-animated-block"
+            >
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">字体范围</p>
+                  <h3>文件级选择</h3>
+                  <p class="muted">
+                    {{ selectedFile ? `当前聚焦：${selectedFile.name}` : "先从右侧队列选择一本 EPUB。" }}
+                  </p>
+                </div>
+                <div class="panel-actions">
+                  <button
+                    class="ghost-btn task-action-btn"
+                    :disabled="fontLoading || files.length === 0"
+                    type="button"
+                    @click="loadFontFamilies({ force: true })"
+                  >
+                    {{ fontLoading ? "刷新中..." : "刷新字体列表" }}
+                  </button>
+                </div>
+              </div>
+              <div class="font-grid">
+                <div v-if="!selectedFile" class="empty-state">
+                  队列为空，暂时没有可配置的字体目标。
+                </div>
+                <div v-else class="font-card font-card-focus glass-soft">
+                  <strong>{{ selectedFile.name }}</strong>
+                  <p>{{ selectedFile.fontFamilies.length }} 个可选字体</p>
+                  <label
+                    v-for="family in selectedFile.fontFamilies"
+                    :key="`${selectedFile.path}-${family}`"
+                    class="font-option"
+                  >
+                    <input
+                      :disabled="selectedFile.fontLoadStatus === 'loading'"
+                      :checked="selectedFile.selectedFontFamilies.includes(family)"
+                      type="checkbox"
+                      @change="toggleFontFamily(selectedFile.path, family)"
+                    />
+                    <span>{{ family }}</span>
+                  </label>
+                  <p v-if="selectedFileFontMessage" class="muted">
+                    {{ selectedFileFontMessage }}
+                  </p>
+                </div>
+              </div>
+            </section>
           </div>
-          <div class="font-grid">
-            <div v-if="!selectedFile" class="empty-state">
-              队列为空，暂时没有可配置的字体目标。
-            </div>
-            <div v-else class="font-card font-card-focus">
-              <strong>{{ selectedFile.name }}</strong>
-              <p>{{ selectedFile.fontFamilies.length }} 个可选字体</p>
-              <label
-                v-for="family in selectedFile.fontFamilies"
-                :key="`${selectedFile.path}-${family}`"
-                class="font-option"
-              >
-                <input
-                  :disabled="selectedFile.fontLoadStatus === 'loading'"
-                  :checked="selectedFile.selectedFontFamilies.includes(family)"
-                  type="checkbox"
-                  @change="toggleFontFamily(selectedFile.path, family)"
-                />
-                <span>{{ family }}</span>
-              </label>
-              <p v-if="selectedFileFontMessage" class="muted">
-                {{ selectedFileFontMessage }}
-              </p>
-            </div>
+
+          <div class="masonry-column">
+            <article class="panel task-panel glass-medium content-animated-block">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">文件队列</p>
+                  <h3>待处理列表</h3>
+                </div>
+              </div>
+
+              <div class="file-table glass-soft">
+                <div v-if="files.length === 0" class="empty-state">
+                  还没有加入 EPUB 文件。
+                </div>
+                <div
+                  v-for="file in files"
+                  :key="file.path"
+                  class="file-row"
+                  :class="{ active: file.path === selectedFilePath }"
+                >
+                  <button class="file-select" type="button" @click="selectFile(file.path)">
+                    <span class="file-row-head">
+                      <strong>{{ file.name }}</strong>
+                      <span v-if="file.path === selectedFilePath" class="file-tag">当前</span>
+                    </span>
+                    <p>{{ file.path }}</p>
+                  </button>
+                  <button class="ghost-btn" type="button" @click.stop="removeFile(file.path)">
+                    移除
+                  </button>
+                </div>
+              </div>
+            </article>
           </div>
         </section>
       </template>
 
-      <section v-if="activeSection === 'settings'" class="panel settings-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">设置</p>
-            <h3>使用偏好</h3>
-          </div>
-        </div>
-        <ul class="settings-list">
-          <li>当前默认输出位置：{{ outputDir || "源文件同级目录" }}</li>
-          <li>可在任务完成后自动打开输出文件夹，方便继续查看和整理结果。</li>
-          <li>可选择自动打开处理日志，便于回看处理过程与提示信息。</li>
-          <li>可自动检查新版本，并跳转到 GitHub Release 下载最新版。</li>
-          <li>最近任务会保留在本机，方便回看处理记录。</li>
-        </ul>
-        <div class="settings-form">
-          <label class="toggle-row">
-            <input v-model="settings.autoOpenOutputFolder" type="checkbox" />
-            <span>任务完成后自动打开输出文件夹</span>
-          </label>
-          <label class="toggle-row">
-            <input v-model="settings.autoOpenLogFile" type="checkbox" />
-            <span>任务完成后自动打开处理日志</span>
-          </label>
-          <label class="toggle-row">
-            <input v-model="settings.autoCheckUpdates" type="checkbox" />
-            <span>启动时自动检查更新</span>
-          </label>
-          <label class="field field-compact">
-            <span>历史记录条数</span>
-            <input v-model.number="settings.keepHistoryCount" min="1" max="30" type="number" />
-          </label>
-        </div>
-        <div class="panel-head panel-head-sub">
-          <div>
-            <p class="eyebrow">日志</p>
-            <h3>日志位置</h3>
-          </div>
-          <div class="panel-actions">
-            <button
-              v-if="currentLogPath"
-              class="ghost-btn"
-              type="button"
-              @click="openLogFile"
-            >
-              打开日志文件
-            </button>
-            <button
-              v-if="currentLogPath"
-              class="ghost-btn"
-              type="button"
-              @click="openCurrentLogDirectory"
-            >
-              打开日志目录
-            </button>
-          </div>
-        </div>
-        <div class="task-callout">
-          <strong>当前实际日志文件</strong>
-          <span v-if="currentLogPath">{{ currentLogPath }}</span>
-          <span v-else>开发环境默认写入仓库根目录的 log.txt，打包版写入系统应用日志目录。</span>
-        </div>
-        <div class="history-list">
-          <div v-for="item in defaultLogPaths" :key="item.platform" class="history-row">
+      <section v-if="activeSection === 'settings'" class="panel settings-panel section-animated-panel">
+        <section class="settings-overview section-animated-block glass-medium">
+          <div class="settings-block-head">
             <div>
+              <p class="eyebrow">状态总览</p>
+              <h3>当前设置状态</h3>
+            </div>
+          </div>
+          <div class="settings-status-grid">
+            <article
+              v-for="item in settingsStatusItems"
+              :key="item.label"
+              class="settings-status-card settings-interactive-card glass-soft"
+            >
+              <span>{{ item.label }}</span>
+              <strong :key="`${item.label}-${item.value}`" class="content-animated-value">
+                {{ item.value }}
+              </strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="settings-block section-animated-block glass-medium">
+          <div class="settings-block-head">
+            <div>
+              <p class="eyebrow">更新</p>
+              <h3>版本更新</h3>
+            </div>
+            <div class="panel-actions">
+              <button
+                class="ghost-btn settings-action-btn"
+                :disabled="updateStatus === 'checking'"
+                type="button"
+                @click="checkForUpdates()"
+              >
+                {{ updateStatus === "checking" ? "检查中..." : "检查更新" }}
+              </button>
+              <button class="ghost-btn settings-action-btn" type="button" @click="openLatestReleasePage">
+                下载最新版本
+              </button>
+            </div>
+          </div>
+          <div class="settings-update-card settings-interactive-card glass-soft">
+            <div class="settings-update-copy">
+              <strong :key="`current-version-${currentVersion}`" class="content-animated-value">
+                当前版本 v{{ currentVersion }}
+              </strong>
+              <span :key="`update-status-${updateStatusLabel}`" class="content-animated-value">
+                {{ updateStatusLabel }}
+              </span>
+              <span
+                v-if="latestVersion"
+                :key="`latest-version-${latestVersion}`"
+                class="content-animated-value"
+              >
+                最新版本：v{{ latestVersion }}
+              </span>
+              <span
+                v-if="updateCheckedAt"
+                :key="`checked-at-${updateCheckedAt}`"
+                class="content-animated-value"
+              >
+                最近检查：{{ formatUpdateTime(updateCheckedAt) }}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-block section-animated-block glass-medium">
+          <div class="settings-block-head">
+            <div>
+              <p class="eyebrow">偏好设置</p>
+              <h3>使用偏好</h3>
+            </div>
+          </div>
+          <div class="settings-preference-grid">
+            <label class="settings-preference-card settings-interactive-card glass-soft">
+              <div>
+                <strong>自动打开输出文件夹</strong>
+                <p>任务完成后直接定位到输出目录。</p>
+              </div>
+              <input v-model="settings.autoOpenOutputFolder" type="checkbox" />
+            </label>
+            <label class="settings-preference-card settings-interactive-card glass-soft">
+              <div>
+                <strong>自动打开处理日志</strong>
+                <p>便于立刻回看处理细节。</p>
+              </div>
+              <input v-model="settings.autoOpenLogFile" type="checkbox" />
+            </label>
+            <label class="settings-preference-card settings-interactive-card glass-soft">
+              <div>
+                <strong>启动时自动检查更新</strong>
+                <p>自动检查 GitHub Release 最新版本。</p>
+              </div>
+              <input v-model="settings.autoCheckUpdates" type="checkbox" />
+            </label>
+            <label class="settings-preference-card settings-preference-card-number settings-interactive-card glass-soft">
+              <div>
+                <strong>历史记录条数</strong>
+                <p>控制最近任务列表的保留上限。</p>
+              </div>
+              <input
+                v-model.number="settings.keepHistoryCount"
+                min="1"
+                max="30"
+                type="number"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-block section-animated-block glass-medium">
+          <div class="settings-block-head">
+            <div>
+              <p class="eyebrow">日志工具</p>
+              <h3>日志位置</h3>
+            </div>
+            <div class="panel-actions">
+              <button
+                v-if="currentLogPath"
+                class="ghost-btn settings-action-btn"
+                type="button"
+                @click="openLogFile"
+              >
+                打开日志文件
+              </button>
+              <button
+                v-if="currentLogPath"
+                class="ghost-btn settings-action-btn"
+                type="button"
+                @click="openCurrentLogDirectory"
+              >
+                打开日志目录
+              </button>
+            </div>
+          </div>
+          <div class="settings-log-card settings-interactive-card glass-soft">
+            <span>当前日志文件</span>
+            <strong>{{ currentLogPath || "开发环境默认写入仓库根目录的 log.txt。" }}</strong>
+          </div>
+        </section>
+
+        <section class="settings-block section-animated-block glass-medium">
+          <div class="settings-block-head">
+            <div>
+              <p class="eyebrow">历史</p>
+              <h3>最近任务</h3>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost-btn settings-action-btn" type="button" @click="clearHistory">
+                清空历史
+              </button>
+            </div>
+          </div>
+          <div class="history-list">
+            <div v-if="recentHistory.length === 0" class="empty-state">
+              还没有已完成任务记录。
+            </div>
+            <div
+              v-for="entry in recentHistory"
+              :key="entry.id"
+              class="history-row settings-interactive-card glass-soft"
+            >
+              <div>
+                <strong>{{ formatTaskType(entry.taskType) }}</strong>
+                <p>
+                  {{ formatHistoryTime(entry.createdAt) }} · {{ entry.status }} · 成功
+                  {{ entry.summary.success }}/{{ entry.summary.total }}
+                </p>
+              </div>
+              <button
+                v-if="entry.firstOutput"
+                class="ghost-btn settings-action-btn"
+                type="button"
+                @click="openOutputFolder(entry.firstOutput)"
+              >
+                打开输出文件夹
+              </button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section v-if="activeSection === 'about'" class="panel about-panel glass-soft section-animated-panel">
+        <section class="about-dashboard section-animated-block">
+          <article class="about-card glass-medium">
+            <div class="about-dashboard-head">
+              <div class="about-card-head">
+                <p class="eyebrow">处理统计</p>
+                <h4>累计处理概览</h4>
+              </div>
+              <p class="muted">{{ aboutSummary }}</p>
+            </div>
+            <div class="about-dashboard-body">
+              <div class="about-chart-wrap">
+                <div class="about-chart glass-soft" :style="aboutChartStyle">
+                  <div class="about-chart-core">
+                    <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
+                    <span>累计处理</span>
+                  </div>
+                </div>
+                <div class="about-chart-legend">
+                  <span class="about-legend-item success">
+                    <i />
+                    成功
+                  </span>
+                  <span class="about-legend-item skip">
+                    <i />
+                    跳过
+                  </span>
+                  <span class="about-legend-item error">
+                    <i />
+                    失败
+                  </span>
+                </div>
+              </div>
+              <div class="about-metric-stack">
+                <div class="about-metric about-metric-wide total glass-soft">
+                  <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
+                  <span>总数</span>
+                  <small>占比 100%</small>
+                </div>
+                <div class="about-metric-row">
+                  <div
+                    class="about-metric success glass-soft"
+                    :style="aboutMetricDistribution.success.style"
+                  >
+                    <strong class="content-animated-value">{{ aboutAnimatedStats.success }}</strong>
+                    <span>成功</span>
+                    <small>占比 {{ aboutMetricDistribution.success.percent }}</small>
+                  </div>
+                  <div
+                    class="about-metric skip glass-soft"
+                    :style="aboutMetricDistribution.skipped.style"
+                  >
+                    <strong class="content-animated-value">{{ aboutAnimatedStats.skipped }}</strong>
+                    <span>跳过</span>
+                    <small>占比 {{ aboutMetricDistribution.skipped.percent }}</small>
+                  </div>
+                  <div
+                    class="about-metric error glass-soft"
+                    :style="aboutMetricDistribution.failed.style"
+                  >
+                    <strong class="content-animated-value">{{ aboutAnimatedStats.failed }}</strong>
+                    <span>失败</span>
+                    <small>占比 {{ aboutMetricDistribution.failed.percent }}</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="!aboutHasStats" class="about-dashboard-empty">
+              还没有累计处理记录。执行任意 EPUB 任务后，这里会自动开始统计。
+            </div>
+          </article>
+        </section>
+
+        <section class="about-hero glass-medium section-animated-block">
+          <p class="eyebrow">软件说明</p>
+          <h3>Epub Tool 能做什么</h3>
+          <p class="muted">
+            面向 EPUB 批量处理场景，当前提供五类处理能力，并统一支持文件导入、目录扫描、结果回看与日志定位。
+          </p>
+        </section>
+
+        <section class="about-summary-grid section-animated-block">
+          <article class="about-summary-card glass-soft">
+            <strong>5 类功能</strong>
+            <span>格式化、解密、加密、字体加密、图片转换</span>
+          </article>
+          <article class="about-summary-card glass-soft">
+            <strong>3 种输入方式</strong>
+            <span>单文件、多文件、目录扫描</span>
+          </article>
+          <article class="about-summary-card glass-soft">
+            <strong>独立输出规则</strong>
+            <span>每个子功能分别保存自己的默认输出目录</span>
+          </article>
+        </section>
+
+        <section class="about-grid section-animated-block">
+          <article class="about-card glass-soft">
+            <div class="about-card-head">
+              <p class="eyebrow">功能范围</p>
+              <h4>支持的处理能力</h4>
+            </div>
+            <div class="about-list">
+              <span>支持格式化、文件解密、文件加密、字体加密和图片转换五类 EPUB 任务。</span>
+              <span>所有功能都支持单本、多本和目录扫描。</span>
+            </div>
+          </article>
+
+          <article class="about-card glass-soft">
+            <div class="about-card-head">
+              <p class="eyebrow">处理行为</p>
+              <h4>执行方式说明</h4>
+            </div>
+            <div class="about-list">
+              <span>字体加密支持按每本 EPUB 单独选择字体范围后再批量执行。</span>
+              <span>处理完成后可在结果区打开输出文件夹，并查看失败或跳过原因。</span>
+              <span>队列中存在多本文件时，当前文件处理完成后会自动切换到下一本。</span>
+            </div>
+          </article>
+        </section>
+
+        <article class="about-card glass-soft section-animated-block">
+          <div class="about-card-head">
+            <p class="eyebrow">输出规则</p>
+            <h4>子功能输出目录</h4>
+          </div>
+          <p class="muted">每个子功能会独立保存自己的默认输出位置。</p>
+          <div class="about-path-grid">
+            <div
+              v-for="item in outputDirectorySummary"
+              :key="item.taskType"
+              class="about-path-card glass-soft"
+            >
+              <strong>{{ item.label }}</strong>
+              <p>{{ item.path }}</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="about-card glass-soft section-animated-block">
+          <div class="about-card-head">
+            <p class="eyebrow">日志说明</p>
+            <h4>日志文件位置</h4>
+          </div>
+          <div class="about-list">
+            <span v-if="currentLogPath">当前实际日志文件：{{ currentLogPath }}</span>
+            <span v-else>开发环境默认写入仓库根目录的 log.txt，打包版写入系统应用日志目录。</span>
+          </div>
+          <div class="about-path-grid about-path-grid-compact">
+            <div
+              v-for="item in defaultLogPaths"
+              :key="item.platform"
+              class="about-path-card glass-soft"
+            >
               <strong>{{ item.platform }}</strong>
               <p>{{ item.path }}</p>
             </div>
           </div>
-        </div>
-        <div class="panel-head panel-head-sub">
-          <div>
-            <p class="eyebrow">更新</p>
-            <h3>版本更新</h3>
-          </div>
-          <div class="panel-actions">
-            <button
-              class="ghost-btn"
-              :disabled="updateStatus === 'checking'"
-              type="button"
-              @click="checkForUpdates()"
-            >
-              {{ updateStatus === "checking" ? "检查中..." : "检查更新" }}
-            </button>
-            <button class="ghost-btn" type="button" @click="openLatestReleasePage">
-              下载最新版本
-            </button>
-          </div>
-        </div>
-        <div class="task-callout">
-          <strong>当前版本 v{{ currentVersion }}</strong>
-          <span>{{ updateStatusLabel }}</span>
-          <span v-if="latestVersion">最新版本：v{{ latestVersion }}</span>
-          <span v-if="updateCheckedAt">最近检查：{{ formatUpdateTime(updateCheckedAt) }}</span>
-        </div>
-        <div class="panel-head panel-head-sub">
-          <div>
-            <p class="eyebrow">历史</p>
-            <h3>最近任务</h3>
-          </div>
-          <div class="panel-actions">
-            <button class="ghost-btn" type="button" @click="clearHistory">
-              清空历史
-            </button>
-          </div>
-        </div>
-        <div class="history-list">
-          <div v-if="recentHistory.length === 0" class="empty-state">
-            还没有已完成任务记录。
-          </div>
-          <div v-for="entry in recentHistory" :key="entry.id" class="history-row">
-            <div>
-              <strong>{{ formatTaskType(entry.taskType) }}</strong>
-              <p>
-                {{ formatHistoryTime(entry.createdAt) }} · {{ entry.status }} · 成功
-                {{ entry.summary.success }}/{{ entry.summary.total }}
-              </p>
-            </div>
-            <button
-              v-if="entry.firstOutput"
-              class="ghost-btn"
-              type="button"
-              @click="openOutputFolder(entry.firstOutput)"
-            >
-              打开输出文件夹
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section v-if="activeSection === 'about'" class="panel settings-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">关于</p>
-            <h3>软件说明</h3>
-          </div>
-        </div>
-        <ul class="settings-list">
-          <li>支持格式化、文件解密、文件加密、字体加密和图片转换五类 EPUB 处理任务。</li>
-          <li>所有功能都支持单本、多本和目录扫描，适合连续处理多个文件。</li>
-          <li>字体加密支持按每本 EPUB 单独选择需要处理的字体范围。</li>
-          <li>处理完成后可在结果区直接打开输出文件夹，也可以查看跳过或失败原因。</li>
-          <li>如果队列里有多本书，当前文件处理完成后会自动切换到下一本。</li>
-        </ul>
+        </article>
       </section>
 
       <TaskConsole

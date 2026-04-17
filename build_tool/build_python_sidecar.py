@@ -61,6 +61,14 @@ def ensure_runtime_dependencies() -> None:
         )
 
 
+def sidecar_output_path() -> Path:
+    return DIST_DIR / SIDE_CAR_NAME
+
+
+def sidecar_exists() -> bool:
+    return sidecar_output_path().is_file()
+
+
 def build_sidecar() -> Path:
     ensure_pyinstaller()
     ensure_runtime_dependencies()
@@ -72,7 +80,7 @@ def build_sidecar() -> Path:
     work_dir.mkdir(parents=True, exist_ok=True)
     spec_dir.mkdir(parents=True, exist_ok=True)
 
-    target_path = DIST_DIR / SIDE_CAR_NAME
+    target_path = sidecar_output_path()
     if target_path.exists():
         target_path.unlink()
 
@@ -115,6 +123,11 @@ def build_sidecar() -> Path:
 
 
 def main() -> int:
+    ensure_only = "--ensure" in sys.argv[1:]
+    if ensure_only and sidecar_exists():
+        print(f"Python sidecar reused: {sidecar_output_path()}")
+        return 0
+
     target_path = build_sidecar()
     print(f"Python sidecar built: {target_path}")
     return 0

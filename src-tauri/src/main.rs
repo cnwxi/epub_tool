@@ -249,6 +249,11 @@ fn configure_backend_command(command: &mut Command, log_path: &Path) {
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
+fn configure_system_open_command(_command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    _command.creation_flags(CREATE_NO_WINDOW);
+}
+
 fn stream_utf8ish_lines<R, F>(reader: R, mut on_line: F) -> Result<(), String>
 where
     R: Read,
@@ -328,27 +333,41 @@ async fn list_font_targets(app: AppHandle, file_path: String) -> Result<FontTarg
 
 #[tauri::command]
 async fn open_path(app: AppHandle, path: String) -> Result<(), String> {
-    let status = if is_external_target(&path) {
+    let mut command = if is_external_target(&path) {
         if cfg!(target_os = "macos") {
-            Command::new("open").arg(&path).status()
+            let mut command = Command::new("open");
+            command.arg(&path);
+            command
         } else if cfg!(target_os = "windows") {
-            Command::new("cmd").args(["/C", "start", "", &path]).status()
+            let mut command = Command::new("cmd");
+            command.args(["/C", "start", "", &path]);
+            command
         } else {
-            Command::new("xdg-open").arg(&path).status()
+            let mut command = Command::new("xdg-open");
+            command.arg(&path);
+            command
         }
     } else {
         let resolved = resolve_path(&app, &path)?;
         if cfg!(target_os = "macos") {
-            Command::new("open").arg(&resolved).status()
+            let mut command = Command::new("open");
+            command.arg(&resolved);
+            command
         } else if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(["/C", "start", "", resolved.to_string_lossy().as_ref()])
-                .status()
+            let mut command = Command::new("cmd");
+            command.args(["/C", "start", "", resolved.to_string_lossy().as_ref()]);
+            command
         } else {
-            Command::new("xdg-open").arg(&resolved).status()
+            let mut command = Command::new("xdg-open");
+            command.arg(&resolved);
+            command
         }
-    }
-    .map_err(|error| format!("打开路径失败: {error}"))?;
+    };
+
+    configure_system_open_command(&mut command);
+    let status = command
+        .status()
+        .map_err(|error| format!("打开路径失败: {error}"))?;
 
     if status.success() {
         Ok(())

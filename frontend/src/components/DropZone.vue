@@ -34,7 +34,7 @@ const handleDrop = (event: DragEvent) => {
 
 <template>
   <section
-    class="dropzone"
+    class="dropzone glass-medium content-animated-block"
     :class="{ active: isActive }"
     @dragenter.prevent="handleDragEnter"
     @dragleave.prevent="handleDragLeave"
@@ -55,7 +55,7 @@ const handleDrop = (event: DragEvent) => {
       <button class="secondary-btn" type="button" @click="emit('scan-directory')">
         扫描目录
       </button>
-      <button class="ghost-btn" type="button" @click="emit('clear')">
+      <button class="ghost-btn task-action-btn" type="button" @click="emit('clear')">
         清空队列
       </button>
     </div>
