@@ -153,15 +153,37 @@ input {
   align-items: stretch;
 }
 
+.side-nav-frame {
+  position: relative;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.side-nav-shell {
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.side-nav-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .side-nav {
   display: grid;
   align-content: start;
   gap: 18px;
   position: relative;
   top: 0;
-  min-height: 0;
-  height: 100vh;
-  overflow: auto;
+  min-height: 100%;
+  height: auto;
+  overflow: visible;
   padding: 26px 18px;
   /* 调整左侧毛玻璃效果 */
   background: linear-gradient(180deg, rgba(34, 52, 75, 0.62), rgba(45, 67, 94, 0.18));
@@ -327,28 +349,87 @@ input {
   line-height: 1.45;
   color: rgba(249, 242, 230, 0.62);
 }
+.workspace-frame {
+  position: relative;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+.workspace-shell {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  background:
+    radial-gradient(circle at top left, rgba(232, 194, 122, 0.22), transparent 26%),
+    linear-gradient(180deg, rgba(246, 241, 232, 0.95) 0%, rgba(235, 228, 214, 0.12) 100%);
+  backdrop-filter: blur(24px) saturate(1.14);
+  -webkit-backdrop-filter: blur(24px) saturate(1.14);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.workspace-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
 
 .workspace {
   display: grid;
   align-content: start;
   justify-items: stretch;
   width: min(100%, 1720px);
-  min-height: 0;
-  height: 100%;
-  max-height: 100vh;
+  min-height: 100%;
+  height: auto;
   margin: 0 auto;
-  overflow-y: auto;
-  overflow-x: hidden;
   gap: 14px;
   padding: 22px;
-  background:
-    radial-gradient(circle at top left, rgba(232, 194, 122, 0.22), transparent 26%),
-    /* 调整右侧毛玻璃效果 */
-    linear-gradient(180deg, rgba(246, 241, 232, 0.95) 0%, rgba(235, 228, 214, 0.12) 100%); 
-  backdrop-filter: blur(24px) saturate(1.14);
-  -webkit-backdrop-filter: blur(24px) saturate(1.14);
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
   grid-auto-rows: min-content;
+}
+
+
+.custom-scrollbar {
+  position: absolute;
+  width: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease;
+  z-index: 30;
+  overflow: hidden;
+}
+
+.custom-scrollbar.visible {
+  opacity: 1;
+}
+
+.custom-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 6px 14px rgba(20, 33, 61, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  will-change: transform, height;
+}
+
+.custom-scrollbar-side {
+  top: 26px;
+  bottom: 26px;
+  right: 4px;
+}
+
+.custom-scrollbar-workspace {
+  top: 22px;
+  bottom: 22px;
+  right: 6px;
 }
 
 .update-toast {
@@ -1888,6 +1969,34 @@ input {
 }
 
 @media (max-width: 900px) {
+  .side-nav-frame {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .side-nav-shell {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .side-nav {
+    min-height: 0;
+    height: auto;
+  }
+
+  .workspace-shell {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .custom-scrollbar-side,
+  .custom-scrollbar-workspace {
+    display: none;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
     height: auto;
@@ -1938,51 +2047,4 @@ input {
   .masonry-board {
     grid-template-columns: 1fr;
   }
-}
-
-/* 左右主滚动区：保留滚动，但弱化滚动条视觉 */
-.side-nav,
-.workspace {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-}
-
-/* WebKit / Tauri(WebView) */
-.side-nav::-webkit-scrollbar,
-.workspace::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-.side-nav::-webkit-scrollbar-track,
-.workspace::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.side-nav::-webkit-scrollbar-corner,
-.workspace::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-.side-nav::-webkit-scrollbar-thumb,
-.workspace::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  min-height: 40px;
-}
-
-.side-nav::-webkit-scrollbar-thumb:hover,
-.workspace::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.24);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.side-nav::-webkit-scrollbar-thumb:active,
-.workspace::-webkit-scrollbar-thumb:active {
-  background: rgba(255, 255, 255, 0.3);
-  border: 2px solid transparent;
-  background-clip: padding-box;
 }

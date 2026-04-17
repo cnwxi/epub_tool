@@ -23,7 +23,7 @@
         "width": 1440,
         "height": 920,
         "minWidth": 960,
-        "minHeight": 920,
+        "minHeight": 700,
         "resizable": true,
         "transparent": true,
         "decorations": true

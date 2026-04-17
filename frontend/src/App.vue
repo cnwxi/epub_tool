@@ -193,7 +193,21 @@ const defaultLogPaths = [
 
 const masonryBoardRef = ref<HTMLElement | null>(null);
 const masonryBoardWidth = ref(0);
+const workspaceRef = ref<HTMLElement | null>(null);
+const sideNavShellRef = ref<HTMLElement | null>(null);
+const workspaceScrollbarTrackRef = ref<HTMLElement | null>(null);
+const sideNavScrollbarTrackRef = ref<HTMLElement | null>(null);
+
+const workspaceScrollbarVisible = ref(false);
+const workspaceScrollbarThumbHeight = ref(0);
+const workspaceScrollbarThumbTop = ref(0);
+
+const sideNavScrollbarVisible = ref(false);
+const sideNavScrollbarThumbHeight = ref(0);
+const sideNavScrollbarThumbTop = ref(0);
+
 let masonryResizeObserver: ResizeObserver | null = null;
+let customScrollbarResizeObserver: ResizeObserver | null = null;
 const handleMasonryWindowResize = () => {
   void measureMasonryBoard();
 };
@@ -210,6 +224,69 @@ const measureMasonryBoard = async () => {
   await nextTick();
   observeMasonryBoard();
   masonryBoardWidth.value = masonryBoardRef.value?.clientWidth ?? 0;
+};
+
+const clampScrollbarThumb = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const updateCustomScrollbar = (
+  element: HTMLElement | null,
+  trackElement: HTMLElement | null,
+  thumbHeightRef: { value: number },
+  thumbTopRef: { value: number },
+  visibleRef: { value: boolean },
+) => {
+  if (!element || typeof window === "undefined") {
+    thumbHeightRef.value = 0;
+    thumbTopRef.value = 0;
+    visibleRef.value = false;
+    return;
+  }
+
+  const { scrollTop, scrollHeight, clientHeight } = element;
+  const trackHeight = trackElement?.clientHeight ?? 0;
+  const overflow = scrollHeight - clientHeight;
+
+  if (overflow <= 1 || clientHeight <= 0 || trackHeight <= 0) {
+    thumbHeightRef.value = 0;
+    thumbTopRef.value = 0;
+    visibleRef.value = false;
+    return;
+  }
+
+  const rawThumbHeight = (clientHeight / scrollHeight) * trackHeight;
+  const thumbHeight = clampScrollbarThumb(rawThumbHeight, 36, trackHeight);
+  const maxThumbTravel = Math.max(trackHeight - thumbHeight, 0);
+  const scrollRatio = Math.min(Math.max(scrollTop / Math.max(overflow, 1), 0), 1);
+  const thumbTop = maxThumbTravel * scrollRatio;
+  thumbHeightRef.value = thumbHeight;
+  thumbTopRef.value = thumbTop;
+  visibleRef.value = true;
+};
+
+const updateWorkspaceScrollbar = () => {
+  updateCustomScrollbar(
+    workspaceRef.value,
+    workspaceScrollbarTrackRef.value,
+    workspaceScrollbarThumbHeight,
+    workspaceScrollbarThumbTop,
+    workspaceScrollbarVisible,
+  );
+};
+
+const updateSideNavScrollbar = () => {
+  updateCustomScrollbar(
+    sideNavShellRef.value,
+    sideNavScrollbarTrackRef.value,
+    sideNavScrollbarThumbHeight,
+    sideNavScrollbarThumbTop,
+    sideNavScrollbarVisible,
+  );
+};
+
+const updateAllCustomScrollbars = () => {
+  updateWorkspaceScrollbar();
+  updateSideNavScrollbar();
 };
 
 const normalizeSettings = (value: unknown): AppSettings => {
@@ -1533,6 +1610,26 @@ watch(() => masonryBoardRef.value, async () => {
   await measureMasonryBoard();
 }, { flush: "post" });
 
+watch(() => workspaceRef.value, async () => {
+  await nextTick();
+  updateAllCustomScrollbars();
+}, { flush: "post" });
+
+watch(() => sideNavShellRef.value, async () => {
+  await nextTick();
+  updateAllCustomScrollbars();
+}, { flush: "post" });
+
+watch(() => workspaceScrollbarTrackRef.value, async () => {
+  await nextTick();
+  updateAllCustomScrollbars();
+}, { flush: "post" });
+
+watch(() => sideNavScrollbarTrackRef.value, async () => {
+  await nextTick();
+  updateAllCustomScrollbars();
+}, { flush: "post" });
+
 watch(
   () => files.value.map((item) => item.path).join("|"),
   async (currentPaths, previousPaths) => {
@@ -1558,6 +1655,8 @@ watch(
         silent: true,
       });
     }
+    await nextTick();
+    updateAllCustomScrollbars();
   },
 );
 
@@ -1571,6 +1670,15 @@ watch(selectedFilePath, async (path) => {
     silent: true,
   });
 });
+
+watch(
+  () => [logs.value.length, result.value, activeSection.value, activeTask.value],
+  async () => {
+    await nextTick();
+    updateAllCustomScrollbars();
+  },
+  { deep: true },
+);
 
 watch(
   () => settings.value.keepHistoryCount,
@@ -1605,6 +1713,7 @@ let unlistenDrop: (() => void) | null = null;
 let motionMediaQuery: MediaQueryList | null = null;
 let removeMotionPreferenceListener: (() => void) | null = null;
 let removeMasonryResizeListener: (() => void) | null = null;
+let removeCustomScrollbarResizeListener: (() => void) | null = null;
 
 onMounted(async () => {
   if (typeof window !== "undefined") {
@@ -1643,8 +1752,38 @@ onMounted(async () => {
         window.removeEventListener("resize", handleMasonryWindowResize);
       };
     }
+
+    const handleCustomScrollbarViewportResize = () => {
+      updateAllCustomScrollbars();
+    };
+    window.addEventListener("resize", handleCustomScrollbarViewportResize);
+    removeCustomScrollbarResizeListener = () => {
+      window.removeEventListener("resize", handleCustomScrollbarViewportResize);
+    };
+
+    if (typeof ResizeObserver !== "undefined") {
+      customScrollbarResizeObserver = new ResizeObserver(() => {
+        updateAllCustomScrollbars();
+      });
+    }
   }
 
+  sideNavShellRef.value?.addEventListener("scroll", updateSideNavScrollbar, { passive: true });
+  workspaceRef.value?.addEventListener("scroll", updateWorkspaceScrollbar, { passive: true });
+  if (customScrollbarResizeObserver) {
+    if (sideNavShellRef.value) {
+      customScrollbarResizeObserver.observe(sideNavShellRef.value);
+    }
+    if (workspaceRef.value) {
+      customScrollbarResizeObserver.observe(workspaceRef.value);
+    }
+    if (sideNavScrollbarTrackRef.value) {
+      customScrollbarResizeObserver.observe(sideNavScrollbarTrackRef.value);
+    }
+    if (workspaceScrollbarTrackRef.value) {
+      customScrollbarResizeObserver.observe(workspaceScrollbarTrackRef.value);
+    }
+  }
   aboutAnimatedStats.value = { ...aboutStats.value };
   if (isTauriRuntime()) {
     try {
@@ -1666,6 +1805,8 @@ onMounted(async () => {
 
   if (!isTauriRuntime()) {
     await measureMasonryBoard();
+    await nextTick();
+    updateAllCustomScrollbars();
     return;
   }
   unlistenDrop = await getCurrentWindow().onDragDropEvent((event) => {
@@ -1684,7 +1825,8 @@ onMounted(async () => {
     }
     dragActive.value = false;
   });
-
+  await nextTick();
+  updateAllCustomScrollbars();
   await measureMasonryBoard();
 });
 
@@ -1694,6 +1836,11 @@ onBeforeUnmount(() => {
   }
   removeMotionPreferenceListener?.();
   removeMasonryResizeListener?.();
+  removeCustomScrollbarResizeListener?.();
+  sideNavShellRef.value?.removeEventListener("scroll", updateSideNavScrollbar);
+  workspaceRef.value?.removeEventListener("scroll", updateWorkspaceScrollbar);
+  customScrollbarResizeObserver?.disconnect();
+  customScrollbarResizeObserver = null;
   unlistenDrop?.();
 });
 
@@ -1702,569 +1849,601 @@ activeSection.value = normalizeSectionKey(activeSection.value);
 
 <template>
   <div class="app-shell">
-    <SideNav :active="activeSection" :items="sectionItems" @select="activeSection = $event" />
+    <!-- <SideNav :active="activeSection" :items="sectionItems" @select="activeSection = $event" /> -->
+    <div class="side-nav-frame">
+      <div ref="sideNavShellRef" class="side-nav-shell">
+        <SideNav :active="activeSection" :items="sectionItems" @select="activeSection = $event" />
+      </div>
+      <div
+        ref="sideNavScrollbarTrackRef"
+        class="custom-scrollbar custom-scrollbar-side"
+        :class="{ visible: sideNavScrollbarVisible }"
+        aria-hidden="true">
+        <div class="custom-scrollbar-thumb" :style="{
+          height: `${sideNavScrollbarThumbHeight}px`,
+          transform: `translateY(${sideNavScrollbarThumbTop}px)`,
+        }" />
+      </div>
+    </div>
 
-    <main class="workspace">
-      <section v-if="updateNoticeVisible && updateStatus === 'available'"
-        class="update-toast glass-strong workspace-animated-block">
-        <div class="update-toast-copy">
-          <p class="eyebrow">版本更新</p>
-          <strong class="content-animated-value">发现新版本 v{{ latestVersion }}</strong>
-          <p class="content-animated-value">{{ updateMessage }}</p>
-        </div>
-        <div class="update-toast-actions">
-          <button class="ghost-btn" type="button" @click="dismissUpdateNotice">
-            稍后
-          </button>
-          <button class="primary-btn" type="button" @click="openLatestReleasePage">
-            前往下载
-          </button>
-        </div>
-      </section>
+    <!-- <main class="workspace"> -->
+    <div class="workspace-frame">
+      <div ref="workspaceRef" class="workspace-shell">
+        <main class="workspace">
+          <!-- <main ref="workspaceRef" class="workspace"> -->
+          <section v-if="updateNoticeVisible && updateStatus === 'available'"
+            class="update-toast glass-strong workspace-animated-block">
+            <div class="update-toast-copy">
+              <p class="eyebrow">版本更新</p>
+              <strong class="content-animated-value">发现新版本 v{{ latestVersion }}</strong>
+              <p class="content-animated-value">{{ updateMessage }}</p>
+            </div>
+            <div class="update-toast-actions">
+              <button class="ghost-btn" type="button" @click="dismissUpdateNotice">
+                稍后
+              </button>
+              <button class="primary-btn" type="button" @click="openLatestReleasePage">
+                前往下载
+              </button>
+            </div>
+          </section>
 
-      <header class="workspace-header workspace-animated-header">
-        <div>
-          <p class="eyebrow">{{ headerEyebrow }}</p>
-          <h2 class="content-animated-value">{{ activeTitle }}</h2>
-          <p class="muted content-animated-value">{{ activeDescription }}</p>
-        </div>
-      </header>
+          <header class="workspace-header workspace-animated-header">
+            <div>
+              <p class="eyebrow">{{ headerEyebrow }}</p>
+              <h2 class="content-animated-value">{{ activeTitle }}</h2>
+              <p class="muted content-animated-value">{{ activeDescription }}</p>
+            </div>
+          </header>
 
-      <template v-if="isTaskSection">
-        <DropZone :is-active="dragActive" :file-count="files.length" @drag-state="dragActive = $event"
-          @drop-files="handleDropZoneFiles" @pick-files="pickFiles" @scan-directory="scanInputDirectory"
-          @clear="clearFiles" />
+          <template v-if="isTaskSection">
+            <DropZone :is-active="dragActive" :file-count="files.length" @drag-state="dragActive = $event"
+              @drop-files="handleDropZoneFiles" @pick-files="pickFiles" @scan-directory="scanInputDirectory"
+              @clear="clearFiles" />
 
-        <section ref="masonryBoardRef" class="masonry-board content-animated-grid"
-          :style="{ '--masonry-columns': String(masonryColumnsCount) }">
-          <div v-for="(column, columnIndex) in masonryColumns" :key="`masonry-col-${columnIndex}`"
-            class="masonry-column">
-            <template v-for="card in column" :key="card.key">
-              <article v-if="card.key === 'task-config'" class="panel task-panel glass-medium content-animated-block">
-                <div class="panel-head">
-                  <div>
-                    <p class="eyebrow">任务配置</p>
-                    <h3>输出与执行</h3>
-                  </div>
-                  <div class="panel-actions">
-                    <button class="ghost-btn task-action-btn" type="button" @click="pickOutputDirectory">
-                      选择输出目录
-                    </button>
-                    <button class="ghost-btn task-action-btn" type="button" @click="resetOutput">
-                      重置输出路径
-                    </button>
-                  </div>
-                </div>
-
-                <div class="settings-stack">
-                  <label class="field glass-soft task-field-card">
-                    <span>输出目录</span>
-                    <input :value="outputDir || '默认：源文件同级目录'" readonly type="text" />
-                  </label>
-
-                  <div class="task-callout glass-soft">
-                    <strong class="content-animated-value">{{ activeTaskLabel }}</strong>
-                    <span class="content-animated-value">{{ activeTaskDescription }}</span>
-                  </div>
-
-                  <div v-if="taskRunning || fontLoading" class="task-progress glass-soft">
-                    <div class="task-progress-head">
-                      <strong class="content-animated-value">{{ visibleProgressText }}</strong>
-                      <span class="content-animated-value">{{ visibleProgressValue }}%</span>
+            <section ref="masonryBoardRef" class="masonry-board content-animated-grid"
+              :style="{ '--masonry-columns': String(masonryColumnsCount) }">
+              <div v-for="(column, columnIndex) in masonryColumns" :key="`masonry-col-${columnIndex}`"
+                class="masonry-column">
+                <template v-for="card in column" :key="card.key">
+                  <article v-if="card.key === 'task-config'"
+                    class="panel task-panel glass-medium content-animated-block">
+                    <div class="panel-head">
+                      <div>
+                        <p class="eyebrow">任务配置</p>
+                        <h3>输出与执行</h3>
+                      </div>
+                      <div class="panel-actions">
+                        <button class="ghost-btn task-action-btn" type="button" @click="pickOutputDirectory">
+                          选择输出目录
+                        </button>
+                        <button class="ghost-btn task-action-btn" type="button" @click="resetOutput">
+                          重置输出路径
+                        </button>
+                      </div>
                     </div>
-                    <div class="task-progress-track">
-                      <div class="task-progress-fill" :style="{ width: `${visibleProgressValue}%` }" />
-                    </div>
-                    <p v-if="visibleProgressMessage" class="task-progress-message">
-                      <span class="content-animated-value">{{ visibleProgressMessage }}</span>
-                    </p>
-                  </div>
 
-                  <button class="primary-btn wide" :disabled="taskRunning || files.length === 0" type="button"
-                    @click="runSelectedTask">
-                    {{ taskRunning ? "处理中..." : "开始执行" }}
-                  </button>
-                </div>
-              </article>
+                    <div class="settings-stack">
+                      <label class="field glass-soft task-field-card">
+                        <span>输出目录</span>
+                        <input :value="outputDir || '默认：源文件同级目录'" readonly type="text" />
+                      </label>
 
-              <section v-else-if="card.key === 'font-panel'"
-                class="panel font-panel glass-medium content-animated-block">
-                <div class="panel-head">
-                  <div>
-                    <p class="eyebrow">字体范围</p>
-                    <h3>文件级选择</h3>
-                    <p class="muted">
-                      {{ selectedFile ? `当前聚焦：${selectedFile.name}` : "先从右侧队列选择一本 EPUB。" }}
-                    </p>
-                  </div>
-                  <div class="panel-actions">
-                    <button class="ghost-btn task-action-btn" :disabled="fontLoading || files.length === 0"
-                      type="button" @click="loadFontFamilies({ force: true })">
-                      {{ fontLoading ? "刷新中..." : "刷新字体列表" }}
-                    </button>
-                  </div>
-                </div>
-                <div class="font-grid">
-                  <div v-if="!selectedFile" class="empty-state">
-                    队列为空，暂时没有可配置的字体目标。
-                  </div>
-                  <div v-else class="font-card font-card-focus glass-soft">
-                    <strong>{{ selectedFile.name }}</strong>
-                    <p>{{ selectedFile.fontFamilies.length }} 个可选字体</p>
-                    <label v-for="family in selectedFile.fontFamilies" :key="`${selectedFile.path}-${family}`"
-                      class="font-option">
-                      <input :disabled="selectedFile.fontLoadStatus === 'loading'"
-                        :checked="selectedFile.selectedFontFamilies.includes(family)" type="checkbox"
-                        @change="toggleFontFamily(selectedFile.path, family)" />
-                      <span>{{ family }}</span>
-                    </label>
-                    <p v-if="selectedFileFontMessage" class="muted">
-                      {{ selectedFileFontMessage }}
-                    </p>
-                  </div>
-                </div>
-              </section>
+                      <div class="task-callout glass-soft">
+                        <strong class="content-animated-value">{{ activeTaskLabel }}</strong>
+                        <span class="content-animated-value">{{ activeTaskDescription }}</span>
+                      </div>
 
-              <article v-else-if="card.key === 'file-queue'"
-                class="panel task-panel glass-medium content-animated-block">
-                <div class="panel-head">
-                  <div>
-                    <p class="eyebrow">文件队列</p>
-                    <h3>待处理列表</h3>
-                  </div>
-                </div>
-
-                <div class="file-table">
-                  <div v-if="files.length === 0" class="empty-state">
-                    还没有加入 EPUB 文件。
-                  </div>
-                  <div v-for="file in files" :key="file.path" class="file-row"
-                    :class="{ active: file.path === selectedFilePath }">
-                    <button class="file-select" type="button" @click="selectFile(file.path)">
-                      <span class="file-row-head">
-                        <strong>{{ file.name }}</strong>
-                        <span v-if="file.path === selectedFilePath" class="file-tag">当前</span>
-                      </span>
-                      <p>{{ file.path }}</p>
-                    </button>
-                    <button class="ghost-btn" type="button" @click.stop="removeFile(file.path)">
-                      移除
-                    </button>
-                  </div>
-                </div>
-              </article>
-
-              <article v-else-if="card.key === 'task-log'"
-                class="panel panel-console glass-medium content-animated-block">
-                <div class="panel-head">
-                  <div>
-                    <p class="eyebrow">过程</p>
-                    <h3>处理日志</h3>
-                  </div>
-                  <div class="panel-actions">
-                    <button class="ghost-btn task-action-btn" type="button" @click="openLogFile">
-                      打开处理日志
-                    </button>
-                    <button class="ghost-btn task-action-btn" type="button" @click="clearLogs">
-                      清空面板
-                    </button>
-                  </div>
-                </div>
-                <div class="log-list">
-                  <div v-if="logs.length === 0" class="log-empty">尚未执行任务。</div>
-                  <div v-for="(log, index) in [...logs].reverse()" :key="`${log.event}-${index}`"
-                    class="log-row glass-soft" :class="log.level ?? log.status">
-                    <span class="log-event">{{ log.event }}</span>
-                    <span class="log-message">{{ log.message }}</span>
-                  </div>
-                </div>
-              </article>
-
-              <article v-else-if="card.key === 'task-result'"
-                class="panel panel-result glass-medium content-animated-block">
-                <div class="panel-head">
-                  <div>
-                    <p class="eyebrow">结果</p>
-                    <h3>最近一次执行摘要</h3>
-                  </div>
-                </div>
-                <div v-if="!result" class="result-empty">还没有可展示的执行结果。</div>
-                <div v-else class="result-block">
-                  <div class="result-metrics">
-                    <div class="result-metric-card total">
-                      <strong class="content-animated-value">{{ result.summary.total }}</strong>
-                      <span>总文件</span>
-                    </div>
-                    <div class="result-metric-card success">
-                      <strong class="content-animated-value">{{ result.summary.success }}</strong>
-                      <span>成功</span>
-                    </div>
-                    <div class="result-metric-card error">
-                      <strong class="content-animated-value">{{ result.summary.failed }}</strong>
-                      <span>失败</span>
-                    </div>
-                    <div class="result-metric-card skip">
-                      <strong class="content-animated-value">{{ result.summary.skipped }}</strong>
-                      <span>跳过</span>
-                    </div>
-                  </div>
-
-                  <div v-if="result.outputs.length > 0" class="result-detail-block">
-                    <div class="result-detail-head">
-                      <strong>成功</strong>
-                      <span class="content-animated-value">{{ result.outputs.length }} 项</span>
-                    </div>
-                    <div class="result-output-list">
-                      <button v-for="output in result.outputs" :key="output"
-                        class="result-output-row success glass-soft" type="button" @click="openOutputFolder(output)">
-                        <div class="result-row-head">
-                          <strong>{{ output.split(/[\\/]/).pop() ?? output }}</strong>
-                          <span class="result-status-tag success">成功</span>
+                      <div v-if="taskRunning || fontLoading" class="task-progress glass-soft">
+                        <div class="task-progress-head">
+                          <strong class="content-animated-value">{{ visibleProgressText }}</strong>
+                          <span class="content-animated-value">{{ visibleProgressValue }}%</span>
                         </div>
-                        <span>{{ output }}</span>
+                        <div class="task-progress-track">
+                          <div class="task-progress-fill" :style="{ width: `${visibleProgressValue}%` }" />
+                        </div>
+                        <p v-if="visibleProgressMessage" class="task-progress-message">
+                          <span class="content-animated-value">{{ visibleProgressMessage }}</span>
+                        </p>
+                      </div>
+
+                      <button class="primary-btn wide" :disabled="taskRunning || files.length === 0" type="button"
+                        @click="runSelectedTask">
+                        {{ taskRunning ? "处理中..." : "开始执行" }}
                       </button>
                     </div>
-                  </div>
+                  </article>
 
-                  <div v-if="result.errors.length > 0" class="result-detail-block">
-                    <div class="result-detail-head">
-                      <strong>失败</strong>
-                      <span class="content-animated-value">{{ result.errors.length }} 项</span>
+                  <section v-else-if="card.key === 'font-panel'"
+                    class="panel font-panel glass-medium content-animated-block">
+                    <div class="panel-head">
+                      <div>
+                        <p class="eyebrow">字体范围</p>
+                        <h3>文件级选择</h3>
+                        <p class="muted">
+                          {{ selectedFile ? `当前聚焦：${selectedFile.name}` : "先从右侧队列选择一本 EPUB。" }}
+                        </p>
+                      </div>
+                      <div class="panel-actions">
+                        <button class="ghost-btn task-action-btn" :disabled="fontLoading || files.length === 0"
+                          type="button" @click="loadFontFamilies({ force: true })">
+                          {{ fontLoading ? "刷新中..." : "刷新字体列表" }}
+                        </button>
+                      </div>
                     </div>
-                    <div class="result-detail-list">
-                      <div v-for="item in result.errors" :key="`${item.input_file}-${item.message}`"
-                        class="result-detail-row error glass-soft">
-                        <div class="result-row-head">
-                          <strong>{{ item.input_file.split(/[\\/]/).pop() ?? item.input_file }}</strong>
-                          <span class="result-status-tag error">失败</span>
+                    <div class="font-grid">
+                      <div v-if="!selectedFile" class="empty-state">
+                        队列为空，暂时没有可配置的字体目标。
+                      </div>
+                      <div v-else class="font-card font-card-focus glass-soft">
+                        <strong>{{ selectedFile.name }}</strong>
+                        <p>{{ selectedFile.fontFamilies.length }} 个可选字体</p>
+                        <label v-for="family in selectedFile.fontFamilies" :key="`${selectedFile.path}-${family}`"
+                          class="font-option">
+                          <input :disabled="selectedFile.fontLoadStatus === 'loading'"
+                            :checked="selectedFile.selectedFontFamilies.includes(family)" type="checkbox"
+                            @change="toggleFontFamily(selectedFile.path, family)" />
+                          <span>{{ family }}</span>
+                        </label>
+                        <p v-if="selectedFileFontMessage" class="muted">
+                          {{ selectedFileFontMessage }}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <article v-else-if="card.key === 'file-queue'"
+                    class="panel task-panel glass-medium content-animated-block">
+                    <div class="panel-head">
+                      <div>
+                        <p class="eyebrow">文件队列</p>
+                        <h3>待处理列表</h3>
+                      </div>
+                    </div>
+
+                    <div class="file-table">
+                      <div v-if="files.length === 0" class="empty-state">
+                        还没有加入 EPUB 文件。
+                      </div>
+                      <div v-for="file in files" :key="file.path" class="file-row"
+                        :class="{ active: file.path === selectedFilePath }">
+                        <button class="file-select" type="button" @click="selectFile(file.path)">
+                          <span class="file-row-head">
+                            <strong>{{ file.name }}</strong>
+                            <span v-if="file.path === selectedFilePath" class="file-tag">当前</span>
+                          </span>
+                          <p>{{ file.path }}</p>
+                        </button>
+                        <button class="ghost-btn" type="button" @click.stop="removeFile(file.path)">
+                          移除
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+
+                  <article v-else-if="card.key === 'task-log'"
+                    class="panel panel-console glass-medium content-animated-block">
+                    <div class="panel-head">
+                      <div>
+                        <p class="eyebrow">过程</p>
+                        <h3>处理日志</h3>
+                      </div>
+                      <div class="panel-actions">
+                        <button class="ghost-btn task-action-btn" type="button" @click="openLogFile">
+                          打开处理日志
+                        </button>
+                        <button class="ghost-btn task-action-btn" type="button" @click="clearLogs">
+                          清空面板
+                        </button>
+                      </div>
+                    </div>
+                    <div class="log-list">
+                      <div v-if="logs.length === 0" class="log-empty">尚未执行任务。</div>
+                      <div v-for="(log, index) in [...logs].reverse()" :key="`${log.event}-${index}`"
+                        class="log-row glass-soft" :class="log.level ?? log.status">
+                        <span class="log-event">{{ log.event }}</span>
+                        <span class="log-message">{{ log.message }}</span>
+                      </div>
+                    </div>
+                  </article>
+
+                  <article v-else-if="card.key === 'task-result'"
+                    class="panel panel-result glass-medium content-animated-block">
+                    <div class="panel-head">
+                      <div>
+                        <p class="eyebrow">结果</p>
+                        <h3>最近一次执行摘要</h3>
+                      </div>
+                    </div>
+                    <div v-if="!result" class="result-empty">还没有可展示的执行结果。</div>
+                    <div v-else class="result-block">
+                      <div class="result-metrics">
+                        <div class="result-metric-card total">
+                          <strong class="content-animated-value">{{ result.summary.total }}</strong>
+                          <span>总文件</span>
                         </div>
-                        <p>{{ item.message }}</p>
-                        <span>{{ item.input_file }}</span>
+                        <div class="result-metric-card success">
+                          <strong class="content-animated-value">{{ result.summary.success }}</strong>
+                          <span>成功</span>
+                        </div>
+                        <div class="result-metric-card error">
+                          <strong class="content-animated-value">{{ result.summary.failed }}</strong>
+                          <span>失败</span>
+                        </div>
+                        <div class="result-metric-card skip">
+                          <strong class="content-animated-value">{{ result.summary.skipped }}</strong>
+                          <span>跳过</span>
+                        </div>
+                      </div>
+
+                      <div v-if="result.outputs.length > 0" class="result-detail-block">
+                        <div class="result-detail-head">
+                          <strong>成功</strong>
+                          <span class="content-animated-value">{{ result.outputs.length }} 项</span>
+                        </div>
+                        <div class="result-output-list">
+                          <button v-for="output in result.outputs" :key="output"
+                            class="result-output-row success glass-soft" type="button"
+                            @click="openOutputFolder(output)">
+                            <div class="result-row-head">
+                              <strong>{{ output.split(/[\\/]/).pop() ?? output }}</strong>
+                              <span class="result-status-tag success">成功</span>
+                            </div>
+                            <span>{{ output }}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div v-if="result.errors.length > 0" class="result-detail-block">
+                        <div class="result-detail-head">
+                          <strong>失败</strong>
+                          <span class="content-animated-value">{{ result.errors.length }} 项</span>
+                        </div>
+                        <div class="result-detail-list">
+                          <div v-for="item in result.errors" :key="`${item.input_file}-${item.message}`"
+                            class="result-detail-row error glass-soft">
+                            <div class="result-row-head">
+                              <strong>{{ item.input_file.split(/[\\/]/).pop() ?? item.input_file }}</strong>
+                              <span class="result-status-tag error">失败</span>
+                            </div>
+                            <p>{{ item.message }}</p>
+                            <span>{{ item.input_file }}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div v-if="result.skipped.length > 0" class="result-detail-block">
+                        <div class="result-detail-head">
+                          <strong>跳过</strong>
+                          <span class="content-animated-value">{{ result.skipped.length }} 项</span>
+                        </div>
+                        <div class="result-detail-list">
+                          <div v-for="item in result.skipped" :key="`${item.input_file}-${item.message}`"
+                            class="result-detail-row skip glass-soft">
+                            <div class="result-row-head">
+                              <strong>{{ item.input_file.split(/[\\/]/).pop() ?? item.input_file }}</strong>
+                              <span class="result-status-tag skip">跳过</span>
+                            </div>
+                            <p>{{ item.message }}</p>
+                            <span>{{ item.input_file }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                </template>
+              </div>
+            </section>
+          </template>
+
+          <!-- <section v-if="activeSection === 'settings'" class="panel settings-panel section-animated-panel"> -->
+          <section v-if="activeSection === 'settings'" class="settings-panel section-animated-panel">
+            <section class="settings-overview section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">状态总览</p>
+                  <h3>当前设置状态</h3>
+                </div>
+              </div>
+              <div class="settings-status-grid">
+                <article v-for="item in settingsStatusItems" :key="item.label"
+                  class="settings-status-card settings-interactive-card glass-medium">
+                  <span>{{ item.label }}</span>
+                  <strong :key="`${item.label}-${item.value}`" class="content-animated-value">
+                    {{ item.value }}
+                  </strong>
+                </article>
+              </div>
+            </section>
+
+            <section class="settings-block section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">更新</p>
+                  <h3>版本更新</h3>
+                </div>
+                <div class="panel-actions">
+                  <button class="ghost-btn settings-action-btn" :disabled="updateStatus === 'checking'" type="button"
+                    @click="checkForUpdates()">
+                    {{ updateStatus === "checking" ? "检查中..." : "检查更新" }}
+                  </button>
+                  <button class="ghost-btn settings-action-btn" type="button" @click="openLatestReleasePage">
+                    下载最新版本
+                  </button>
+                </div>
+              </div>
+              <div class="settings-update-card settings-interactive-card glass-medium">
+                <div class="settings-update-copy">
+                  <strong :key="`current-version-${currentVersion}`" class="content-animated-value">
+                    当前版本 v{{ currentVersion }}
+                  </strong>
+                  <span :key="`update-status-${updateStatusLabel}`" class="content-animated-value">
+                    {{ updateStatusLabel }}
+                  </span>
+                  <span v-if="latestVersion" :key="`latest-version-${latestVersion}`" class="content-animated-value">
+                    最新版本：v{{ latestVersion }}
+                  </span>
+                  <span v-if="updateCheckedAt" :key="`checked-at-${updateCheckedAt}`" class="content-animated-value">
+                    最近检查：{{ formatUpdateTime(updateCheckedAt) }}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-block section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">偏好设置</p>
+                  <h3>使用偏好</h3>
+                </div>
+              </div>
+              <div class="settings-preference-grid">
+                <label class="settings-preference-card settings-interactive-card glass-medium">
+                  <div>
+                    <strong>自动打开输出文件夹</strong>
+                    <p>任务完成后直接定位到输出目录。</p>
+                  </div>
+                  <input v-model="settings.autoOpenOutputFolder" type="checkbox" />
+                </label>
+                <label class="settings-preference-card settings-interactive-card glass-medium">
+                  <div>
+                    <strong>自动打开处理日志</strong>
+                    <p>便于立刻回看处理细节。</p>
+                  </div>
+                  <input v-model="settings.autoOpenLogFile" type="checkbox" />
+                </label>
+                <label class="settings-preference-card settings-interactive-card glass-medium">
+                  <div>
+                    <strong>启动时自动检查更新</strong>
+                    <p>自动检查 GitHub Release 最新版本。</p>
+                  </div>
+                  <input v-model="settings.autoCheckUpdates" type="checkbox" />
+                </label>
+                <label
+                  class="settings-preference-card settings-preference-card-number settings-interactive-card glass-medium">
+                  <div>
+                    <strong>历史记录条数</strong>
+                    <p>控制最近任务列表的保留上限。</p>
+                  </div>
+                  <input v-model.number="settings.keepHistoryCount" min="1" max="30" type="number" />
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-block section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">日志工具</p>
+                  <h3>日志位置</h3>
+                </div>
+                <div class="panel-actions">
+                  <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button"
+                    @click="openLogFile">
+                    打开日志文件
+                  </button>
+                  <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button"
+                    @click="openCurrentLogDirectory">
+                    打开日志目录
+                  </button>
+                </div>
+              </div>
+              <div class="settings-log-card settings-interactive-card glass-medium">
+                <span>当前日志文件</span>
+                <strong>{{ currentLogPath || "开发环境默认写入仓库根目录的 log.txt。" }}</strong>
+              </div>
+            </section>
+
+            <section class="settings-block section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">历史</p>
+                  <h3>最近任务</h3>
+                </div>
+                <div class="panel-actions">
+                  <button class="ghost-btn settings-action-btn" type="button" @click="clearHistory">
+                    清空历史
+                  </button>
+                </div>
+              </div>
+              <div class="history-list">
+                <div v-if="recentHistory.length === 0" class="empty-state">
+                  还没有已完成任务记录。
+                </div>
+                <div v-for="entry in recentHistory" :key="entry.id"
+                  class="history-row settings-interactive-card glass-medium">
+                  <div>
+                    <strong>{{ formatTaskType(entry.taskType) }}</strong>
+                    <p>
+                      {{ formatHistoryTime(entry.createdAt) }} · {{ entry.status }} · 成功
+                      {{ entry.summary.success }}/{{ entry.summary.total }}
+                    </p>
+                  </div>
+                  <button v-if="entry.firstOutput" class="ghost-btn settings-action-btn" type="button"
+                    @click="openOutputFolder(entry.firstOutput)">
+                    打开输出文件夹
+                  </button>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <!-- <section v-if="activeSection === 'about'" class="panel about-panel glass-soft section-animated-panel"> -->
+          <section v-if="activeSection === 'about'" class="about-panel section-animated-panel">
+            <section class="about-dashboard section-animated-block">
+              <article class="about-card glass-medium">
+                <div class="about-dashboard-head">
+                  <div class="about-card-head">
+                    <p class="eyebrow">处理统计</p>
+                    <h4>累计处理概览</h4>
+                  </div>
+                  <p class="muted">{{ aboutSummary }}</p>
+                </div>
+                <div class="about-dashboard-body">
+                  <div class="about-chart-wrap">
+                    <div class="about-chart glass-medium" :style="aboutChartStyle">
+                      <div class="about-chart-core">
+                        <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
+                        <span>累计处理</span>
+                      </div>
+                    </div>
+                    <div class="about-chart-legend">
+                      <span class="about-legend-item success">
+                        <i />
+                        成功
+                      </span>
+                      <span class="about-legend-item skip">
+                        <i />
+                        跳过
+                      </span>
+                      <span class="about-legend-item error">
+                        <i />
+                        失败
+                      </span>
+                    </div>
+                  </div>
+                  <div class="about-metric-stack">
+                    <div class="about-metric about-metric-wide total glass-medium">
+                      <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
+                      <span>总数</span>
+                      <small>占比 100%</small>
+                    </div>
+                    <div class="about-metric-row">
+                      <div class="about-metric success glass-medium" :style="aboutMetricDistribution.success.style">
+                        <strong class="content-animated-value">{{ aboutAnimatedStats.success }}</strong>
+                        <span>成功</span>
+                        <small>占比 {{ aboutMetricDistribution.success.percent }}</small>
+                      </div>
+                      <div class="about-metric skip glass-medium" :style="aboutMetricDistribution.skipped.style">
+                        <strong class="content-animated-value">{{ aboutAnimatedStats.skipped }}</strong>
+                        <span>跳过</span>
+                        <small>占比 {{ aboutMetricDistribution.skipped.percent }}</small>
+                      </div>
+                      <div class="about-metric error glass-medium" :style="aboutMetricDistribution.failed.style">
+                        <strong class="content-animated-value">{{ aboutAnimatedStats.failed }}</strong>
+                        <span>失败</span>
+                        <small>占比 {{ aboutMetricDistribution.failed.percent }}</small>
                       </div>
                     </div>
                   </div>
-
-                  <div v-if="result.skipped.length > 0" class="result-detail-block">
-                    <div class="result-detail-head">
-                      <strong>跳过</strong>
-                      <span class="content-animated-value">{{ result.skipped.length }} 项</span>
-                    </div>
-                    <div class="result-detail-list">
-                      <div v-for="item in result.skipped" :key="`${item.input_file}-${item.message}`"
-                        class="result-detail-row skip glass-soft">
-                        <div class="result-row-head">
-                          <strong>{{ item.input_file.split(/[\\/]/).pop() ?? item.input_file }}</strong>
-                          <span class="result-status-tag skip">跳过</span>
-                        </div>
-                        <p>{{ item.message }}</p>
-                        <span>{{ item.input_file }}</span>
-                      </div>
-                    </div>
-                  </div>
+                </div>
+                <div v-if="!aboutHasStats" class="about-dashboard-empty">
+                  还没有累计处理记录。执行任意 EPUB 任务后，这里会自动开始统计。
                 </div>
               </article>
-            </template>
-          </div>
-        </section>
-      </template>
+            </section>
 
-      <!-- <section v-if="activeSection === 'settings'" class="panel settings-panel section-animated-panel"> -->
-      <section v-if="activeSection === 'settings'" class="settings-panel section-animated-panel">
-        <section class="settings-overview section-animated-block glass-medium">
-          <div class="settings-block-head">
-            <div>
-              <p class="eyebrow">状态总览</p>
-              <h3>当前设置状态</h3>
-            </div>
-          </div>
-          <div class="settings-status-grid">
-            <article v-for="item in settingsStatusItems" :key="item.label"
-              class="settings-status-card settings-interactive-card glass-medium">
-              <span>{{ item.label }}</span>
-              <strong :key="`${item.label}-${item.value}`" class="content-animated-value">
-                {{ item.value }}
-              </strong>
-            </article>
-          </div>
-        </section>
+            <section class="about-hero glass-medium section-animated-block">
+              <p class="eyebrow">软件说明</p>
+              <h3>Epub Tool 能做什么</h3>
+              <p class="muted">
+                面向 EPUB 批量处理场景，当前提供五类处理能力，并统一支持文件导入、目录扫描、结果回看与日志定位。
+              </p>
+            </section>
 
-        <section class="settings-block section-animated-block glass-medium">
-          <div class="settings-block-head">
-            <div>
-              <p class="eyebrow">更新</p>
-              <h3>版本更新</h3>
-            </div>
-            <div class="panel-actions">
-              <button class="ghost-btn settings-action-btn" :disabled="updateStatus === 'checking'" type="button"
-                @click="checkForUpdates()">
-                {{ updateStatus === "checking" ? "检查中..." : "检查更新" }}
-              </button>
-              <button class="ghost-btn settings-action-btn" type="button" @click="openLatestReleasePage">
-                下载最新版本
-              </button>
-            </div>
-          </div>
-          <div class="settings-update-card settings-interactive-card glass-medium">
-            <div class="settings-update-copy">
-              <strong :key="`current-version-${currentVersion}`" class="content-animated-value">
-                当前版本 v{{ currentVersion }}
-              </strong>
-              <span :key="`update-status-${updateStatusLabel}`" class="content-animated-value">
-                {{ updateStatusLabel }}
-              </span>
-              <span v-if="latestVersion" :key="`latest-version-${latestVersion}`" class="content-animated-value">
-                最新版本：v{{ latestVersion }}
-              </span>
-              <span v-if="updateCheckedAt" :key="`checked-at-${updateCheckedAt}`" class="content-animated-value">
-                最近检查：{{ formatUpdateTime(updateCheckedAt) }}
-              </span>
-            </div>
-          </div>
-        </section>
+            <section class="about-summary-grid section-animated-block">
+              <article class="about-summary-card glass-medium">
+                <strong>5 类功能</strong>
+                <span>格式化、解密、加密、字体加密、图片转换</span>
+              </article>
+              <article class="about-summary-card glass-medium">
+                <strong>3 种输入方式</strong>
+                <span>单文件、多文件、目录扫描</span>
+              </article>
+              <article class="about-summary-card glass-medium">
+                <strong>独立输出规则</strong>
+                <span>每个子功能分别保存自己的默认输出目录</span>
+              </article>
+            </section>
 
-        <section class="settings-block section-animated-block glass-medium">
-          <div class="settings-block-head">
-            <div>
-              <p class="eyebrow">偏好设置</p>
-              <h3>使用偏好</h3>
-            </div>
-          </div>
-          <div class="settings-preference-grid">
-            <label class="settings-preference-card settings-interactive-card glass-medium">
-              <div>
-                <strong>自动打开输出文件夹</strong>
-                <p>任务完成后直接定位到输出目录。</p>
-              </div>
-              <input v-model="settings.autoOpenOutputFolder" type="checkbox" />
-            </label>
-            <label class="settings-preference-card settings-interactive-card glass-medium">
-              <div>
-                <strong>自动打开处理日志</strong>
-                <p>便于立刻回看处理细节。</p>
-              </div>
-              <input v-model="settings.autoOpenLogFile" type="checkbox" />
-            </label>
-            <label class="settings-preference-card settings-interactive-card glass-medium">
-              <div>
-                <strong>启动时自动检查更新</strong>
-                <p>自动检查 GitHub Release 最新版本。</p>
-              </div>
-              <input v-model="settings.autoCheckUpdates" type="checkbox" />
-            </label>
-            <label
-              class="settings-preference-card settings-preference-card-number settings-interactive-card glass-medium">
-              <div>
-                <strong>历史记录条数</strong>
-                <p>控制最近任务列表的保留上限。</p>
-              </div>
-              <input v-model.number="settings.keepHistoryCount" min="1" max="30" type="number" />
-            </label>
-          </div>
-        </section>
+            <section class="about-grid section-animated-block">
+              <article class="about-card glass-medium">
+                <div class="about-card-head">
+                  <p class="eyebrow">功能范围</p>
+                  <h4>支持的处理能力</h4>
+                </div>
+                <div class="about-list">
+                  <span>支持格式化、文件解密、文件加密、字体加密和图片转换五类 EPUB 任务。</span>
+                  <span>所有功能都支持单本、多本和目录扫描。</span>
+                </div>
+              </article>
 
-        <section class="settings-block section-animated-block glass-medium">
-          <div class="settings-block-head">
-            <div>
-              <p class="eyebrow">日志工具</p>
-              <h3>日志位置</h3>
-            </div>
-            <div class="panel-actions">
-              <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button" @click="openLogFile">
-                打开日志文件
-              </button>
-              <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button"
-                @click="openCurrentLogDirectory">
-                打开日志目录
-              </button>
-            </div>
-          </div>
-          <div class="settings-log-card settings-interactive-card glass-medium">
-            <span>当前日志文件</span>
-            <strong>{{ currentLogPath || "开发环境默认写入仓库根目录的 log.txt。" }}</strong>
-          </div>
-        </section>
+              <article class="about-card glass-medium">
+                <div class="about-card-head">
+                  <p class="eyebrow">处理行为</p>
+                  <h4>执行方式说明</h4>
+                </div>
+                <div class="about-list">
+                  <span>字体加密支持按每本 EPUB 单独选择字体范围后再批量执行。</span>
+                  <span>处理完成后可在结果区打开输出文件夹，并查看失败或跳过原因。</span>
+                  <span>队列中存在多本文件时，当前文件处理完成后会自动切换到下一本。</span>
+                </div>
+              </article>
+            </section>
 
-        <section class="settings-block section-animated-block glass-medium">
-          <div class="settings-block-head">
-            <div>
-              <p class="eyebrow">历史</p>
-              <h3>最近任务</h3>
-            </div>
-            <div class="panel-actions">
-              <button class="ghost-btn settings-action-btn" type="button" @click="clearHistory">
-                清空历史
-              </button>
-            </div>
-          </div>
-          <div class="history-list">
-            <div v-if="recentHistory.length === 0" class="empty-state">
-              还没有已完成任务记录。
-            </div>
-            <div v-for="entry in recentHistory" :key="entry.id"
-              class="history-row settings-interactive-card glass-medium">
-              <div>
-                <strong>{{ formatTaskType(entry.taskType) }}</strong>
-                <p>
-                  {{ formatHistoryTime(entry.createdAt) }} · {{ entry.status }} · 成功
-                  {{ entry.summary.success }}/{{ entry.summary.total }}
-                </p>
-              </div>
-              <button v-if="entry.firstOutput" class="ghost-btn settings-action-btn" type="button"
-                @click="openOutputFolder(entry.firstOutput)">
-                打开输出文件夹
-              </button>
-            </div>
-          </div>
-        </section>
-      </section>
-
-      <!-- <section v-if="activeSection === 'about'" class="panel about-panel glass-soft section-animated-panel"> -->
-      <section v-if="activeSection === 'about'" class="about-panel section-animated-panel">
-        <section class="about-dashboard section-animated-block">
-          <article class="about-card glass-medium">
-            <div class="about-dashboard-head">
+            <article class="about-card glass-medium section-animated-block">
               <div class="about-card-head">
-                <p class="eyebrow">处理统计</p>
-                <h4>累计处理概览</h4>
+                <p class="eyebrow">输出规则</p>
+                <h4>子功能输出目录</h4>
               </div>
-              <p class="muted">{{ aboutSummary }}</p>
-            </div>
-            <div class="about-dashboard-body">
-              <div class="about-chart-wrap">
-                <div class="about-chart glass-medium" :style="aboutChartStyle">
-                  <div class="about-chart-core">
-                    <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
-                    <span>累计处理</span>
-                  </div>
-                </div>
-                <div class="about-chart-legend">
-                  <span class="about-legend-item success">
-                    <i />
-                    成功
-                  </span>
-                  <span class="about-legend-item skip">
-                    <i />
-                    跳过
-                  </span>
-                  <span class="about-legend-item error">
-                    <i />
-                    失败
-                  </span>
+              <p class="muted">每个子功能会独立保存自己的默认输出位置。</p>
+              <div class="about-path-grid">
+                <div v-for="item in outputDirectorySummary" :key="item.taskType" class="about-path-card glass-medium">
+                  <strong>{{ item.label }}</strong>
+                  <p>{{ item.path }}</p>
                 </div>
               </div>
-              <div class="about-metric-stack">
-                <div class="about-metric about-metric-wide total glass-medium">
-                  <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
-                  <span>总数</span>
-                  <small>占比 100%</small>
-                </div>
-                <div class="about-metric-row">
-                  <div class="about-metric success glass-medium" :style="aboutMetricDistribution.success.style">
-                    <strong class="content-animated-value">{{ aboutAnimatedStats.success }}</strong>
-                    <span>成功</span>
-                    <small>占比 {{ aboutMetricDistribution.success.percent }}</small>
-                  </div>
-                  <div class="about-metric skip glass-medium" :style="aboutMetricDistribution.skipped.style">
-                    <strong class="content-animated-value">{{ aboutAnimatedStats.skipped }}</strong>
-                    <span>跳过</span>
-                    <small>占比 {{ aboutMetricDistribution.skipped.percent }}</small>
-                  </div>
-                  <div class="about-metric error glass-medium" :style="aboutMetricDistribution.failed.style">
-                    <strong class="content-animated-value">{{ aboutAnimatedStats.failed }}</strong>
-                    <span>失败</span>
-                    <small>占比 {{ aboutMetricDistribution.failed.percent }}</small>
-                  </div>
+            </article>
+
+            <article class="about-card glass-medium section-animated-block">
+              <div class="about-card-head">
+                <p class="eyebrow">日志说明</p>
+                <h4>日志文件位置</h4>
+              </div>
+              <div class="about-list">
+                <span v-if="currentLogPath">当前实际日志文件：{{ currentLogPath }}</span>
+                <span v-else>开发环境默认写入仓库根目录的 log.txt，打包版写入系统应用日志目录。</span>
+              </div>
+              <div class="about-path-grid about-path-grid-compact">
+                <div v-for="item in defaultLogPaths" :key="item.platform" class="about-path-card glass-medium">
+                  <strong>{{ item.platform }}</strong>
+                  <p>{{ item.path }}</p>
                 </div>
               </div>
-            </div>
-            <div v-if="!aboutHasStats" class="about-dashboard-empty">
-              还没有累计处理记录。执行任意 EPUB 任务后，这里会自动开始统计。
-            </div>
-          </article>
-        </section>
-
-        <section class="about-hero glass-medium section-animated-block">
-          <p class="eyebrow">软件说明</p>
-          <h3>Epub Tool 能做什么</h3>
-          <p class="muted">
-            面向 EPUB 批量处理场景，当前提供五类处理能力，并统一支持文件导入、目录扫描、结果回看与日志定位。
-          </p>
-        </section>
-
-        <section class="about-summary-grid section-animated-block">
-          <article class="about-summary-card glass-medium">
-            <strong>5 类功能</strong>
-            <span>格式化、解密、加密、字体加密、图片转换</span>
-          </article>
-          <article class="about-summary-card glass-medium">
-            <strong>3 种输入方式</strong>
-            <span>单文件、多文件、目录扫描</span>
-          </article>
-          <article class="about-summary-card glass-medium">
-            <strong>独立输出规则</strong>
-            <span>每个子功能分别保存自己的默认输出目录</span>
-          </article>
-        </section>
-
-        <section class="about-grid section-animated-block">
-          <article class="about-card glass-medium">
-            <div class="about-card-head">
-              <p class="eyebrow">功能范围</p>
-              <h4>支持的处理能力</h4>
-            </div>
-            <div class="about-list">
-              <span>支持格式化、文件解密、文件加密、字体加密和图片转换五类 EPUB 任务。</span>
-              <span>所有功能都支持单本、多本和目录扫描。</span>
-            </div>
-          </article>
-
-          <article class="about-card glass-medium">
-            <div class="about-card-head">
-              <p class="eyebrow">处理行为</p>
-              <h4>执行方式说明</h4>
-            </div>
-            <div class="about-list">
-              <span>字体加密支持按每本 EPUB 单独选择字体范围后再批量执行。</span>
-              <span>处理完成后可在结果区打开输出文件夹，并查看失败或跳过原因。</span>
-              <span>队列中存在多本文件时，当前文件处理完成后会自动切换到下一本。</span>
-            </div>
-          </article>
-        </section>
-
-        <article class="about-card glass-medium section-animated-block">
-          <div class="about-card-head">
-            <p class="eyebrow">输出规则</p>
-            <h4>子功能输出目录</h4>
-          </div>
-          <p class="muted">每个子功能会独立保存自己的默认输出位置。</p>
-          <div class="about-path-grid">
-            <div v-for="item in outputDirectorySummary" :key="item.taskType" class="about-path-card glass-medium">
-              <strong>{{ item.label }}</strong>
-              <p>{{ item.path }}</p>
-            </div>
-          </div>
-        </article>
-
-        <article class="about-card glass-medium section-animated-block">
-          <div class="about-card-head">
-            <p class="eyebrow">日志说明</p>
-            <h4>日志文件位置</h4>
-          </div>
-          <div class="about-list">
-            <span v-if="currentLogPath">当前实际日志文件：{{ currentLogPath }}</span>
-            <span v-else>开发环境默认写入仓库根目录的 log.txt，打包版写入系统应用日志目录。</span>
-          </div>
-          <div class="about-path-grid about-path-grid-compact">
-            <div v-for="item in defaultLogPaths" :key="item.platform" class="about-path-card glass-medium">
-              <strong>{{ item.platform }}</strong>
-              <p>{{ item.path }}</p>
-            </div>
-          </div>
-        </article>
-      </section>
-
-    </main>
-
-    <input ref="browserFileInput" accept=".epub" hidden multiple type="file" @change="handleBrowserFiles" />
+            </article>
+          </section>
+        </main>
+      </div>
+      <div
+        ref="workspaceScrollbarTrackRef"
+        class="custom-scrollbar custom-scrollbar-workspace"
+        :class="{ visible: workspaceScrollbarVisible }"
+        aria-hidden="true">
+        <div class="custom-scrollbar-thumb" :style="{
+          height: `${workspaceScrollbarThumbHeight}px`,
+          transform: `translateY(${workspaceScrollbarThumbTop}px)`,
+        }" />
+      </div>
+    </div>
   </div>
+  <input ref="browserFileInput" accept=".epub" hidden multiple type="file" @change="handleBrowserFiles" />
 </template>
