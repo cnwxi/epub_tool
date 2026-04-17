@@ -194,7 +194,9 @@ const defaultLogPaths = [
 const masonryBoardRef = ref<HTMLElement | null>(null);
 const masonryBoardWidth = ref(0);
 const workspaceRef = ref<HTMLElement | null>(null);
+const workspaceContentRef = ref<HTMLElement | null>(null);
 const sideNavShellRef = ref<HTMLElement | null>(null);
+const sideNavContentRef = ref<HTMLElement | null>(null);
 const workspaceScrollbarTrackRef = ref<HTMLElement | null>(null);
 const sideNavScrollbarTrackRef = ref<HTMLElement | null>(null);
 
@@ -208,6 +210,7 @@ const sideNavScrollbarThumbTop = ref(0);
 
 let masonryResizeObserver: ResizeObserver | null = null;
 let customScrollbarResizeObserver: ResizeObserver | null = null;
+let customScrollbarAnimationFrame = 0;
 const handleMasonryWindowResize = () => {
   void measureMasonryBoard();
 };
@@ -287,6 +290,20 @@ const updateSideNavScrollbar = () => {
 const updateAllCustomScrollbars = () => {
   updateWorkspaceScrollbar();
   updateSideNavScrollbar();
+};
+
+const scheduleCustomScrollbarUpdate = () => {
+  if (typeof window === "undefined") {
+    updateAllCustomScrollbars();
+    return;
+  }
+  if (customScrollbarAnimationFrame) {
+    window.cancelAnimationFrame(customScrollbarAnimationFrame);
+  }
+  customScrollbarAnimationFrame = window.requestAnimationFrame(() => {
+    customScrollbarAnimationFrame = 0;
+    updateAllCustomScrollbars();
+  });
 };
 
 const normalizeSettings = (value: unknown): AppSettings => {
@@ -1612,22 +1629,32 @@ watch(() => masonryBoardRef.value, async () => {
 
 watch(() => workspaceRef.value, async () => {
   await nextTick();
-  updateAllCustomScrollbars();
+  scheduleCustomScrollbarUpdate();
 }, { flush: "post" });
 
 watch(() => sideNavShellRef.value, async () => {
   await nextTick();
-  updateAllCustomScrollbars();
+  scheduleCustomScrollbarUpdate();
+}, { flush: "post" });
+
+watch(() => workspaceContentRef.value, async () => {
+  await nextTick();
+  scheduleCustomScrollbarUpdate();
+}, { flush: "post" });
+
+watch(() => sideNavContentRef.value, async () => {
+  await nextTick();
+  scheduleCustomScrollbarUpdate();
 }, { flush: "post" });
 
 watch(() => workspaceScrollbarTrackRef.value, async () => {
   await nextTick();
-  updateAllCustomScrollbars();
+  scheduleCustomScrollbarUpdate();
 }, { flush: "post" });
 
 watch(() => sideNavScrollbarTrackRef.value, async () => {
   await nextTick();
-  updateAllCustomScrollbars();
+  scheduleCustomScrollbarUpdate();
 }, { flush: "post" });
 
 watch(
@@ -1656,7 +1683,7 @@ watch(
       });
     }
     await nextTick();
-    updateAllCustomScrollbars();
+    scheduleCustomScrollbarUpdate();
   },
 );
 
@@ -1675,7 +1702,7 @@ watch(
   () => [logs.value.length, result.value, activeSection.value, activeTask.value],
   async () => {
     await nextTick();
-    updateAllCustomScrollbars();
+    scheduleCustomScrollbarUpdate();
   },
   { deep: true },
 );
@@ -1754,7 +1781,7 @@ onMounted(async () => {
     }
 
     const handleCustomScrollbarViewportResize = () => {
-      updateAllCustomScrollbars();
+      scheduleCustomScrollbarUpdate();
     };
     window.addEventListener("resize", handleCustomScrollbarViewportResize);
     removeCustomScrollbarResizeListener = () => {
@@ -1763,7 +1790,7 @@ onMounted(async () => {
 
     if (typeof ResizeObserver !== "undefined") {
       customScrollbarResizeObserver = new ResizeObserver(() => {
-        updateAllCustomScrollbars();
+        scheduleCustomScrollbarUpdate();
       });
     }
   }
@@ -1774,8 +1801,14 @@ onMounted(async () => {
     if (sideNavShellRef.value) {
       customScrollbarResizeObserver.observe(sideNavShellRef.value);
     }
+    if (sideNavContentRef.value) {
+      customScrollbarResizeObserver.observe(sideNavContentRef.value);
+    }
     if (workspaceRef.value) {
       customScrollbarResizeObserver.observe(workspaceRef.value);
+    }
+    if (workspaceContentRef.value) {
+      customScrollbarResizeObserver.observe(workspaceContentRef.value);
     }
     if (sideNavScrollbarTrackRef.value) {
       customScrollbarResizeObserver.observe(sideNavScrollbarTrackRef.value);
@@ -1806,7 +1839,7 @@ onMounted(async () => {
   if (!isTauriRuntime()) {
     await measureMasonryBoard();
     await nextTick();
-    updateAllCustomScrollbars();
+    scheduleCustomScrollbarUpdate();
     return;
   }
   unlistenDrop = await getCurrentWindow().onDragDropEvent((event) => {
@@ -1826,13 +1859,17 @@ onMounted(async () => {
     dragActive.value = false;
   });
   await nextTick();
-  updateAllCustomScrollbars();
+  scheduleCustomScrollbarUpdate();
   await measureMasonryBoard();
 });
 
 onBeforeUnmount(() => {
   if (aboutAnimationFrame && typeof window !== "undefined") {
     window.cancelAnimationFrame(aboutAnimationFrame);
+  }
+  if (customScrollbarAnimationFrame && typeof window !== "undefined") {
+    window.cancelAnimationFrame(customScrollbarAnimationFrame);
+    customScrollbarAnimationFrame = 0;
   }
   removeMotionPreferenceListener?.();
   removeMasonryResizeListener?.();
@@ -1849,10 +1886,11 @@ activeSection.value = normalizeSectionKey(activeSection.value);
 
 <template>
   <div class="app-shell">
-    <!-- <SideNav :active="activeSection" :items="sectionItems" @select="activeSection = $event" /> -->
     <div class="side-nav-frame">
       <div ref="sideNavShellRef" class="side-nav-shell">
-        <SideNav :active="activeSection" :items="sectionItems" @select="activeSection = $event" />
+        <div ref="sideNavContentRef">
+          <SideNav :active="activeSection" :items="sectionItems" @select="activeSection = $event" />
+        </div>
       </div>
       <div
         ref="sideNavScrollbarTrackRef"
@@ -1866,11 +1904,9 @@ activeSection.value = normalizeSectionKey(activeSection.value);
       </div>
     </div>
 
-    <!-- <main class="workspace"> -->
     <div class="workspace-frame">
       <div ref="workspaceRef" class="workspace-shell">
-        <main class="workspace">
-          <!-- <main ref="workspaceRef" class="workspace"> -->
+        <main ref="workspaceContentRef" class="workspace">
           <section v-if="updateNoticeVisible && updateStatus === 'available'"
             class="update-toast glass-strong workspace-animated-block">
             <div class="update-toast-copy">
