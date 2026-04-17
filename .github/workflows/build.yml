@@ -87,7 +87,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Setup Node.js
+      - name: Setup Node.js with npm cache
+        if: github.ref == 'refs/heads/main'
         uses: actions/setup-node@v5
         with:
           node-version-file: ".nvmrc"
@@ -95,6 +96,12 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             frontend/package-lock.json
+
+      - name: Setup Node.js without npm cache
+        if: github.ref != 'refs/heads/main'
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: ".nvmrc"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -201,6 +208,84 @@ jobs:
           path: src-tauri/target/release/bundle
           if-no-files-found: error
 
+  cleanup_node_cache:
+    name: Cleanup npm caches
+    if: always()
+    runs-on: ubuntu-22.04
+    needs:
+      - build
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Prune GitHub Actions npm caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MAIN_REF: refs/heads/main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          main_cache_json="$(gh cache list --ref "$MAIN_REF" --key "node-cache-" --limit 1000 --json id,key,createdAt)"
+          main_cache_count="$(printf '%s' "$main_cache_json" | jq 'length')"
+          echo "main 分支 npm cache 数量: $main_cache_count"
+
+          keep_main_ids="$(
+            printf '%s' "$main_cache_json" | jq -r '
+              sort_by(.key | sub("-[^-]+$"; ""))
+              | group_by(.key | sub("-[^-]+$"; ""))
+              | .[]
+              | sort_by(.createdAt)
+              | reverse
+              | .[0].id
+            '
+          )"
+
+          delete_main_ids="$(
+            printf '%s' "$main_cache_json" | jq -r '
+              sort_by(.key | sub("-[^-]+$"; ""))
+              | group_by(.key | sub("-[^-]+$"; ""))
+              | .[]
+              | sort_by(.createdAt)
+              | reverse
+              | .[1:][]?
+              | .id
+            '
+          )"
+
+          other_branch_ids="$(
+            gh cache list --key "node-cache-" --limit 1000 --json id,ref \
+              | jq -r --arg main_ref "$MAIN_REF" '.[] | select(.ref != $main_ref) | .id'
+          )"
+
+          delete_ids="$(
+            {
+              printf '%s\n' "$delete_main_ids"
+              printf '%s\n' "$other_branch_ids"
+            } | awk 'NF' | sort -u
+          )"
+
+          echo "保留的 main cache:"
+          if [ -n "$keep_main_ids" ]; then
+            printf '%s\n' "$keep_main_ids"
+          else
+            echo "无"
+          fi
+
+          if [ -z "$delete_ids" ]; then
+            echo "没有需要删除的 npm cache。"
+            exit 0
+          fi
+
+          echo "开始删除以下 npm cache:"
+          printf '%s\n' "$delete_ids"
+
+          while IFS= read -r cache_id; do
+            [ -n "$cache_id" ] || continue
+            gh cache delete "$cache_id"
+          done <<< "$delete_ids"
+
   publish_release:
     name: Publish Release
     if: inputs.release
@@ -219,7 +304,7 @@ jobs:
           merge-multiple: true
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.release_version }}
           name: ${{ needs.prepare.outputs.release_version }}
