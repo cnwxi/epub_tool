@@ -52,7 +52,7 @@ watch(
         <p class="eyebrow">NewUI</p>
         <h1>Epub Tool</h1>
         <p class="brand-copy">
-          面向 EPUB 批量处理的桌面工具，支持格式化、加密解密、字体与图片处理。
+          面向 EPUB 批量处理的桌面工具，统一提供队列执行、结果回看、日志定位与历史统计。
         </p>
       </div>
     </section>

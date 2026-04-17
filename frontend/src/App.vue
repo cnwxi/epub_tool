@@ -36,14 +36,14 @@ const sectionItems: Array<{
   label: string;
   description: string;
 }> = [
-    { key: "reformat", label: "格式化", description: "重构 EPUB 结构" },
-    { key: "decrypt", label: "文件解密", description: "处理文件名混淆" },
-    { key: "encrypt", label: "文件加密", description: "生成混淆版 EPUB" },
-    { key: "font_encrypt", label: "字体加密", description: "对所选字体进行混淆" },
-    { key: "transfer_img", label: "图片转换", description: "批量转换 WEBP 图片" },
-    { key: "settings", label: "设置", description: "输出偏好与历史记录" },
-    { key: "about", label: "关于", description: "功能说明与使用提示" },
-  ];
+  { key: "reformat", label: "格式化", description: "重构 EPUB 结构与布局" },
+  { key: "decrypt", label: "文件解密", description: "还原文件名混淆" },
+  { key: "encrypt", label: "文件加密", description: "生成混淆版 EPUB" },
+  { key: "font_encrypt", label: "字体加密", description: "按文件选择目标字体" },
+  { key: "transfer_img", label: "图片转换", description: "转换 EPUB 内 WEBP 图片" },
+  { key: "settings", label: "设置", description: "更新、偏好、日志与历史" },
+  { key: "about", label: "关于", description: "统计、功能范围与路径" },
+];
 const taskSections: TaskType[] = [
   "reformat",
   "decrypt",
@@ -580,15 +580,15 @@ const masonryColumns = computed<MasonryCard[][]>(() => {
 const activeTaskDescription = computed(() => {
   switch (activeTask.value) {
     case "reformat":
-      return "重构 EPUB 结构、标准化文件布局，支持单本、批量和目录扫描。";
+      return "重构 EPUB 结构与文件布局，适合先做标准化整理后再继续其他处理。";
     case "decrypt":
-      return "执行文件解密流程，支持单本、批量和目录扫描。";
+      return "还原文件名混淆，支持单本、多本和目录扫描。";
     case "encrypt":
-      return "生成文件加密版本，支持单本、批量和目录扫描。";
+      return "生成文件名混淆版 EPUB，支持单本、多本和目录扫描。";
     case "font_encrypt":
-      return "按每本 EPUB 独立选择字体范围，随后批量执行。";
+      return "按每本 EPUB 独立选择目标字体 family，再批量执行字体混淆。";
     case "transfer_img":
-      return "转换 EPUB 内 WEBP 图片，支持单本、批量和目录扫描。";
+      return "批量转换 EPUB 内 WEBP 图片，支持单本、多本和目录扫描。";
     default:
       return "";
   }
@@ -797,9 +797,9 @@ const activeDescription = computed(() => {
     case "transfer_img":
       return activeTaskDescription.value;
     case "settings":
-      return "集中管理版本更新、使用偏好、日志入口与最近任务。";
+      return "集中管理版本更新、自动行为、日志入口与最近任务历史。";
     default:
-      return "查看功能范围、输出规则和日志位置说明。";
+      return "查看累计处理统计、功能范围、输出目录和日志路径。";
   }
 });
 
@@ -2179,6 +2179,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <div>
                   <p class="eyebrow">状态总览</p>
                   <h3>当前设置状态</h3>
+                  <p class="muted">汇总当前版本、更新状态、偏好开关与历史记录上限。</p>
                 </div>
               </div>
               <div class="settings-status-grid">
@@ -2197,6 +2198,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <div>
                   <p class="eyebrow">更新</p>
                   <h3>版本更新</h3>
+                  <p class="muted">支持手动检查 GitHub Release，并直接跳转到最新下载页。</p>
                 </div>
                 <div class="panel-actions">
                   <button class="ghost-btn settings-action-btn" :disabled="updateStatus === 'checking'" type="button"
@@ -2231,6 +2233,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <div>
                   <p class="eyebrow">偏好设置</p>
                   <h3>使用偏好</h3>
+                  <p class="muted">控制任务完成后的自动行为，以及最近任务的保留数量。</p>
                 </div>
               </div>
               <div class="settings-preference-grid">
@@ -2271,6 +2274,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <div>
                   <p class="eyebrow">日志工具</p>
                   <h3>日志位置</h3>
+                  <p class="muted">开发态写入仓库根目录，打包版写入系统应用日志目录。</p>
                 </div>
                 <div class="panel-actions">
                   <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button"
@@ -2294,6 +2298,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <div>
                   <p class="eyebrow">历史</p>
                   <h3>最近任务</h3>
+                  <p class="muted">展示本地已完成任务记录，可直接打开首个输出文件所在目录。</p>
                 </div>
                 <div class="panel-actions">
                   <button class="ghost-btn settings-action-btn" type="button" @click="clearHistory">
@@ -2392,22 +2397,22 @@ activeSection.value = normalizeSectionKey(activeSection.value);
               <p class="eyebrow">软件说明</p>
               <h3>Epub Tool 能做什么</h3>
               <p class="muted">
-                面向 EPUB 批量处理场景，当前提供五类处理能力，并统一支持文件导入、目录扫描、结果回看与日志定位。
+                桌面版围绕文件导入、任务执行、结果回看、日志定位与历史统计组织工作流，所有处理能力都通过同一套任务页交互完成。
               </p>
             </section>
 
             <section class="about-summary-grid section-animated-block">
               <article class="about-summary-card glass-medium">
-                <strong>5 类功能</strong>
+                <strong>5 类任务</strong>
                 <span>格式化、解密、加密、字体加密、图片转换</span>
               </article>
               <article class="about-summary-card glass-medium">
-                <strong>3 种输入方式</strong>
-                <span>单文件、多文件、目录扫描</span>
+                <strong>统一任务视图</strong>
+                <span>拖拽导入、文件队列、处理日志与结果摘要</span>
               </article>
               <article class="about-summary-card glass-medium">
-                <strong>独立输出规则</strong>
-                <span>每个子功能分别保存自己的默认输出目录</span>
+                <strong>独立输出记忆</strong>
+                <span>每个子功能分别保存默认输出目录</span>
               </article>
             </section>
 
@@ -2418,8 +2423,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                   <h4>支持的处理能力</h4>
                 </div>
                 <div class="about-list">
-                  <span>支持格式化、文件解密、文件加密、字体加密和图片转换五类 EPUB 任务。</span>
-                  <span>所有功能都支持单本、多本和目录扫描。</span>
+                  <span>任务页统一支持拖拽导入、系统文件选择和目录扫描三种输入方式。</span>
+                  <span>当前提供格式化、文件解密、文件加密、字体加密和图片转换五类 EPUB 处理任务。</span>
                 </div>
               </article>
 
@@ -2429,9 +2434,9 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                   <h4>执行方式说明</h4>
                 </div>
                 <div class="about-list">
-                  <span>字体加密支持按每本 EPUB 单独选择字体范围后再批量执行。</span>
-                  <span>处理完成后可在结果区打开输出文件夹，并查看失败或跳过原因。</span>
-                  <span>队列中存在多本文件时，当前文件处理完成后会自动切换到下一本。</span>
+                  <span>字体加密支持按每本 EPUB 单独选择目标字体 family 后再批量执行。</span>
+                  <span>任务页实时展示待处理列表、处理日志和最近一次执行摘要。</span>
+                  <span>设置页可查看更新状态、日志入口和最近任务历史。</span>
                 </div>
               </article>
             </section>
@@ -2441,7 +2446,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <p class="eyebrow">输出规则</p>
                 <h4>子功能输出目录</h4>
               </div>
-              <p class="muted">每个子功能会独立保存自己的默认输出位置。</p>
+              <p class="muted">每个子功能都会独立记住上一次输出位置，未设置时默认输出到源文件同级目录。</p>
               <div class="about-path-grid">
                 <div v-for="item in outputDirectorySummary" :key="item.taskType" class="about-path-card glass-medium">
                   <strong>{{ item.label }}</strong>
@@ -2457,7 +2462,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
               </div>
               <div class="about-list">
                 <span v-if="currentLogPath">当前实际日志文件：{{ currentLogPath }}</span>
-                <span v-else>开发环境默认写入仓库根目录的 log.txt，打包版写入系统应用日志目录。</span>
+                <span v-else>开发环境默认写入仓库根目录的 log.txt，打包版按系统平台写入应用日志目录，并可从设置页直接打开。</span>
               </div>
               <div class="about-path-grid about-path-grid-compact">
                 <div v-for="item in defaultLogPaths" :key="item.platform" class="about-path-card glass-medium">
