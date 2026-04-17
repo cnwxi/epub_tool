@@ -46,18 +46,18 @@ watch(
 </script>
 
 <template>
-  <aside class="side-nav">
-    <section class="nav-group nav-group-brand">
+  <aside class="side-nav nav-animated-panel">
+    <section class="nav-group nav-group-brand nav-animated-block">
       <div class="brand-block">
         <p class="eyebrow">NewUI</p>
         <h1>Epub Tool</h1>
         <p class="brand-copy">
-          面向 EPUB 批量处理的桌面工具，支持格式化、加密解密、字体与图片处理。
+          面向 EPUB 批量处理的桌面工具，统一提供队列执行、结果回看、日志定位与历史统计。
         </p>
       </div>
     </section>
 
-    <section class="nav-group nav-group-collapsible" :class="{ open: executionOpen }">
+    <section class="nav-group nav-group-collapsible nav-animated-block" :class="{ open: executionOpen }">
       <button class="nav-group-toggle" type="button" @click="executionOpen = !executionOpen">
         <span class="nav-group-title">工具箱</span>
         <span class="nav-group-chevron" :class="{ open: executionOpen }" aria-hidden="true">
@@ -79,7 +79,7 @@ watch(
       </nav>
     </section>
 
-    <section class="nav-group nav-group-collapsible" :class="{ open: utilityOpen }">
+    <section class="nav-group nav-group-collapsible nav-animated-block" :class="{ open: utilityOpen }">
       <button class="nav-group-toggle" type="button" @click="utilityOpen = !utilityOpen">
         <span class="nav-group-title">设置与关于</span>
         <span class="nav-group-chevron" :class="{ open: utilityOpen }" aria-hidden="true">

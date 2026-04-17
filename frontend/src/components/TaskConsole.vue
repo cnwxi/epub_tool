@@ -19,28 +19,28 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <section class="console-grid">
-    <article class="panel panel-console">
+  <section class="console-grid content-animated-grid">
+    <article class="panel panel-console glass-medium content-animated-block">
       <div class="panel-head">
         <div>
           <p class="eyebrow">过程</p>
           <h3>处理日志</h3>
         </div>
         <div class="panel-actions">
-          <button class="ghost-btn" type="button" @click="emit('open-log')">
+          <button class="ghost-btn task-action-btn" type="button" @click="emit('open-log')">
             打开处理日志
           </button>
-          <button class="ghost-btn" type="button" @click="emit('clear-log')">
+          <button class="ghost-btn task-action-btn" type="button" @click="emit('clear-log')">
             清空面板
           </button>
         </div>
       </div>
-      <div class="log-list">
+      <div class="log-list glass-soft">
         <div v-if="logs.length === 0" class="log-empty">尚未执行任务。</div>
         <div
           v-for="(log, index) in visibleLogs"
           :key="`${log.event}-${index}`"
-          class="log-row"
+          class="log-row glass-soft"
           :class="log.level ?? log.status"
         >
           <span class="log-event">{{ log.event }}</span>
@@ -49,7 +49,7 @@ const emit = defineEmits<{
       </div>
     </article>
 
-    <article class="panel panel-result">
+    <article class="panel panel-result glass-medium content-animated-block">
       <div class="panel-head">
         <div>
           <p class="eyebrow">结果</p>
@@ -57,22 +57,22 @@ const emit = defineEmits<{
         </div>
       </div>
       <div v-if="!result" class="result-empty">还没有可展示的执行结果。</div>
-      <div v-else class="result-block">
+      <div v-else class="result-block glass-soft">
         <div class="result-metrics">
-          <div>
-            <strong>{{ result.summary.total }}</strong>
+          <div class="result-metric-card total">
+            <strong class="content-animated-value">{{ result.summary.total }}</strong>
             <span>总文件</span>
           </div>
-          <div>
-            <strong>{{ result.summary.success }}</strong>
+          <div class="result-metric-card success">
+            <strong class="content-animated-value">{{ result.summary.success }}</strong>
             <span>成功</span>
           </div>
-          <div>
-            <strong>{{ result.summary.failed }}</strong>
+          <div class="result-metric-card error">
+            <strong class="content-animated-value">{{ result.summary.failed }}</strong>
             <span>失败</span>
           </div>
-          <div>
-            <strong>{{ result.summary.skipped }}</strong>
+          <div class="result-metric-card skip">
+            <strong class="content-animated-value">{{ result.summary.skipped }}</strong>
             <span>跳过</span>
           </div>
         </div>
@@ -80,13 +80,13 @@ const emit = defineEmits<{
         <div v-if="result.outputs.length > 0" class="result-detail-block">
           <div class="result-detail-head">
             <strong>成功</strong>
-            <span>{{ result.outputs.length }} 项</span>
+            <span class="content-animated-value">{{ result.outputs.length }} 项</span>
           </div>
           <div class="result-output-list">
             <button
               v-for="output in result.outputs"
               :key="output"
-              class="result-output-row success"
+              class="result-output-row success glass-soft"
               type="button"
               @click="emit('open-output-folder', output)"
             >
@@ -102,13 +102,13 @@ const emit = defineEmits<{
         <div v-if="result.errors.length > 0" class="result-detail-block">
           <div class="result-detail-head">
             <strong>失败</strong>
-            <span>{{ result.errors.length }} 项</span>
+            <span class="content-animated-value">{{ result.errors.length }} 项</span>
           </div>
           <div class="result-detail-list">
             <div
               v-for="item in result.errors"
               :key="`${item.input_file}-${item.message}`"
-              class="result-detail-row error"
+              class="result-detail-row error glass-soft"
             >
               <div class="result-row-head">
                 <strong>{{ formatFileName(item.input_file) }}</strong>
@@ -123,13 +123,13 @@ const emit = defineEmits<{
         <div v-if="result.skipped.length > 0" class="result-detail-block">
           <div class="result-detail-head">
             <strong>跳过</strong>
-            <span>{{ result.skipped.length }} 项</span>
+            <span class="content-animated-value">{{ result.skipped.length }} 项</span>
           </div>
           <div class="result-detail-list">
             <div
               v-for="item in result.skipped"
               :key="`${item.input_file}-${item.message}`"
-              class="result-detail-row skip"
+              class="result-detail-row skip glass-soft"
             >
               <div class="result-row-head">
                 <strong>{{ formatFileName(item.input_file) }}</strong>

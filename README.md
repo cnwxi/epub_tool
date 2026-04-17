@@ -1,159 +1,192 @@
-# Epub Tool->ET->E-Book Thor->📖🔨-><img src="./img/icon.ico" alt="icon" style="width:1em">（AI生成）
-<div style="text-align: center; margin: 2em auto 0 auto; width: 100%;">
-<img src="./img/icon.ico" alt="icon" style="width:10em;">
+# Epub Tool
 
-[![GitHub Releases](https://img.shields.io/github/v/release/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/releases/latest)  [![GitHub stars](https://img.shields.io/github/stars/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/stargazers) [![GitHub forks](https://img.shields.io/github/forks/cnwxi/epub_tool)](https://github.com/cnwxi/epub_tool/network/members)
-</div>
+<p align="center">
+  <img src="./img/icon.ico" alt="Epub Tool Icon" width="120">
+</p>
 
-<details open>
-  <summary><strong>桌面版说明</strong></summary>
-  <p>
+<p align="center">
+  <a href="https://github.com/cnwxi/epub_tool/releases/latest">
+    <img src="https://img.shields.io/github/v/release/cnwxi/epub_tool" alt="GitHub Releases">
+  </a>
+  <a href="https://github.com/cnwxi/epub_tool/stargazers">
+    <img src="https://img.shields.io/github/stars/cnwxi/epub_tool" alt="GitHub stars">
+  </a>
+  <a href="https://github.com/cnwxi/epub_tool/network/members">
+    <img src="https://img.shields.io/github/forks/cnwxi/epub_tool" alt="GitHub forks">
+  </a>
+</p>
 
-当前默认桌面版基于 `Tauri 2 + Vue 3 + TypeScript + Python 后端`。核心 EPUB 处理能力仍由 `utils/` 提供，并通过 `python_backend/` 统一为可调用的任务入口；桌面界面负责文件导入、参数配置、任务执行、日志与结果展示。<br>
+一个面向 EPUB 批量处理的桌面工具。当前主入口已经切换到 `Tauri 2 + Vue 3 + TypeScript + Python sidecar`，围绕“批量导入、统一执行、结果回看、日志定位”组织桌面工作流。
 
-主要目录：
+支持的处理能力：
 
-- `frontend/`：桌面前端界面
-- `src-tauri/`：Tauri 壳层与打包配置
+- `reformat`：重构 EPUB 结构，标准化文件布局
+- `decrypt`：处理文件名混淆
+- `encrypt`：生成混淆版 EPUB
+- `font_encrypt`：按每本 EPUB 单独选择字体范围并执行字体混淆
+- `transfer_img`：批量转换 EPUB 内 WEBP 图片
+
+## 当前桌面版实现
+
+### 功能执行页
+
+- 支持拖入文件、拖入文件夹、系统文件选择、目录扫描
+- 队列按任务类型独立保存，切换任务不会互相覆盖
+- 每个任务分别保存默认输出目录
+- 任务页内统一展示：
+  - 待处理列表
+  - 字体范围面板（仅 `font_encrypt`）
+  - 处理日志
+  - 最近一次执行摘要
+- 处理过程中实时刷新进度、日志、成功/失败/跳过结果
+- 支持直接打开处理日志和输出目录
+
+### 设置页
+
+- 自动打开输出目录
+- 自动打开处理日志
+- 启动时自动检查更新
+- 历史记录保留数量设置
+- 检查 GitHub Release 最新版本
+- 打开当前日志文件与日志目录
+- 查看并清理任务历史记录
+
+### 关于页
+
+- 汇总展示历史执行统计
+- 展示当前五类处理能力说明
+- 汇总各子功能默认输出目录
+- 展示开发态与打包态日志路径说明
+
+## 使用方式
+
+1. 从 [Releases](https://github.com/cnwxi/epub_tool/releases/latest) 下载对应系统的桌面包。
+2. 安装并启动应用。
+3. 在左侧切换功能类型。
+4. 拖入 EPUB、选择文件，或扫描目录收集 `.epub`。
+5. 根据当前任务选择输出目录。
+6. 若当前任务为 `font_encrypt`，先为每本书选择需要参与处理的字体 family。
+7. 点击“开始执行”，在结果区查看摘要、失败原因、跳过原因，并按需打开输出目录或日志文件。
+
+## 日志与输出
+
+- 开发环境默认写入仓库根目录的 `log.txt`
+- 打包版默认写入系统应用日志目录
+- 设置页与关于页都会显示当前日志位置或默认日志路径说明
+- 任务完成后可按设置自动打开输出目录或日志文件
+
+常见日志目录：
+
+- Windows：`%LOCALAPPDATA%\com.cnwxi.epubtool.newui\logs\log.txt`
+- macOS：`~/Library/Logs/com.cnwxi.epubtool.newui/log.txt`
+- Linux：`~/.local/share/com.cnwxi.epubtool.newui/logs/log.txt`
+
+## 本地开发
+
+### 环境准备
+
+```bash
+python -m pip install -r requirements.txt
+npm install
+npm --prefix frontend install
+```
+
+如果使用 `nvm`，先执行：
+
+```bash
+source "$HOME/.nvm/nvm.sh"
+nvm use
+```
+
+### 启动桌面开发环境
+
+```bash
+npm run tauri:dev
+```
+
+这会自动完成以下工作：
+
+1. 预构建或复用 Python sidecar
+2. 启动前端开发服务器
+3. 启动 Tauri 桌面壳层
+
+### 仅启动前端界面
+
+```bash
+npm run dev
+```
+
+这个命令只启动 `frontend/` 下的 Vite 页面，用于样式开发或静态界面调试。没有 Tauri Runtime 时，任务执行、目录扫描、日志定位等桌面能力不会生效。
+
+### 单独调试 Python 处理逻辑
+
+```bash
+python -m python_backend.cli run --task-type reformat --input-file ./book.epub
+python -m python_backend.cli run --task-type decrypt --input-file ./book.epub
+python -m python_backend.cli run --task-type encrypt --input-file ./book.epub
+python -m python_backend.cli run --task-type font_encrypt --input-file ./book.epub
+python -m python_backend.cli run --task-type transfer_img --input-file ./book.epub
+python -m python_backend.cli list-fonts ./book.epub
+```
+
+这些入口适合排障、协议验证和单功能调试，不是默认使用方式。
+
+## 本地打包
+
+```bash
+python -m pip install -r requirements.txt pyinstaller
+npm run tauri:build
+```
+
+打包流程会自动完成：
+
+1. 构建前端资源
+2. 构建 Python sidecar
+3. 准备 `src-tauri/bundle-resources/`
+4. 执行 Tauri 打包
+
+## 仓库结构
+
+- `frontend/`：Vue 3 桌面前端
+- `src-tauri/`：Tauri 壳层、命令桥接与打包配置
 - `python_backend/`：统一 CLI、任务协议与运行器
-- `doc/`：运行、协议与打包说明
+- `utils/`：底层 EPUB 处理脚本
+- `build_tool/`：sidecar 构建与资源准备脚本
+- `doc/`：构建、协议与桥接说明
+- `test/`：本地测试样本与验证素材
 
-推荐先看：
+## 文档索引
 
-- `doc/README.md`
-- `doc/CLI_USAGE.md`
-- `doc/TASK_PROTOCOL.md`
-- `doc/TAURI_PYTHON_BRIDGE.md`
-- `doc/BUILD_AND_BUNDLE.md`
+- [`doc/README.md`](./doc/README.md)：文档总览
+- [`doc/CLI_USAGE.md`](./doc/CLI_USAGE.md)：Python 后端 CLI 用法
+- [`doc/TASK_PROTOCOL.md`](./doc/TASK_PROTOCOL.md)：前后端任务协议
+- [`doc/TAURI_PYTHON_BRIDGE.md`](./doc/TAURI_PYTHON_BRIDGE.md)：Tauri 与 Python 桥接说明
+- [`doc/BUILD_AND_BUNDLE.md`](./doc/BUILD_AND_BUNDLE.md)：本地构建、打包与发布说明
 
-桌面版当前支持：
+## 常见排查
 
-- 选择单个或多个 EPUB 文件
-- 扫描目录并递归收集 `.epub`
-- 独立设置输出目录
-- 执行 `reformat / decrypt / encrypt / font_encrypt / transfer_img`
-- 查看处理日志、执行摘要、失败与跳过原因
-- 持久化保存常用设置与最近任务历史
+- 处理失败时，先看“最近一次执行摘要”中的失败原因、跳过原因，再看“处理日志”
+- 如果书籍结构异常，可先执行“格式化”再继续其他流程
+- `font_encrypt` 只处理 EPUB 内已嵌入的字体，不处理系统字体
+- 如果 `content.opf` 等关键文件缺失或异常，相关任务可能直接失败
+- 反馈问题时，建议同时提供：
+  - 样本文件
+  - 当前任务类型
+  - 结果区提示
+  - `log.txt`
 
-本地开发启动：
+## 相关项目
 
-1. 安装 Python 依赖：`python -m pip install -r requirements.txt`。<br>
-2. 安装 Node / npm / Rust toolchain。<br>
-3. 如使用 `nvm`，执行 `source "$HOME/.nvm/nvm.sh"` 与 `nvm use`。<br>
-4. 安装前端与 Tauri 依赖：`npm install`、`npm --prefix frontend install`。<br>
-5. 启动桌面应用：`npm run tauri:dev`。<br>
+引用本仓库进行二次开发并扩展功能的项目：
 
-本地打包：
+- [epub-gadget](https://github.com/wangyyyqw/epub-gadget)
 
-1. 安装 Python 依赖与 PyInstaller：`python -m pip install -r requirements.txt pyinstaller`。<br>
-2. 构建内置 Python sidecar：`python build_tool/build_python_sidecar.py`。<br>
-3. 执行 Tauri 打包：`npm run tauri:build`。<br>
+## 更新日志
 
-说明：打包产物会优先使用内置的 `src-tauri/binaries/epub-tool-python(.exe)`；只有本地开发时 sidecar 不存在，才会回退到系统 `python3` / `python`。应用版本号统一以 `src-tauri/Cargo.toml` 为准，GitHub Release 默认会自动派生为带 `v` 前缀的标签。<br>
+- [CHANGELOG.md](./CHANGELOG.md)
 
-  </p>
-</details>
-
-<details open>
-  <summary><strong>怎么使用？</strong></summary>
-  <p>
-
-桌面版使用（推荐）：
-
-1. 从 [Releases](https://github.com/cnwxi/epub_tool/releases/latest) 下载对应系统的桌面版安装包或压缩包。<br>
-2. 安装并启动桌面应用。首次运行如遇系统安全提示，请按系统提示允许应用启动。<br>
-3. 在桌面界面中导入 EPUB 文件或扫描目录。<br>
-4. 选择输出目录与处理模式，然后执行任务。<br>
-5. 处理完成后，可在结果区打开输出文件夹，并查看失败或跳过原因。<br>
-
-桌面版支持：
-
-- 格式化
-- 文件解密
-- 文件加密
-- 字体加密
-- 图片转换
-
-Python 脚本调试方式：
-
-1. 安装 Python（推荐 3.8 或更高版本）。<br>
-2. 安装依赖：`python -m pip install -r requirements.txt`。<br>
-3. 单独调试处理脚本时，可直接执行 `python utils/*.py`。<br>
-
-说明：
-
-- Python 脚本入口主要用于排障与单功能调试，不作为默认使用入口。
-- 执行脚本时，仍会在工作路径生成 `log.txt`。<br>
-
-  </p>
-</details>
-
-<details>
-  <summary><strong>仓库包含哪些能力？</strong></summary>
-  <p>
-
-当前仓库主要提供以下 EPUB 处理能力：
-
-- `utils/reformat_epub.py`：重构 EPUB 结构并标准化文件布局
-- `utils/decrypt_epub.py`：处理文件名混淆
-- `utils/encrypt_epub.py`：生成文件加密版本
-- `utils/encrypt_font.py`：按字体范围执行字体加密
-- `utils/transfer_img.py`：转换 EPUB 内 WEBP 图片
-
-  </p>
-</details>
-
-<details>
- <summary>引用本仓库进行二次开发并扩展功能的项目 <b>epub-gadget</b>(推荐)</summary>
-  <p>
-
-> Github仓库链接：[epub-gadget](https://github.com/wangyyyqw/epub-gadget)  
-> PS：混淆加密功能更新可能存在延迟
-
-![UI界面](./img/epub.png)
-
-  </p>
-</details>
-
-<details>
-  <summary><strong>执行遇到错误怎么办？</strong></summary>
-  <p>
-
-常见排查建议：
-
-1. 先尝试使用“格式化”功能重新整理 EPUB 结构，再查看结果区与 `log.txt` 提示。<br>
-2. 若处理失败，优先检查 EPUB 内部是否缺少或损坏关键文件，例如 `content.opf`。<br>
-3. 字体加密仅处理 EPUB 内已嵌入的字体文件；如果样式引用的是系统字体，不会被加密。<br>
-4. 若书籍包含特殊加密信息，例如掌阅相关加密标记，本仓库不提供对应解密能力。<br>
-
-反馈问题时建议一并提供：
-
-- 出现问题的 EPUB 文件或最小可复现样本
-- 对应处理模式
-- 生成的 `log.txt`
-- 结果区显示的失败或跳过原因
-
-  </p>
-</details>
-
-<details>
-  <summary><strong>更新日志</strong></summary>
-  <p>
-
-[点击查看 CHANGELOG](./CHANGELOG.md)
-
-  </p>
-</details>
-
-<details>
-  <summary><strong>鸣谢</strong></summary>
-  <p>
-
-感谢以下用户和项目对此仓库的贡献：
+## 鸣谢
 
 - [遥遥心航](https://tieba.baidu.com/home/main?id=tb.1.7f262ae1.5_dXQ2Jp0F0MH9YJtgM2Ew)
 - [lgernier](https://github.com/lgernierO)
 - [fontObfuscator](https://github.com/solarhell/fontObfuscator)
-
-  </p>
-</details>

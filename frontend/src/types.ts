@@ -6,6 +6,7 @@ export type TaskType =
   | "transfer_img";
 export type SectionKey = TaskType | "settings" | "about";
 export type FontLoadStatus = "idle" | "loading" | "loaded" | "error";
+export type TaskOutputDirectoryMap = Record<TaskType, string>;
 
 export interface QueuedFile {
   path: string;
@@ -58,6 +59,13 @@ export interface AppSettings {
   autoOpenLogFile: boolean;
   autoCheckUpdates: boolean;
   keepHistoryCount: number;
+}
+
+export interface TaskAggregateStats {
+  total: number;
+  success: number;
+  failed: number;
+  skipped: number;
 }
 
 export interface UpdateCheckState {

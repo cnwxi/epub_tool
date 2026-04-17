@@ -15,6 +15,12 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+
+#[cfg(target_os = "windows")]
+use window_vibrancy::apply_blur;
+
 const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
     "epub-tool-python.exe"
 } else {
@@ -249,6 +255,11 @@ fn configure_backend_command(command: &mut Command, log_path: &Path) {
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
+fn configure_system_open_command(_command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    _command.creation_flags(CREATE_NO_WINDOW);
+}
+
 fn stream_utf8ish_lines<R, F>(reader: R, mut on_line: F) -> Result<(), String>
 where
     R: Read,
@@ -328,27 +339,41 @@ async fn list_font_targets(app: AppHandle, file_path: String) -> Result<FontTarg
 
 #[tauri::command]
 async fn open_path(app: AppHandle, path: String) -> Result<(), String> {
-    let status = if is_external_target(&path) {
+    let mut command = if is_external_target(&path) {
         if cfg!(target_os = "macos") {
-            Command::new("open").arg(&path).status()
+            let mut command = Command::new("open");
+            command.arg(&path);
+            command
         } else if cfg!(target_os = "windows") {
-            Command::new("cmd").args(["/C", "start", "", &path]).status()
+            let mut command = Command::new("cmd");
+            command.args(["/C", "start", "", &path]);
+            command
         } else {
-            Command::new("xdg-open").arg(&path).status()
+            let mut command = Command::new("xdg-open");
+            command.arg(&path);
+            command
         }
     } else {
         let resolved = resolve_path(&app, &path)?;
         if cfg!(target_os = "macos") {
-            Command::new("open").arg(&resolved).status()
+            let mut command = Command::new("open");
+            command.arg(&resolved);
+            command
         } else if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(["/C", "start", "", resolved.to_string_lossy().as_ref()])
-                .status()
+            let mut command = Command::new("cmd");
+            command.args(["/C", "start", "", resolved.to_string_lossy().as_ref()]);
+            command
         } else {
-            Command::new("xdg-open").arg(&resolved).status()
+            let mut command = Command::new("xdg-open");
+            command.arg(&resolved);
+            command
         }
-    }
-    .map_err(|error| format!("打开路径失败: {error}"))?;
+    };
+
+    configure_system_open_command(&mut command);
+    let status = command
+        .status()
+        .map_err(|error| format!("打开路径失败: {error}"))?;
 
     if status.success() {
         Ok(())
@@ -464,9 +489,38 @@ async fn run_epub_task(
     .map_err(|error| format!("异步任务失败: {error}"))?
 }
 
+fn setup_window_effects(app: &tauri::App) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "未找到主窗口 main".to_string())?;
+
+    #[cfg(target_os = "macos")]
+    {
+        apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None)
+            .map_err(|error| format!("应用 macOS 毛玻璃效果失败: {error}"))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        apply_blur(&window, Some((18, 18, 18, 90)))
+            .map_err(|error| format!("应用 Windows 模糊效果失败: {error}"))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = window;
+    }
+
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            setup_window_effects(app)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             collect_epub_files,
             get_log_path,
