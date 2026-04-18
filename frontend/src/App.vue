@@ -104,6 +104,24 @@ const {
   runTask,
 } = useTaskBridge();
 
+const detectClientPlatform = (): "windows" | "macos" | "linux" | "web" => {
+  if (typeof window === "undefined") {
+    return "web";
+  }
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  if (userAgent.includes("windows")) {
+    return "windows";
+  }
+  if (userAgent.includes("mac os") || userAgent.includes("macintosh")) {
+    return "macos";
+  }
+  if (userAgent.includes("linux")) {
+    return "linux";
+  }
+  return "web";
+};
+
 const normalizeSectionKey = (value: unknown): SectionKey => {
   if (typeof value !== "string") {
     return "reformat";
@@ -176,6 +194,7 @@ const dragActive = ref(false);
 const browserFileInput = ref<HTMLInputElement | null>(null);
 const currentLogPath = ref("");
 const prefersReducedMotion = ref(false);
+const clientPlatform = ref<"windows" | "macos" | "linux" | "web">(detectClientPlatform());
 const defaultLogPaths = [
   {
     platform: "Windows",
@@ -593,6 +612,7 @@ const activeTaskDescription = computed(() => {
       return "";
   }
 });
+const appShellClassName = computed(() => `platform-${clientPlatform.value}`);
 const runningTaskLabel = computed(() => {
   if (!runningTaskType.value) {
     return "";
@@ -1744,6 +1764,7 @@ let removeCustomScrollbarResizeListener: (() => void) | null = null;
 
 onMounted(async () => {
   if (typeof window !== "undefined") {
+    clientPlatform.value = detectClientPlatform();
     motionMediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     prefersReducedMotion.value = motionMediaQuery.matches;
     const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
@@ -1885,7 +1906,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="appShellClassName">
     <div class="side-nav-frame">
       <div ref="sideNavShellRef" class="side-nav-shell">
         <div ref="sideNavContentRef">
