@@ -208,7 +208,7 @@ input {
   -ms-overflow-style: none;
 }
 
-.side-nav-shell > div {
+.side-nav-shell>div {
   display: flex;
   min-height: 100%;
 }
@@ -230,11 +230,21 @@ input {
   height: auto;
   overflow: visible;
   padding: 26px 18px;
-  /* 调整左侧毛玻璃效果 */
-  background: linear-gradient(180deg, rgba(34, 52, 75, 0.62), rgba(45, 67, 94, 0.18));
+  /* 左侧导航毛玻璃效果调节区 */
+  /* background：控制左侧玻璃底色，从上到下的渐变层次也在这里改 */
+  /* 第一个 rgba(...) 是顶部颜色，最后一位 越大越实、越小越通透 */
+  /* 第二个 rgba(...) 是底部颜色，最后一位 越大越厚重、越小越轻 */
+  background: linear-gradient(180deg, rgba(34, 52, 75, 0.8), rgba(45, 67, 94, 0.5));
+  /* backdrop-filter：控制左侧毛玻璃强度 */
+  /* blur(28px) 控制模糊半径，值越大越糊，值越小越清晰 */
+  /* saturate(1.2) 控制透过玻璃后的颜色饱和度，值越大颜色越鲜明 */
   backdrop-filter: blur(28px) saturate(1.2);
   -webkit-backdrop-filter: blur(28px) saturate(1.2);
-  border-right: 1px solid rgba(255, 255, 255, 0.18);
+  /* border-right：控制左侧与右侧内容区之间的分隔线 */
+  /* 1px 是线宽，rgba 最后一位 0.08 是线的可见强度 */
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  /* box-shadow：控制左侧边缘的内侧高光，让玻璃边界更明显 */
+  /* rgba 最后一位 0.06 越大高光越明显，越小越柔和 */
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
   color: #f9f2e6;
 }
@@ -302,6 +312,8 @@ input {
 }
 
 .brand-block {
+  position: relative;
+  overflow: hidden;
   padding: 16px 18px;
   border-radius: 22px;
   background: linear-gradient(145deg,
@@ -314,18 +326,207 @@ input {
     0 1px 0 rgba(255, 255, 255, 0.12) inset;
   backdrop-filter: blur(18px) saturate(1.12);
   -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  cursor: pointer;
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.brand-block h1 {
-  margin: 8px 0;
-  font-size: 28px;
+.brand-block * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.brand-block:hover {
+  transform: translateY(-1px);
+  border-color: rgba(242, 191, 94, 0.24);
+}
+
+.brand-block:focus-visible {
+  outline: 2px solid rgba(242, 191, 94, 0.56);
+  outline-offset: 3px;
+}
+
+.brand-content {
+  position: relative;
+  z-index: 1;
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease,
+    filter 220ms ease;
+}
+
+.brand-block-easter-active .brand-content {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.brand-eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(242, 191, 94, 0.1);
+  border: 1px solid rgba(242, 191, 94, 0.18);
+}
+
+.brand-title {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 10px;
   line-height: 1;
+}
+
+.brand-title-main {
+  font-size: 28px;
+  font-weight: 760;
+  letter-spacing: 0.02em;
+}
+
+.brand-title-alias {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(242, 191, 94, 0.86);
 }
 
 .brand-copy {
   margin: 0;
   font-size: 14px;
+  line-height: 1.55;
   color: rgba(249, 242, 230, 0.75);
+}
+
+.brand-block-easter-active {
+  border-color: rgba(242, 191, 94, 0.58);
+  box-shadow:
+    0 24px 42px rgba(11, 19, 33, 0.28),
+    0 0 0 1px rgba(242, 191, 94, 0.14) inset,
+    0 0 32px rgba(242, 191, 94, 0.18);
+}
+
+.brand-block-easter-active::after {
+  content: "";
+  position: absolute;
+  inset: -40% -65%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(110deg,
+      transparent 34%,
+      rgba(255, 255, 255, 0.1) 43%,
+      rgba(242, 191, 94, 0.22) 50%,
+      rgba(255, 255, 255, 0.1) 57%,
+      transparent 66%);
+  transform: translateX(-42%) rotate(8deg);
+  animation: brand-forge-scan 1500ms ease-out both;
+}
+
+.brand-easter-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 5px;
+  width: 184px;
+  min-height: 132px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -48%) scale(0.84);
+  z-index: 2;
+}
+
+.brand-block-easter-active .brand-easter-stage {
+  animation: brand-stage-enter 4600ms ease-out both;
+}
+
+.brand-easter-emblem {
+  position: relative;
+  width: 142px;
+  height: 86px;
+  display: grid;
+  place-items: center;
+}
+
+.brand-easter-glow {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 132px;
+  height: 88px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(circle at 62% 36%, rgba(242, 191, 94, 0.2), transparent 34%),
+    radial-gradient(circle at 44% 58%, rgba(120, 164, 204, 0.14), transparent 54%);
+  border: none;
+  box-shadow: none;
+  opacity: 0.78;
+  z-index: 1;
+}
+
+.brand-block-easter-active .brand-easter-glow {
+  animation: thor-glow-pulse 1600ms ease-out 180ms 3 both;
+}
+
+.brand-easter-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 78px;
+  height: 78px;
+  object-fit: contain;
+  transform: translate(-50%, -52%);
+  filter: drop-shadow(0 10px 18px rgba(8, 15, 28, 0.26));
+  z-index: 2;
+}
+
+
+.brand-easter-caption {
+  position: relative;
+  z-index: 3;
+  color: rgba(242, 191, 94, 0.96);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  text-shadow: 0 0 14px rgba(242, 191, 94, 0.22);
+}
+
+.brand-easter-author {
+  position: relative;
+  z-index: 3;
+  margin-top: -2px;
+  color: rgba(249, 242, 230, 0.68);
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.brand-block-easter-active .brand-easter-caption {
+  animation: brand-caption-reveal 4600ms ease-out both;
+}
+
+.brand-block-easter-active .brand-easter-author {
+  animation: brand-author-reveal 4600ms ease-out both;
 }
 
 .eyebrow {
@@ -394,12 +595,105 @@ input {
   line-height: 1.45;
   color: rgba(249, 242, 230, 0.62);
 }
+
+@keyframes brand-forge-scan {
+  0% {
+    transform: translateX(-46%) rotate(8deg);
+    opacity: 0;
+  }
+
+  22% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateX(46%) rotate(8deg);
+    opacity: 0;
+  }
+}
+
+@keyframes brand-stage-enter {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -42%) scale(0.78);
+  }
+
+  10%,
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -53%) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -60%) scale(0.9);
+  }
+}
+
+@keyframes thor-glow-pulse {
+  0% {
+    opacity: 0.42;
+    transform: translate(-50%, -50%) scale(0.94);
+  }
+
+  36% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+
+  100% {
+    opacity: 0.68;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes brand-caption-reveal {
+
+  0%,
+  32% {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  48%,
+  82% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes brand-author-reveal {
+
+  0%,
+  42% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  56%,
+  82% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
 .workspace-frame {
   position: relative;
   min-height: 0;
   height: 100vh;
   overflow: hidden;
 }
+
 .workspace-shell {
   position: relative;
   min-height: 0;
@@ -408,12 +702,21 @@ input {
   overflow-x: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* 右侧工作区毛玻璃效果调节区 */
+  /* 第一层 radial-gradient：控制左上角暖色高光 */
+  /* rgba(..., 0.22) 的 0.22 越大高光越明显，transparent 26% 的 26% 越大扩散范围越广 */
+  /* 第二层 linear-gradient：控制右侧主体背景从上到下的亮度和通透感 */
+  /* 顶部 rgba(..., a) 越大越实，底部 rgba(..., 0.a) 越大底部存在感越强 */
   background:
     radial-gradient(circle at top left, rgba(232, 194, 122, 0.22), transparent 26%),
-    linear-gradient(180deg, rgba(246, 241, 232, 0.95) 0%, rgba(235, 228, 214, 0.12) 100%);
-  backdrop-filter: blur(24px) saturate(1.14);
-  -webkit-backdrop-filter: blur(24px) saturate(1.14);
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+    linear-gradient(180deg, rgba(246, 241, 232, 0.8) 0%, rgba(235, 228, 214, 0.5) 100%);
+  /* backdrop-filter：控制右侧毛玻璃强度 */
+  /* 与左侧统一为 blur(28px) saturate(1.2)，保持两侧毛玻璃观感一致 */
+  backdrop-filter: blur(28px) saturate(1.2);
+  -webkit-backdrop-filter: blur(28px) saturate(1.2);
+  /* border-left：控制右侧与左侧导航交界处的分隔线 */
+  /* rgba 最后一位 0.08 越大分隔越明显，越小越隐约 */
+  border-left: 1px solid rgba(255, 255, 255, 0.8);
 }
 
 .workspace-shell::-webkit-scrollbar {
@@ -1091,7 +1394,7 @@ input {
 }
 
 .settings-block-head .muted,
-.about-card > .muted {
+.about-card>.muted {
   margin: 4px 0 0;
   line-height: 1.5;
 }
@@ -2026,6 +2329,20 @@ input {
     transform: none;
     box-shadow: none;
   }
+
+  .brand-block-easter-active::after,
+  .brand-block-easter-active .brand-easter-stage,
+  .brand-block-easter-active .brand-easter-glow,
+  .brand-block-easter-active .brand-easter-caption,
+  .brand-block-easter-active .brand-easter-author {
+    animation: none;
+  }
+
+  .brand-block-easter-active .brand-easter-stage,
+  .brand-block-easter-active .brand-easter-caption,
+  .brand-block-easter-active .brand-easter-author {
+    opacity: 1;
+  }
 }
 
 @media (max-width: 900px) {
@@ -2041,7 +2358,7 @@ input {
     overflow: visible;
   }
 
-  .side-nav-shell > div {
+  .side-nav-shell>div {
     min-height: 0;
     display: block;
   }
