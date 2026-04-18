@@ -40,6 +40,7 @@ log.txt
 log_file/
 result.txt
 test/out/
+app-state.json
 
 # 本地样本与临时文件
 *.epub
@@ -55,3 +56,4 @@ test
 # 工具配置
 .black
 .codex/app-state.json
+

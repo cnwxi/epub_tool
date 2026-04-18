@@ -102,6 +102,7 @@ let brandEasterHideTimer = 0;
 const {
   collectEpubFiles,
   getLogPath,
+  getPersistedStorePath,
   isTauriRuntime,
   listFontTargets,
   openPath,
@@ -324,6 +325,7 @@ const updateNoticeVisible = ref(false);
 const dragActive = ref(false);
 const browserFileInput = ref<HTMLInputElement | null>(null);
 const currentLogPath = ref("");
+const currentPersistedStorePath = ref("");
 const prefersReducedMotion = ref(false);
 const clientPlatform = ref<"windows" | "macos" | "linux" | "web">(detectClientPlatform());
 const defaultLogPaths = [
@@ -338,6 +340,20 @@ const defaultLogPaths = [
   {
     platform: "Linux",
     path: `~/.local/share/${APP_IDENTIFIER}/logs/log.txt`,
+  },
+];
+const defaultPersistedStorePaths = [
+  {
+    platform: "Windows",
+    path: `%APPDATA%\\${APP_IDENTIFIER}\\app-state.json`,
+  },
+  {
+    platform: "macOS",
+    path: `~/Library/Application Support/${APP_IDENTIFIER}/app-state.json`,
+  },
+  {
+    platform: "Linux",
+    path: `~/.config/${APP_IDENTIFIER}/app-state.json`,
   },
 ];
 
@@ -917,7 +933,7 @@ const activeDescription = computed(() => {
     case "settings":
       return "集中管理版本更新、自动行为、日志入口与最近任务历史。";
     default:
-      return "查看累计处理统计、功能范围、输出目录和日志路径。";
+      return "查看累计处理统计、功能范围、输出目录、日志和设置文件路径。";
   }
 });
 
@@ -1703,6 +1719,22 @@ const openCurrentLogDirectory = () => {
   void openPath(getContainingDirectory(currentLogPath.value));
 };
 
+const openPersistedStoreFile = () => {
+  if (!currentPersistedStorePath.value) {
+    return;
+  }
+
+  void openPath(currentPersistedStorePath.value);
+};
+
+const openPersistedStoreDirectory = () => {
+  if (!currentPersistedStorePath.value) {
+    return;
+  }
+
+  void openPath(getContainingDirectory(currentPersistedStorePath.value));
+};
+
 const openOutputFolder = (path: string) => {
   void openPath(getContainingDirectory(path));
 };
@@ -1948,6 +1980,11 @@ onMounted(async () => {
       currentLogPath.value = await getLogPath();
     } catch {
       currentLogPath.value = "";
+    }
+    try {
+      currentPersistedStorePath.value = await getPersistedStorePath();
+    } catch {
+      currentPersistedStorePath.value = "";
     }
   }
 
@@ -2404,9 +2441,9 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             <section class="settings-block section-animated-block glass-medium">
               <div class="settings-block-head">
                 <div>
-                  <p class="eyebrow">日志工具</p>
-                  <h3>日志位置</h3>
-                  <p class="muted">开发态写入仓库根目录，打包版写入系统应用日志目录。</p>
+                  <p class="eyebrow">路径工具</p>
+                  <h3>日志与设置文件</h3>
+                  <p class="muted">开发态写入仓库根目录，打包版分别写入系统日志目录和应用配置目录。</p>
                 </div>
                 <div class="panel-actions">
                   <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button"
@@ -2417,11 +2454,25 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                     @click="openCurrentLogDirectory">
                     打开日志目录
                   </button>
+                  <button v-if="currentPersistedStorePath" class="ghost-btn settings-action-btn" type="button"
+                    @click="openPersistedStoreFile">
+                    打开设置文件
+                  </button>
+                  <button v-if="currentPersistedStorePath" class="ghost-btn settings-action-btn" type="button"
+                    @click="openPersistedStoreDirectory">
+                    打开所在目录
+                  </button>
                 </div>
               </div>
-              <div class="settings-log-card settings-interactive-card glass-medium">
-                <span>当前日志文件</span>
-                <strong>{{ currentLogPath || "开发环境默认写入仓库根目录的 log.txt。" }}</strong>
+              <div class="settings-path-grid">
+                <div class="settings-log-card settings-interactive-card glass-medium">
+                  <span>当前日志文件</span>
+                  <strong>{{ currentLogPath || "开发环境默认写入仓库根目录的 log.txt。" }}</strong>
+                </div>
+                <div class="settings-log-card settings-interactive-card glass-medium">
+                  <span>当前设置文件</span>
+                  <strong>{{ currentPersistedStorePath || "开发环境默认写入仓库根目录的 app-state.json。" }}</strong>
+                </div>
               </div>
             </section>
 
@@ -2598,6 +2649,29 @@ activeSection.value = normalizeSectionKey(activeSection.value);
               </div>
               <div class="about-path-grid about-path-grid-compact">
                 <div v-for="item in defaultLogPaths" :key="item.platform" class="about-path-card glass-medium">
+                  <strong>{{ item.platform }}</strong>
+                  <p>{{ item.path }}</p>
+                </div>
+              </div>
+            </article>
+            <article class="about-card glass-medium section-animated-block">
+              <div class="about-card-head">
+                <p class="eyebrow">持久化说明</p>
+                <h4>设置文件位置</h4>
+              </div>
+              <div class="about-list">
+                <span v-if="currentPersistedStorePath">
+                  当前实际持久化文件：{{ currentPersistedStorePath }}
+                </span>
+                <span v-else>
+                  开发环境默认写入仓库根目录的 app-state.json，打包版按系统平台写入应用配置目录。
+                </span>
+              </div>
+              <div class="about-path-grid about-path-grid-compact">
+                <div
+                  v-for="item in defaultPersistedStorePaths"
+                  :key="item.platform"
+                  class="about-path-card glass-medium">
                   <strong>{{ item.platform }}</strong>
                   <p>{{ item.path }}</p>
                 </div>

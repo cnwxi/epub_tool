@@ -8,8 +8,10 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{ipc::Channel, AppHandle, Manager};
+use tauri::{ipc::Channel, AppHandle, Manager, State};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -47,6 +49,11 @@ struct FontTargetResponse {
     ok: bool,
     input_file: String,
     font_families: Vec<String>,
+}
+
+struct PersistedStore {
+    path: Option<PathBuf>,
+    data: Mutex<BTreeMap<String, Value>>,
 }
 
 fn workspace_root() -> Option<PathBuf> {
@@ -89,24 +96,94 @@ fn resolve_config_store_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir.join("app-state.json"))
 }
 
-fn read_config_store(app: &AppHandle) -> Result<BTreeMap<String, Value>, String> {
-    let path = resolve_config_store_path(app)?;
+fn corrupt_store_backup_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("app-state.json");
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .unwrap_or(0);
+    path.with_file_name(format!("{file_name}.corrupt-{timestamp}"))
+}
+
+fn cleanup_corrupt_store_backups(path: &Path, retain: usize) -> Result<(), String> {
+    let parent = match path.parent() {
+        Some(parent) => parent,
+        None => return Ok(()),
+    };
+    let file_name = match path.file_name().and_then(|value| value.to_str()) {
+        Some(file_name) => file_name,
+        None => return Ok(()),
+    };
+    let backup_prefix = format!("{file_name}.corrupt-");
+
+    let mut backups = Vec::new();
+    for entry in fs::read_dir(parent)
+        .map_err(|error| format!("读取配置目录失败 {}: {error}", parent.display()))?
+    {
+        let entry = entry.map_err(|error| format!("读取配置目录项失败: {error}"))?;
+        let entry_path = entry.path();
+        let entry_name = match entry_path.file_name().and_then(|value| value.to_str()) {
+            Some(entry_name) => entry_name,
+            None => continue,
+        };
+        if !entry_name.starts_with(&backup_prefix) {
+            continue;
+        }
+
+        let modified_at = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(UNIX_EPOCH);
+        backups.push((modified_at, entry_path));
+    }
+
+    backups.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, backup_path) in backups.into_iter().skip(retain) {
+        fs::remove_file(&backup_path).map_err(|error| {
+            format!(
+                "清理旧损坏配置备份失败 {}: {error}",
+                backup_path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn read_config_store(path: &Path) -> Result<BTreeMap<String, Value>, String> {
     if !path.is_file() {
         return Ok(BTreeMap::new());
     }
 
-    let raw = fs::read_to_string(&path)
+    let raw = fs::read_to_string(path)
         .map_err(|error| format!("读取配置文件失败 {}: {error}", path.display()))?;
     if raw.trim().is_empty() {
         return Ok(BTreeMap::new());
     }
 
     serde_json::from_str::<BTreeMap<String, Value>>(&raw)
-        .map_err(|error| format!("解析配置文件失败 {}: {error}", path.display()))
+        .or_else(|error| {
+            let backup_path = corrupt_store_backup_path(path);
+            fs::rename(path, &backup_path).map_err(|rename_error| {
+                format!(
+                    "解析配置文件失败 {}: {error}；备份损坏文件到 {} 失败: {rename_error}",
+                    path.display(),
+                    backup_path.display()
+                )
+            })?;
+            cleanup_corrupt_store_backups(path, 3)?;
+            eprintln!(
+                "检测到损坏的 app-state.json，已备份到 {} 并重置为默认状态。",
+                backup_path.display()
+            );
+            Ok(BTreeMap::new())
+        })
 }
 
-fn write_config_store(app: &AppHandle, store: &BTreeMap<String, Value>) -> Result<(), String> {
-    let path = resolve_config_store_path(app)?;
+fn write_config_store(path: &Path, store: &BTreeMap<String, Value>) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("配置文件路径无父目录: {}", path.display()))?;
@@ -115,8 +192,59 @@ fn write_config_store(app: &AppHandle, store: &BTreeMap<String, Value>) -> Resul
 
     let content =
         serde_json::to_vec_pretty(store).map_err(|error| format!("序列化配置文件失败: {error}"))?;
-    fs::write(&path, content)
-        .map_err(|error| format!("写入配置文件失败 {}: {error}", path.display()))
+    fs::write(path, content).map_err(|error| format!("写入配置文件失败 {}: {error}", path.display()))
+}
+
+impl PersistedStore {
+    fn load(app: &AppHandle) -> Self {
+        match resolve_config_store_path(app) {
+            Ok(path) => match read_config_store(&path) {
+                Ok(data) => Self {
+                    path: Some(path),
+                    data: Mutex::new(data),
+                },
+                Err(error) => {
+                    eprintln!(
+                        "加载 app-state.json 失败，将以默认状态继续启动：{error}"
+                    );
+                    Self {
+                        path: Some(path),
+                        data: Mutex::new(BTreeMap::new()),
+                    }
+                }
+            },
+            Err(error) => {
+                eprintln!(
+                    "无法定位 app-state.json 存储路径，将以仅内存状态继续启动：{error}"
+                );
+                Self {
+                    path: None,
+                    data: Mutex::new(BTreeMap::new()),
+                }
+            }
+        }
+    }
+
+    fn load_value(&self, key: &str) -> Result<Option<Value>, String> {
+        let store = self
+            .data
+            .lock()
+            .map_err(|_| "配置存储锁已损坏，无法读取状态。".to_string())?;
+        Ok(store.get(key).cloned())
+    }
+
+    fn save_value(&self, key: String, value: Value) -> Result<(), String> {
+        let mut store = self
+            .data
+            .lock()
+            .map_err(|_| "配置存储锁已损坏，无法写入状态。".to_string())?;
+        store.insert(key, value);
+        let path = self
+            .path
+            .as_ref()
+            .ok_or_else(|| "当前运行环境未提供配置存储路径，无法持久化状态。".to_string())?;
+        write_config_store(path, &store)
+    }
 }
 
 fn resolve_log_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -435,6 +563,17 @@ async fn get_log_path(app: AppHandle) -> Result<String, String> {
     Ok(resolve_log_path(&app)?.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+async fn get_persisted_store_path(
+    store: State<'_, PersistedStore>,
+) -> Result<String, String> {
+    store
+        .path
+        .as_ref()
+        .map(|path| path.to_string_lossy().to_string())
+        .ok_or_else(|| "当前运行环境未提供配置存储路径。".to_string())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PersistedStateResponse {
@@ -444,14 +583,13 @@ struct PersistedStateResponse {
 
 #[tauri::command]
 async fn load_persisted_state(
-    app: AppHandle,
+    store: State<'_, PersistedStore>,
     key: String,
 ) -> Result<PersistedStateResponse, String> {
-    let store = read_config_store(&app)?;
-    if let Some(value) = store.get(&key) {
+    if let Some(value) = store.load_value(&key)? {
         return Ok(PersistedStateResponse {
             found: true,
-            value: value.clone(),
+            value,
         });
     }
 
@@ -462,10 +600,12 @@ async fn load_persisted_state(
 }
 
 #[tauri::command]
-async fn save_persisted_state(app: AppHandle, key: String, value: Value) -> Result<(), String> {
-    let mut store = read_config_store(&app)?;
-    store.insert(key, value);
-    write_config_store(&app, &store)
+async fn save_persisted_state(
+    store: State<'_, PersistedStore>,
+    key: String,
+    value: Value,
+) -> Result<(), String> {
+    store.save_value(key, value)
 }
 
 #[tauri::command]
@@ -607,12 +747,14 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            app.manage(PersistedStore::load(&app.handle()));
             setup_window_effects(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             collect_epub_files,
             get_log_path,
+            get_persisted_store_path,
             list_font_targets,
             load_persisted_state,
             open_path,

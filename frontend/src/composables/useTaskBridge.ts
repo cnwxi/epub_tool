@@ -51,6 +51,13 @@ export function useTaskBridge() {
     return invoke<string>("get_log_path");
   };
 
+  const getPersistedStorePath = async (): Promise<string> => {
+    if (!isTauriRuntime()) {
+      return "";
+    }
+    return invoke<string>("get_persisted_store_path");
+  };
+
   const loadPersistedState = async <T>(
     key: string,
   ): Promise<{ found: boolean; value: T | null }> => {
@@ -88,6 +95,7 @@ export function useTaskBridge() {
   return {
     collectEpubFiles,
     getLogPath,
+    getPersistedStorePath,
     isTauriRuntime,
     listFontTargets,
     loadPersistedState,

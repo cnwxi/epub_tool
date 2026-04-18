@@ -394,6 +394,7 @@ input {
 .brand-title-alias {
   font-size: 13px;
   font-weight: 700;
+  padding-top: 5px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: rgba(242, 191, 94, 0.86);
@@ -1469,6 +1470,12 @@ input {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.settings-path-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--layout-gap-2);
+}
+
 .settings-preference-card {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -2273,7 +2280,8 @@ input {
   }
 
   .settings-status-grid,
-  .settings-preference-grid {
+  .settings-preference-grid,
+  .settings-path-grid {
     grid-template-columns: 1fr;
   }
 }
