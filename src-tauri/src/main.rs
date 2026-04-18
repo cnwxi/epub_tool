@@ -19,7 +19,7 @@ use std::os::windows::process::CommandExt;
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 #[cfg(target_os = "windows")]
-use window_vibrancy::apply_blur;
+use window_vibrancy::{apply_blur, apply_mica};
 
 const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
     "epub-tool-python.exe"
@@ -502,8 +502,13 @@ fn setup_window_effects(app: &tauri::App) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        apply_blur(&window, Some((18, 18, 18, 90)))
-            .map_err(|error| format!("应用 Windows 模糊效果失败: {error}"))?;
+        window
+            .set_decorations(true)
+            .map_err(|error| format!("恢复 Windows 原生窗口装饰失败: {error}"))?;
+
+        apply_mica(&window, None)
+            .or_else(|_| apply_blur(&window, Some((245, 239, 231, 180))))
+            .map_err(|error| format!("应用 Windows 毛玻璃效果失败: {error}"))?;
     }
 
     #[cfg(target_os = "linux")]
