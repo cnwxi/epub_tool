@@ -230,11 +230,21 @@ input {
   height: auto;
   overflow: visible;
   padding: 26px 18px;
-  /* 调整左侧毛玻璃效果 */
-  background: linear-gradient(180deg, rgba(34, 52, 75, 0.62), rgba(45, 67, 94, 0.18));
+  /* 左侧导航毛玻璃效果调节区 */
+  /* background：控制左侧玻璃底色，从上到下的渐变层次也在这里改 */
+  /* 第一个 rgba(...) 是顶部颜色，最后一位 越大越实、越小越通透 */
+  /* 第二个 rgba(...) 是底部颜色，最后一位 越大越厚重、越小越轻 */
+  background: linear-gradient(180deg, rgba(34, 52, 75, 0.8), rgba(45, 67, 94, 0.5));
+  /* backdrop-filter：控制左侧毛玻璃强度 */
+  /* blur(28px) 控制模糊半径，值越大越糊，值越小越清晰 */
+  /* saturate(1.2) 控制透过玻璃后的颜色饱和度，值越大颜色越鲜明 */
   backdrop-filter: blur(28px) saturate(1.2);
   -webkit-backdrop-filter: blur(28px) saturate(1.2);
-  border-right: 1px solid rgba(255, 255, 255, 0.18);
+  /* border-right：控制左侧与右侧内容区之间的分隔线 */
+  /* 1px 是线宽，rgba 最后一位 0.08 是线的可见强度 */
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  /* box-shadow：控制左侧边缘的内侧高光，让玻璃边界更明显 */
+  /* rgba 最后一位 0.06 越大高光越明显，越小越柔和 */
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
   color: #f9f2e6;
 }
@@ -408,12 +418,21 @@ input {
   overflow-x: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* 右侧工作区毛玻璃效果调节区 */
+  /* 第一层 radial-gradient：控制左上角暖色高光 */
+  /* rgba(..., 0.22) 的 0.22 越大高光越明显，transparent 26% 的 26% 越大扩散范围越广 */
+  /* 第二层 linear-gradient：控制右侧主体背景从上到下的亮度和通透感 */
+  /* 顶部 rgba(..., a) 越大越实，底部 rgba(..., 0.a) 越大底部存在感越强 */
   background:
     radial-gradient(circle at top left, rgba(232, 194, 122, 0.22), transparent 26%),
-    linear-gradient(180deg, rgba(246, 241, 232, 0.95) 0%, rgba(235, 228, 214, 0.12) 100%);
-  backdrop-filter: blur(24px) saturate(1.14);
-  -webkit-backdrop-filter: blur(24px) saturate(1.14);
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+    linear-gradient(180deg, rgba(246, 241, 232, 0.8) 0%, rgba(235, 228, 214, 0.5) 100%);
+  /* backdrop-filter：控制右侧毛玻璃强度 */
+  /* 与左侧统一为 blur(28px) saturate(1.2)，保持两侧毛玻璃观感一致 */
+  backdrop-filter: blur(28px) saturate(1.2);
+  -webkit-backdrop-filter: blur(28px) saturate(1.2);
+  /* border-left：控制右侧与左侧导航交界处的分隔线 */
+  /* rgba 最后一位 0.08 越大分隔越明显，越小越隐约 */
+  border-left: 1px solid rgba(255, 255, 255, 0.8);
 }
 
 .workspace-shell::-webkit-scrollbar {
