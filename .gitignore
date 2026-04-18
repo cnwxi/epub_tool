@@ -54,3 +54,4 @@ test
 
 # 工具配置
 .black
+.codex/app-state.json

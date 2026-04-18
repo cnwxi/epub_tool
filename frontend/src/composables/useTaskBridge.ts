@@ -51,6 +51,17 @@ export function useTaskBridge() {
     return invoke<string>("get_log_path");
   };
 
+  const loadPersistedState = async <T>(
+    key: string,
+  ): Promise<{ found: boolean; value: T | null }> => {
+    if (!isTauriRuntime()) {
+      return { found: false, value: null };
+    }
+    return invoke<{ found: boolean; value: T | null }>("load_persisted_state", {
+      key,
+    });
+  };
+
   const resolveInputSources = async (inputPaths: string[]): Promise<string[]> => {
     if (!isTauriRuntime()) {
       return inputPaths;
@@ -67,13 +78,22 @@ export function useTaskBridge() {
     await invoke("open_path", { path });
   };
 
+  const savePersistedState = async (key: string, value: unknown): Promise<void> => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    await invoke("save_persisted_state", { key, value });
+  };
+
   return {
     collectEpubFiles,
     getLogPath,
     isTauriRuntime,
     listFontTargets,
+    loadPersistedState,
     openPath,
     resolveInputSources,
     runTask,
+    savePersistedState,
   };
 }
