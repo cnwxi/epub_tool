@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::BTreeMap,
     fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -72,6 +73,50 @@ fn resolve_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resource_dir()
         .map_err(|error| format!("无法定位应用资源目录: {error}"))
+}
+
+fn resolve_config_store_path(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(root) = workspace_root() {
+        return Ok(root.join(".codex").join("app-state.json"));
+    }
+
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("无法定位配置目录: {error}"))?;
+    fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("创建配置目录失败 {}: {error}", config_dir.display()))?;
+    Ok(config_dir.join("app-state.json"))
+}
+
+fn read_config_store(app: &AppHandle) -> Result<BTreeMap<String, Value>, String> {
+    let path = resolve_config_store_path(app)?;
+    if !path.is_file() {
+        return Ok(BTreeMap::new());
+    }
+
+    let raw = fs::read_to_string(&path)
+        .map_err(|error| format!("读取配置文件失败 {}: {error}", path.display()))?;
+    if raw.trim().is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    serde_json::from_str::<BTreeMap<String, Value>>(&raw)
+        .map_err(|error| format!("解析配置文件失败 {}: {error}", path.display()))
+}
+
+fn write_config_store(app: &AppHandle, store: &BTreeMap<String, Value>) -> Result<(), String> {
+    let path = resolve_config_store_path(app)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("配置文件路径无父目录: {}", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("创建配置父目录失败 {}: {error}", parent.display()))?;
+
+    let content =
+        serde_json::to_vec_pretty(store).map_err(|error| format!("序列化配置文件失败: {error}"))?;
+    fs::write(&path, content)
+        .map_err(|error| format!("写入配置文件失败 {}: {error}", path.display()))
 }
 
 fn resolve_log_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -322,7 +367,10 @@ fn parse_json_line(line: &str) -> Value {
 }
 
 #[tauri::command]
-async fn list_font_targets(app: AppHandle, file_path: String) -> Result<FontTargetResponse, String> {
+async fn list_font_targets(
+    app: AppHandle,
+    file_path: String,
+) -> Result<FontTargetResponse, String> {
     let output = build_backend_command(&app, "list-fonts")?
         .arg(file_path)
         .output()
@@ -387,6 +435,39 @@ async fn get_log_path(app: AppHandle) -> Result<String, String> {
     Ok(resolve_log_path(&app)?.to_string_lossy().to_string())
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedStateResponse {
+    found: bool,
+    value: Value,
+}
+
+#[tauri::command]
+async fn load_persisted_state(
+    app: AppHandle,
+    key: String,
+) -> Result<PersistedStateResponse, String> {
+    let store = read_config_store(&app)?;
+    if let Some(value) = store.get(&key) {
+        return Ok(PersistedStateResponse {
+            found: true,
+            value: value.clone(),
+        });
+    }
+
+    Ok(PersistedStateResponse {
+        found: false,
+        value: Value::Null,
+    })
+}
+
+#[tauri::command]
+async fn save_persisted_state(app: AppHandle, key: String, value: Value) -> Result<(), String> {
+    let mut store = read_config_store(&app)?;
+    store.insert(key, value);
+    write_config_store(&app, &store)
+}
+
 #[tauri::command]
 async fn collect_epub_files(app: AppHandle, directory_path: String) -> Result<Vec<String>, String> {
     let resolved = resolve_path(&app, &directory_path)?;
@@ -401,7 +482,10 @@ async fn collect_epub_files(app: AppHandle, directory_path: String) -> Result<Ve
 }
 
 #[tauri::command]
-async fn resolve_input_sources(app: AppHandle, input_paths: Vec<String>) -> Result<Vec<String>, String> {
+async fn resolve_input_sources(
+    app: AppHandle,
+    input_paths: Vec<String>,
+) -> Result<Vec<String>, String> {
     let mut files = Vec::new();
 
     for input_path in input_paths {
@@ -530,9 +614,11 @@ fn main() {
             collect_epub_files,
             get_log_path,
             list_font_targets,
+            load_persisted_state,
             open_path,
             resolve_input_sources,
-            run_epub_task
+            run_epub_task,
+            save_persisted_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -179,17 +179,102 @@ const normalizeSectionKey = (value: unknown): SectionKey => {
   return "reformat";
 };
 
+const normalizeSettings = (value: unknown): AppSettings => {
+  const raw =
+    value && typeof value === "object"
+      ? (value as Partial<AppSettings> & {
+        autoOpenFirstOutput?: boolean;
+        autoCheckUpdate?: boolean;
+      })
+      : {};
+
+  return {
+    autoOpenOutputFolder:
+      typeof raw.autoOpenOutputFolder === "boolean"
+        ? raw.autoOpenOutputFolder
+        : typeof raw.autoOpenFirstOutput === "boolean"
+          ? raw.autoOpenFirstOutput
+          : defaultSettings.autoOpenOutputFolder,
+    autoOpenLogFile:
+      typeof raw.autoOpenLogFile === "boolean"
+        ? raw.autoOpenLogFile
+        : defaultSettings.autoOpenLogFile,
+    autoCheckUpdates:
+      typeof raw.autoCheckUpdates === "boolean"
+        ? raw.autoCheckUpdates
+        : typeof raw.autoCheckUpdate === "boolean"
+          ? raw.autoCheckUpdate
+          : defaultSettings.autoCheckUpdates,
+    keepHistoryCount:
+      typeof raw.keepHistoryCount === "number"
+        ? raw.keepHistoryCount
+        : defaultSettings.keepHistoryCount,
+  };
+};
+
+const normalizeOutputDirectoryMap = (value: unknown): TaskOutputDirectoryMap => {
+  const raw = value && typeof value === "object" ? (value as Partial<TaskOutputDirectoryMap>) : {};
+  return {
+    ...createOutputDirectoryMap(),
+    ...Object.fromEntries(
+      taskSections.map((taskType) => {
+        const candidate = raw[taskType];
+        return [taskType, typeof candidate === "string" ? candidate : ""];
+      }),
+    ),
+  };
+};
+
+const normalizeTaskAggregateStats = (value: unknown): TaskAggregateStats => {
+  const raw = value && typeof value === "object" ? (value as Partial<TaskAggregateStats>) : {};
+  const normalizeCount = (candidate: unknown): number =>
+    typeof candidate === "number" && Number.isFinite(candidate) ? candidate : 0;
+
+  return {
+    total: normalizeCount(raw.total),
+    success: normalizeCount(raw.success),
+    failed: normalizeCount(raw.failed),
+    skipped: normalizeCount(raw.skipped),
+  };
+};
+
+const normalizeUpdateCheckState = (value: unknown): UpdateCheckState => {
+  const raw = value && typeof value === "object" ? (value as Partial<UpdateCheckState>) : {};
+  return {
+    checkedAt: typeof raw.checkedAt === "string" ? raw.checkedAt : "",
+    latestVersion: typeof raw.latestVersion === "string" ? raw.latestVersion : "",
+    latestReleaseUrl:
+      typeof raw.latestReleaseUrl === "string" && raw.latestReleaseUrl
+        ? raw.latestReleaseUrl
+        : LATEST_RELEASE_URL,
+    status:
+      raw.status === "checking" ||
+      raw.status === "available" ||
+      raw.status === "latest" ||
+      raw.status === "error"
+        ? raw.status
+        : "idle",
+    message:
+      typeof raw.message === "string" && raw.message
+        ? raw.message
+        : defaultUpdateCheckState.message,
+  };
+};
+
 const activeSection = usePersistentState<SectionKey>(
   "epub-tool.active-section",
   "reformat",
+  normalizeSectionKey,
 );
 const outputDirs = usePersistentState<TaskOutputDirectoryMap>(
   "epub-tool.output-dirs",
   createOutputDirectoryMap(),
+  normalizeOutputDirectoryMap,
 );
 const settings = usePersistentState<AppSettings>(
   "epub-tool.settings",
   defaultSettings,
+  normalizeSettings,
 );
 const taskHistory = usePersistentState<TaskHistoryEntry[]>(
   "epub-tool.task-history",
@@ -198,10 +283,12 @@ const taskHistory = usePersistentState<TaskHistoryEntry[]>(
 const taskAggregateStats = usePersistentState<TaskAggregateStats>(
   "epub-tool.aggregate-stats",
   defaultTaskAggregateStats,
+  normalizeTaskAggregateStats,
 );
 const persistedUpdateCheckState = usePersistentState<UpdateCheckState>(
   "epub-tool.update-check-state",
   defaultUpdateCheckState,
+  normalizeUpdateCheckState,
 );
 const taskFilesByType = ref<Record<TaskType, QueuedFile[]>>(createTaskRecord(() => []));
 const selectedFilePathByType = ref<Record<TaskType, string>>(createTaskRecord(() => ""));
@@ -367,39 +454,6 @@ const scheduleCustomScrollbarUpdate = () => {
     customScrollbarAnimationFrame = 0;
     updateAllCustomScrollbars();
   });
-};
-
-const normalizeSettings = (value: unknown): AppSettings => {
-  const raw =
-    value && typeof value === "object"
-      ? (value as Partial<AppSettings> & {
-        autoOpenFirstOutput?: boolean;
-        autoCheckUpdate?: boolean;
-      })
-      : {};
-
-  return {
-    autoOpenOutputFolder:
-      typeof raw.autoOpenOutputFolder === "boolean"
-        ? raw.autoOpenOutputFolder
-        : typeof raw.autoOpenFirstOutput === "boolean"
-          ? raw.autoOpenFirstOutput
-          : defaultSettings.autoOpenOutputFolder,
-    autoOpenLogFile:
-      typeof raw.autoOpenLogFile === "boolean"
-        ? raw.autoOpenLogFile
-        : defaultSettings.autoOpenLogFile,
-    autoCheckUpdates:
-      typeof raw.autoCheckUpdates === "boolean"
-        ? raw.autoCheckUpdates
-        : typeof raw.autoCheckUpdate === "boolean"
-          ? raw.autoCheckUpdate
-          : defaultSettings.autoCheckUpdates,
-    keepHistoryCount:
-      typeof raw.keepHistoryCount === "number"
-        ? raw.keepHistoryCount
-        : defaultSettings.keepHistoryCount,
-  };
 };
 
 settings.value = normalizeSettings(settings.value);
