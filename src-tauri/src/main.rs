@@ -77,7 +77,7 @@ fn resolve_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn resolve_config_store_path(app: &AppHandle) -> Result<PathBuf, String> {
     if let Some(root) = workspace_root() {
-        return Ok(root.join(".codex").join("app-state.json"));
+        return Ok(root.join("app-state.json"));
     }
 
     let config_dir = app
