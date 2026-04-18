@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import brandEasterIconUrl from "../../../img/icon.png";
 
 import type { SectionKey } from "../types";
 
 const props = defineProps<{
   active: SectionKey;
   items: Array<{ key: SectionKey; label: string; description: string }>;
+  brandEasterActive: boolean;
+  handleBrandEasterClick: () => void;
+  triggerBrandEasterAnimation: () => void;
 }>();
 
 const emit = defineEmits<{
@@ -48,12 +52,33 @@ watch(
 <template>
   <aside class="side-nav nav-animated-panel">
     <section class="nav-group nav-group-brand nav-animated-block">
-      <div class="brand-block">
-        <p class="eyebrow">NewUI</p>
-        <h1>Epub Tool</h1>
-        <p class="brand-copy">
-          面向 EPUB 批量处理的桌面工具，统一提供队列执行、结果回看、日志定位与历史统计。
-        </p>
+      <div
+        class="brand-block"
+        :class="{ 'brand-block-easter-active': props.brandEasterActive }"
+        role="button"
+        tabindex="0"
+        title="7连击召唤Thor"
+        @click="props.handleBrandEasterClick"
+        @keydown.enter.prevent="props.triggerBrandEasterAnimation"
+        @keydown.space.prevent="props.triggerBrandEasterAnimation">
+        <div class="brand-content">
+          <p class="eyebrow brand-eyebrow">NEW UI · ET</p>
+          <h1 class="brand-title" aria-label="Epub Tool, E-Book Thor">
+            <span class="brand-title-main">Epub Tool</span>
+            <span class="brand-title-alias">E-Book Thor</span>
+          </h1>
+          <p class="brand-copy">
+            挥动小锤，批量锻造。
+          </p>
+        </div>
+        <div class="brand-easter-stage" aria-hidden="true">
+          <div class="brand-easter-emblem">
+            <span class="brand-easter-glow"></span>
+            <img class="brand-easter-icon" :src="brandEasterIconUrl" alt="" />
+          </div>
+          <span class="brand-easter-caption">E-BOOK THOR</span>
+          <span class="brand-easter-author">BY CNWXI</span>
+        </div>
       </div>
     </section>
 

@@ -36,13 +36,13 @@ const sectionItems: Array<{
   label: string;
   description: string;
 }> = [
-  { key: "reformat", label: "格式化", description: "重构 EPUB 结构与布局" },
-  { key: "decrypt", label: "文件解密", description: "还原文件名混淆" },
-  { key: "encrypt", label: "文件加密", description: "生成混淆版 EPUB" },
-  { key: "font_encrypt", label: "字体加密", description: "按文件选择目标字体" },
-  { key: "transfer_img", label: "图片转换", description: "转换 EPUB 内 WEBP 图片" },
+  { key: "reformat", label: "格式化", description: "重铸 EPUB 结构与布局" },
+  { key: "decrypt", label: "文件解密", description: "解除文件名混淆封印" },
+  { key: "encrypt", label: "文件加密", description: "锻造混淆版 EPUB" },
+  { key: "font_encrypt", label: "字体加密", description: "为字体刻上隐藏符文" },
+  { key: "transfer_img", label: "图片转换", description: "转炼 EPUB 内 WEBP 图片" },
   { key: "settings", label: "设置", description: "更新、偏好、日志与历史" },
-  { key: "about", label: "关于", description: "统计、功能范围与路径" },
+  { key: "about", label: "关于", description: "锻造统计、能力范围与路径" },
 ];
 const taskSections: TaskType[] = [
   "reformat",
@@ -93,6 +93,11 @@ const defaultTaskAggregateStats: TaskAggregateStats = {
   failed: 0,
   skipped: 0,
 };
+const brandEasterActive = ref(false);
+const brandEasterClickCount = ref(0);
+const brandEasterLastClickAt = ref(0);
+let brandEasterResetTimer = 0;
+let brandEasterHideTimer = 0;
 
 const {
   collectEpubFiles,
@@ -103,6 +108,45 @@ const {
   resolveInputSources,
   runTask,
 } = useTaskBridge();
+
+const hideBrandEasterAnimation = () => {
+  brandEasterActive.value = false;
+};
+
+const triggerBrandEasterAnimation = () => {
+  if (typeof window !== "undefined") {
+    if (brandEasterHideTimer) {
+      window.clearTimeout(brandEasterHideTimer);
+    }
+    brandEasterHideTimer = window.setTimeout(hideBrandEasterAnimation, 4600);
+  }
+  brandEasterActive.value = false;
+  void nextTick(() => {
+    brandEasterActive.value = true;
+  });
+};
+
+const handleBrandEasterClick = () => {
+  const now = Date.now();
+  if (now - brandEasterLastClickAt.value > 1800) {
+    brandEasterClickCount.value = 0;
+  }
+  brandEasterLastClickAt.value = now;
+  brandEasterClickCount.value += 1;
+  if (typeof window !== "undefined") {
+    if (brandEasterResetTimer) {
+      window.clearTimeout(brandEasterResetTimer);
+    }
+    brandEasterResetTimer = window.setTimeout(() => {
+      brandEasterClickCount.value = 0;
+    }, 1800);
+  }
+  if (brandEasterClickCount.value < 7) {
+    return;
+  }
+  brandEasterClickCount.value = 0;
+  triggerBrandEasterAnimation();
+};
 
 const detectClientPlatform = (): "windows" | "macos" | "linux" | "web" => {
   if (typeof window === "undefined") {
@@ -1900,6 +1944,12 @@ onBeforeUnmount(() => {
   customScrollbarResizeObserver?.disconnect();
   customScrollbarResizeObserver = null;
   unlistenDrop?.();
+  if (brandEasterResetTimer && typeof window !== "undefined") {
+    window.clearTimeout(brandEasterResetTimer);
+  }
+  if (brandEasterHideTimer && typeof window !== "undefined") {
+    window.clearTimeout(brandEasterHideTimer);
+  }
 });
 
 activeSection.value = normalizeSectionKey(activeSection.value);
@@ -1910,7 +1960,14 @@ activeSection.value = normalizeSectionKey(activeSection.value);
     <div class="side-nav-frame">
       <div ref="sideNavShellRef" class="side-nav-shell">
         <div ref="sideNavContentRef">
-          <SideNav :active="activeSection" :items="sectionItems" @select="activeSection = $event" />
+          <SideNav
+            :active="activeSection"
+            :items="sectionItems"
+            :brand-easter-active="brandEasterActive"
+            :handle-brand-easter-click="handleBrandEasterClick"
+            :trigger-brand-easter-animation="triggerBrandEasterAnimation"
+            @select="activeSection = $event"
+          />
         </div>
       </div>
       <div
