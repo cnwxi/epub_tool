@@ -47,7 +47,6 @@ class ImageTransfer:
             self.file_write_path,
             "w",
             zipfile.ZIP_STORED,
-            zipfile.ZIP_STORED,
         )
         for file in self.epub.namelist():
             if file.lower().endswith(".html") or file.endswith(".xhtml"):
@@ -295,7 +294,7 @@ class ImageTransfer:
             except Exception as e:
                 # logger.write(f"无法处理图片 {img}: {str(e)}")
                 logger.write(f"无法处理图片 {img_path}: {str(e)}")
-                self.close_files()
+                raise RuntimeError(f"无法处理图片 {img_path}: {str(e)}") from e
 
         for item in self.ori_files:
             if item in self.epub.namelist():
@@ -413,8 +412,9 @@ class ImageTransfer:
 
 def run_epub_img_transfer(epub_path, output_path):
     logger.write(f"\n正在尝试转换epub中webp格式图片: {epub_path}")
-    it = ImageTransfer(epub_path, output_path)
+    it = None
     try:
+        it = ImageTransfer(epub_path, output_path)
         it.read_files()
         if len(it.img_dict.keys()) == 0:
             logger.write("没有找到需要转换的webp图片")
@@ -426,8 +426,9 @@ def run_epub_img_transfer(epub_path, output_path):
         return 0
     except Exception as e:
         logger.write(f"处理EPUB文件时发生错误: {str(e)}")
-        it.close_files()
-        it.fail_del_target()
+        if it is not None:
+            it.close_files()
+            it.fail_del_target()
         return f"处理EPUB文件时发生错误: {str(e)}"
 
 

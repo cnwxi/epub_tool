@@ -387,7 +387,6 @@ class FontEncrypt:
             self.file_write_path,
             "w",
             zipfile.ZIP_STORED,
-            zipfile.ZIP_STORED,
         )
 
     def find_local_fonts_mapping(self):
@@ -777,8 +776,10 @@ class FontEncrypt:
                 self.font_to_char_mapping[font_path] = {}
 
     def close_file(self):
-        self.epub.close()
-        self.target_epub.close()
+        if self.epub:
+            self.epub.close()
+        if self.target_epub:
+            self.target_epub.close()
 
     def fail_del_target(self):
         if self.file_write_path and os.path.exists(self.file_write_path):
@@ -879,6 +880,7 @@ def run_epub_font_encrypt(
     )
     if len(fe.fonts) == 0:
         logger.write("没有找到字体文件，退出")
+        fe.close_file()
         return "skip"
     logger.write(f"此EPUB文件包含{len(fe.fonts)}个字体文件: {', '.join(fe.fonts)}")
     fe.get_mapping()

@@ -687,7 +687,7 @@ class EpubTool:
                     r"(<\?xml.*?>)\n*",
                     r'\1\n<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"\n  "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">\n',
                     text,
-                    1,
+                    count=1,
                 )
 
             # 修改a[href]
@@ -992,7 +992,12 @@ class EpubTool:
                 manifest_text += f'\n    <item id="{id}" href="Misc/{filename}" media-type="{mime}"{prop_}/>'
 
         manifest_text += "\n  </manifest>"
-        opf = re.sub(r"(?s)<manifest.*?>.*?</manifest>", manifest_text, self.opf, 1)
+        opf = re.sub(
+            r"(?s)<manifest.*?>.*?</manifest>",
+            manifest_text,
+            self.opf,
+            count=1,
+        )
 
         def re_refer(match):
             href = match.group(3)
@@ -1088,6 +1093,7 @@ def epub_sources():
 
 
 def run(epub_src, output_path=None):
+    epub = None
     try:
         logger.write(f"\n正在尝试加密EPUB: {epub_src}")
         if epub_src.lower().endswith("_encrypt.epub"):
@@ -1151,8 +1157,9 @@ def run(epub_src, output_path=None):
                         logger.write(f"链接: {href}\n问题: 未能找到对应文件！！！")
     except Exception as e:
         logger.write(f"{epub_src} 重构EPUB失败: {e}")
-        epub.close_files()
-        epub.fail_del_target()
+        if epub is not None:
+            epub.close_files()
+            epub.fail_del_target()
         return e
     else:
         logger.write(f"{epub_src} 重构EPUB成功")
