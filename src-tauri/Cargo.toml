@@ -1,6 +1,6 @@
 [package]
 name = "epub_tool_newui"
-version = "26.4.18-3"
+version = "26.4.24"
 description = "Tauri 2 shell for epub_tool"
 authors = ["cnwxi"]
 edition = "2021"
