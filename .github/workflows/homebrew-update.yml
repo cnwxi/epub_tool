@@ -98,10 +98,13 @@ jobs:
       - name: Commit and push
         if: steps.asset.outputs.skip != 'true'
         shell: bash
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           cd tap-repo
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${TAP_TOKEN}@github.com/cnwxi/homebrew-tap.git"
           git add Casks/epub-tool-newui.rb
           if git diff --staged --quiet; then
             echo "公式无变化，跳过提交"
