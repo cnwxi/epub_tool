@@ -16,38 +16,9 @@ on:
         required: false
         default: ""
       body:
-        description: "Release body text"
-        required: true
-        default: |
-          ## 安装
-
-          ### macOS
-
-          ```bash
-          brew tap cnwxi/tap
-          brew install --cask epub-tool-newui
-          ```
-
-          或下载下方 `macos_arm64.dmg`，双击挂载后将应用拖入 `/Applications`。
-
-          ### Linux
-
-          下载下方 `linux_x64.AppImage`，添加执行权限后运行：
-
-          ```bash
-          chmod +x Epub.Tool.NewUI_*.AppImage
-          ./Epub.Tool.NewUI_*.AppImage
-          ```
-
-          也可使用 `.deb` 或 `.rpm` 包安装。
-
-          ### Windows
-
-          下载下方 `windows_x64_setup.exe` 或 `.msi`，双击安装。
-
-          ---
-
-          📖 [README](https://github.com/cnwxi/epub_tool#readme) · 📝 [更新日志](https://github.com/cnwxi/epub_tool/blob/main/CHANGELOG.md)
+        description: "Release body text（留空使用默认安装指引）"
+        required: false
+        default: ""
 
 jobs:
   prepare:
@@ -332,12 +303,54 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Prepare release body
+        shell: bash
+        env:
+          RELEASE_BODY: ${{ inputs.body }}
+        run: |
+          set -euo pipefail
+          cat > release-body.md <<'MARKDOWN'
+          ## 安装
+
+          ### macOS
+
+          ```bash
+          brew tap cnwxi/tap
+          brew install --cask epub-tool-newui
+          ```
+
+          或下载下方 `macos_arm64.dmg`，双击挂载后将应用拖入 `/Applications`。
+
+          ### Linux
+
+          下载下方 `linux_x64.AppImage`，添加执行权限后运行：
+
+          ```bash
+          chmod +x Epub.Tool.NewUI_*.AppImage
+          ./Epub.Tool.NewUI_*.AppImage
+          ```
+
+          也可使用 `.deb` 或 `.rpm` 包安装。
+
+          ### Windows
+
+          下载下方 `windows_x64_setup.exe` 或 `.msi`，双击安装。
+
+          ---
+
+          📖 [README](https://github.com/cnwxi/epub_tool#readme) · 📝 [更新日志](https://github.com/cnwxi/epub_tool/blob/main/CHANGELOG.md)
+          MARKDOWN
+
+          if [ -n "$RELEASE_BODY" ]; then
+            printf '%s\n' "$RELEASE_BODY" > release-body.md
+          fi
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.release_version }}
           name: ${{ needs.prepare.outputs.release_version }}
-          body: ${{ inputs.body }}
+          body_path: release-body.md
           files: release-assets/*
           fail_on_unmatched_files: true
           overwrite_files: true
