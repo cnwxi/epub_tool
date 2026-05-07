@@ -23,12 +23,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          # 支持 workflow_dispatch 手动触发和 release 自动触发
-          if [ -n "${{ inputs.tag }}" ]; then
-            tag="${{ inputs.tag }}"
-          else
-            tag="${{ github.event.release.tag_name }}"
-          fi
+          tag="${{ inputs.tag }}"
           version="${tag#v}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
