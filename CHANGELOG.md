@@ -1,5 +1,12 @@
 # 更新日志
 
+### 2026.05.07<br>
+新增 macOS Homebrew 分发支持：添加个人 Tap `cnwxi/tap`，通过 `brew install --cask epub-tool-newui` 安装可跳过 Gatekeeper 验证。<br>
+新增 Homebrew Tap 自动更新工作流：每次发布 Release 后自动更新 Cask 公式的版本号和 sha256，支持手动触发和自动触发。<br>
+修复 macOS 上 ad-hoc 签名应用因 Hardened Runtime 强制要求公证导致的启动拦截：关闭 `hardenedRuntime`。<br>
+优化设置页路径工具区域布局：桌面端双列对齐，窄屏自动退化为单列。<br>
+README 新增 Homebrew 安装说明。<br>
+
 ### 2026.04.18<br>
 重构桌面版任务页布局：`任务配置 / 文件队列 / 字体范围 / 处理日志 / 最近一次执行摘要` 统一接入真正的 Masonry 分列，桌面宽度下按最短列补位，窄屏自动退化为单列。<br>
 统一任务页滚动容器层级：`file-table`、`log-list`、`result-block` 收敛为轻量滚动托盘，内部项继续保留卡片阴影，修复待处理列表阴影截断、矩形溢出与容器实现不一致的问题。<br>
