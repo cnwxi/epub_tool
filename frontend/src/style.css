@@ -1387,6 +1387,11 @@ input {
   align-items: flex-start;
 }
 
+.settings-path-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(296px, auto);
+}
+
 .settings-block-head h3 {
   margin: 0;
   font-size: 16px;
@@ -1474,6 +1479,13 @@ input {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--layout-gap-2);
+}
+
+.settings-path-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(128px, 1fr));
+  justify-self: end;
+  width: min(100%, 352px);
 }
 
 .settings-preference-card {
@@ -2284,6 +2296,15 @@ input {
   .settings-path-grid {
     grid-template-columns: 1fr;
   }
+
+  .settings-path-head {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-path-actions {
+    justify-self: stretch;
+    width: 100%;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2435,6 +2456,10 @@ input {
   }
 
   .masonry-board {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-path-actions {
     grid-template-columns: 1fr;
   }
 }

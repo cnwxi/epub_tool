@@ -2439,13 +2439,13 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             </section>
 
             <section class="settings-block section-animated-block glass-medium">
-              <div class="settings-block-head">
+              <div class="settings-block-head settings-path-head">
                 <div>
                   <p class="eyebrow">路径工具</p>
                   <h3>日志与设置文件</h3>
                   <p class="muted">开发态写入仓库根目录，打包版分别写入系统日志目录和应用配置目录。</p>
                 </div>
-                <div class="panel-actions">
+                <div class="panel-actions settings-path-actions">
                   <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button"
                     @click="openLogFile">
                     打开日志文件
