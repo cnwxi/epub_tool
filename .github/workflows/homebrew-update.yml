@@ -6,9 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (如 v26.4.24)，留空则用最新 release"
-        required: false
-        default: ""
+        description: "Release tag（必填，如 v26.5.7）"
+        required: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
