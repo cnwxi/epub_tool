@@ -14,6 +14,9 @@
   <a href="https://github.com/cnwxi/epub_tool/network/members">
     <img src="https://img.shields.io/github/forks/cnwxi/epub_tool" alt="GitHub forks">
   </a>
+  <a href="https://github.com/cnwxi/homebrew-tap">
+    <img src="https://img.shields.io/badge/homebrew-cnwxi%2Ftap-FBB040" alt="Homebrew Tap">
+  </a>
 </p>
 
 一个面向 EPUB 批量处理的桌面工具。当前主入口已经切换到 `Tauri 2 + Vue 3 + TypeScript + Python sidecar`，围绕“批量导入、统一执行、结果回看、日志定位”组织桌面工作流。
@@ -58,15 +61,33 @@
 - 汇总各子功能默认输出目录
 - 展示开发态与打包态日志路径说明
 
-## 使用方式
+## 安装
+
+### macOS（Homebrew）
+
+```bash
+brew tap cnwxi/tap
+brew install --cask epub-tool-newui
+```
+
+更新：
+
+```bash
+brew upgrade --cask epub-tool-newui
+```
+
+### 手动下载
 
 1. 从 [Releases](https://github.com/cnwxi/epub_tool/releases/latest) 下载对应系统的桌面包。
 2. 安装并启动应用。
-3. 在左侧切换功能类型。
-4. 拖入 EPUB、选择文件，或扫描目录收集 `.epub`。
-5. 根据当前任务选择输出目录。
-6. 若当前任务为 `font_encrypt`，先为每本书选择需要参与处理的字体 family。
-7. 点击“开始执行”，在结果区查看摘要、失败原因、跳过原因，并按需打开输出目录或日志文件。
+
+## 使用方式
+
+1. 在左侧切换功能类型。
+2. 拖入 EPUB、选择文件，或扫描目录收集 `.epub`。
+3. 根据当前任务选择输出目录。
+4. 若当前任务为 `font_encrypt`，先为每本书选择需要参与处理的字体 family。
+5. 点击“开始执行”，在结果区查看摘要、失败原因、跳过原因，并按需打开输出目录或日志文件。
 
 ## 日志与输出
 
