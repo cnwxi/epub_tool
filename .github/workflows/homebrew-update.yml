@@ -1,8 +1,8 @@
 name: Update Homebrew Tap
 
+# 注意：自动更新已集成到 build.yml 的 update_homebrew_tap job 中。
+# 此 workflow 仅作为手动 fallback，用于修复或重试更新。
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
