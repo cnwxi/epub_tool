@@ -18,7 +18,36 @@ on:
       body:
         description: "Release body text"
         required: true
-        default: "详情请查看 README 与 doc/ 下的核心说明文档。当前 NEWUI 分支基于 Tauri 2 + Vue 3 + Python 后端桥接。"
+        default: |
+          ## 安装
+
+          ### macOS
+
+          ```bash
+          brew tap cnwxi/tap
+          brew install --cask epub-tool-newui
+          ```
+
+          或下载下方 `macos_arm64.dmg`，双击挂载后将应用拖入 `/Applications`。
+
+          ### Linux
+
+          下载下方 `linux_x64.AppImage`，添加执行权限后运行：
+
+          ```bash
+          chmod +x Epub.Tool.NewUI_*.AppImage
+          ./Epub.Tool.NewUI_*.AppImage
+          ```
+
+          也可使用 `.deb` 或 `.rpm` 包安装。
+
+          ### Windows
+
+          下载下方 `windows_x64_setup.exe` 或 `.msi`，双击安装。
+
+          ---
+
+          📖 [README](https://github.com/cnwxi/epub_tool#readme) · 📝 [更新日志](https://github.com/cnwxi/epub_tool/blob/main/CHANGELOG.md)
 
 jobs:
   prepare:

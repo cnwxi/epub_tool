@@ -1,0 +1,111 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (如 v26.4.24)，留空则用最新 release"
+        required: false
+        default: ""
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  update-tap:
+    name: Update Cask Formula
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          # 支持 workflow_dispatch 手动触发和 release 自动触发
+          if [ -n "${{ inputs.tag }}" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          version="${tag#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Find macOS dmg asset
+        id: asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          dmg_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .name')
+          dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .url')
+
+          if [ -z "$dmg_url" ]; then
+            echo "未找到 macOS dmg 资产，跳过更新"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "name=$dmg_name" >> "$GITHUB_OUTPUT"
+          echo "url=$dmg_url" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Compute sha256
+        if: steps.asset.outputs.skip != 'true'
+        id: sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${{ steps.asset.outputs.url }}"
+          echo "正在下载: $url"
+          curl -fsSL "$url" -o /tmp/epub-tool.dmg
+          sha=$(shasum -a 256 /tmp/epub-tool.dmg | awk '{print $1}')
+          echo "sha256=$sha"
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tap repo
+        if: steps.asset.outputs.skip != 'true'
+        uses: actions/checkout@v5
+        with:
+          repository: cnwxi/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap-repo
+
+      - name: Update cask formula
+        if: steps.asset.outputs.skip != 'true'
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA="${{ steps.sha.outputs.sha256 }}"
+          FORMULA="tap-repo/Casks/epub-tool-newui.rb"
+
+          echo "更新公式:"
+          echo "  version: $VERSION"
+          echo "  sha256:  $SHA"
+
+          sed -i "s/version \".*\"/version \"$VERSION\"/" "$FORMULA"
+          sed -i "s/sha256 \".*\"/sha256 \"$SHA\"/" "$FORMULA"
+
+          echo "--- 更新后的公式 ---"
+          cat "$FORMULA"
+
+      - name: Commit and push
+        if: steps.asset.outputs.skip != 'true'
+        shell: bash
+        run: |
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/epub-tool-newui.rb
+          if git diff --staged --quiet; then
+            echo "公式无变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "Update epub-tool-newui to v${{ steps.version.outputs.version }}"
+          git push origin main
