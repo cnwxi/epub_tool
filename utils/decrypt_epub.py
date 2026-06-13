@@ -301,7 +301,12 @@ class EpubTool:
             ):
                 important.append(uri)
         self.encrypted_text_or_css = any(
-            ("oebps/text/" in u.lower() or "oebps/styles/" in u.lower() or u.lower().startswith("text/") or u.lower().startswith("styles/"))
+            (
+                "oebps/text/" in u.lower()
+                or "oebps/styles/" in u.lower()
+                or u.lower().startswith("text/")
+                or u.lower().startswith("styles/")
+            )
             for u in uris
         )
         if uris:
@@ -669,14 +674,9 @@ class EpubTool:
     def restructure(self):
         if self.encrypted and self.encrypted_text_or_css:
             logger.write(
-                "检测到 encryption.xml 加密了 Text/Styles 资源，跳过重构。"
+                "检测到 encryption.xml 标记了 Text/Styles 资源，继续尝试反混淆重构。"
             )
-            logger.write(
-                "本工具不提供 DRM 解密；请先使用具备授权能力的工具解密后再处理。"
-            )
-            self.close_files()
-            self.fail_del_target()
-            return "skip"
+            logger.write("如果内容确实被加密，后续读取资源时会失败并中止处理。")
         self.tgt_epub = self.create_tgt_epub()
         # mimetype
         mimetype = self.epub.read("mimetype")
@@ -796,7 +796,12 @@ class EpubTool:
 
         # xhtml文件
         for xhtml_bkpath, new_name in re_path_map["text"].items():
-            text = self.epub.read(xhtml_bkpath).decode("utf-8")
+            try:
+                text = self.epub.read(xhtml_bkpath).decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise RuntimeError(
+                    f"XHTML资源无法按UTF-8读取，可能仍处于加密状态: {xhtml_bkpath}"
+                ) from e
             if not text.startswith("<?xml"):
                 text = '<?xml version="1.0" encoding="utf-8"?>\n' + text
             if not re.match(r"(?s).*<!DOCTYPE html", text):
@@ -955,8 +960,10 @@ class EpubTool:
         for css_bkpath, new_name in re_path_map["css"].items():
             try:
                 css = self.epub.read(css_bkpath).decode("utf-8")
-            except:
-                continue
+            except UnicodeDecodeError as e:
+                raise RuntimeError(
+                    f"CSS资源无法按UTF-8读取，可能仍处于加密状态: {css_bkpath}"
+                ) from e
 
             # 修改 @import
             def re_import(match):

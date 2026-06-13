@@ -1,5 +1,8 @@
 # 更新日志
 
+### 2026.06.13<br>
+修复文件解密流程：检测到 `META-INF/encryption.xml` 标记 Text/Styles 资源时不再直接跳过，而是记录风险日志后继续尝试反混淆重构；若资源内容确实无法读取，则返回明确错误并中止处理。<br>
+
 ### 2026.05.07<br>
 新增 macOS Homebrew 分发支持：添加个人 Tap `cnwxi/tap`，通过 `brew install --cask epub-tool-newui` 安装可跳过 Gatekeeper 验证。<br>
 新增 Homebrew Tap 自动更新工作流：每次发布 Release 后自动更新 Cask 公式的版本号和 sha256，支持手动触发和自动触发。<br>
