@@ -116,6 +116,7 @@ class FontEncrypt:
         self.font_to_font_family_mapping = {}
         self.css_selector_to_font_mapping = {}
         self.font_to_char_mapping = {}
+        self.font_to_passthrough_char_mapping = {}
         self.target_font_families = (
             {
                 item.strip().strip("'\"").lower()
@@ -570,18 +571,34 @@ class FontEncrypt:
             self.font_to_char_mapping,
         )
 
+    def should_obfuscate_char(self, char):
+        category = unicodedata.category(char)
+        east_asian_width = unicodedata.east_asian_width(char)
+        return (category.startswith("L") or category.startswith("N")) and east_asian_width in (
+            "W",
+            "F",
+        )
+
     def clean_text(self):
+        passthrough_mapping = {}
         for key in self.font_to_char_mapping:
             text = self.font_to_char_mapping[key]
-            # 仅移除空白与控制字符，保留标点，避免因字体回退导致异常间距
-            filtered_chars = []
+            # 标点、符号、空格等字符保持原码位，避免破坏阅读器的中英文换行与标点避头规则。
+            obfuscation_chars = []
+            passthrough_chars = []
             for char in text:
                 category = unicodedata.category(char)
-                if category.startswith("C") or category.startswith("Z"):
+                if category.startswith("C"):
                     continue
-                filtered_chars.append(char)
-            self.font_to_char_mapping[key] = self.remove_duplicates("".join(filtered_chars))
+                if self.should_obfuscate_char(char):
+                    obfuscation_chars.append(char)
+                else:
+                    passthrough_chars.append(char)
+            self.font_to_char_mapping[key] = self.remove_duplicates("".join(obfuscation_chars))
+            passthrough_mapping[key] = self.remove_duplicates("".join(passthrough_chars))
+        self.font_to_passthrough_char_mapping = passthrough_mapping
         logger.write(f"清理后的文本: {self.font_to_char_mapping}")
+        logger.write(f"保留原码位的文本: {self.font_to_passthrough_char_mapping}")
 
     # 修改自https://github.com/solarhell/fontObfuscator
     def ensure_cmap_has_all_text(self, cmap: dict, s: str) -> bool:
@@ -658,6 +675,12 @@ class FontEncrypt:
                 )
                 if len(miss_char) > 0:
                     logger.write(f"字体文件{font_path}缺少字符{miss_char}")
+                preserved_text = self.font_to_passthrough_char_mapping.get(font_path, "")
+                missing_preserved_chars, preserved_text = self.ensure_cmap_has_all_text(
+                    original_cmap, preserved_text
+                )
+                if len(missing_preserved_chars) > 0:
+                    logger.write(f"字体文件{font_path}缺少需保留字符{missing_preserved_chars}")
                 if not plain_text:
                     logger.write(f"字体文件{font_path}没有可混淆字符，保留原字体")
                     self.target_epub.writestr(font_path, original_bytes, zipfile.ZIP_DEFLATED)
@@ -693,6 +716,15 @@ class FontEncrypt:
                         final_shadow_text += [special_glyph]
 
                 html_entities = []
+
+                for preserved in preserved_text:
+                    glyph_name = original_cmap[ord(preserved)]
+                    pen = TTGlyphPen(glyph_set)
+                    glyph_set[glyph_name].draw(pen)
+                    glyphs[glyph_name] = pen.glyph()
+                    metrics[glyph_name] = original_font["hmtx"][glyph_name]
+                    cmap[ord(preserved)] = glyph_name
+                    final_shadow_text += [glyph_name]
 
                 for index, plain in enumerate(plain_text):
                     try:
