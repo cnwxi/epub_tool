@@ -2,6 +2,8 @@ name: Build And Release
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CARGO_HTTP_MULTIPLEXING: false
+  CARGO_NET_RETRY: 10
 
 on:
   workflow_dispatch:
@@ -129,6 +131,21 @@ jobs:
 
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Fetch Rust dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src-tauri
+          for attempt in 1 2 3 4 5; do
+            if cargo fetch --locked; then
+              exit 0
+            fi
+            delay=$((attempt * 15))
+            echo "cargo fetch failed on attempt ${attempt}; retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          cargo fetch --locked
 
       - name: Build Tauri app
         if: matrix.platform != 'macos'
