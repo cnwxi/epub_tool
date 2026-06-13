@@ -141,13 +141,7 @@ jobs:
 
       - name: Build macOS app bundle
         if: matrix.platform == 'macos'
-        uses: tauri-apps/tauri-action@v0.6.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: .
-          tauriScript: npm run tauri --
-          args: --bundles app
+        run: npm run tauri -- build --bundles app
 
       - name: Create macOS DMG
         if: matrix.platform == 'macos'
