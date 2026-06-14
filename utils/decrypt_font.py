@@ -30,6 +30,10 @@ if not OCR_MODEL_NAME:
 ONNX_OCR_MODEL_NAME = f"{OCR_MODEL_NAME}_onnx"
 ONNX_MODEL_FILE_NAME = "inference.onnx"
 ONNX_LOG_SEVERITY_ERROR = 3
+OCR_PASSTHROUGH_PUNCTUATION_CHARS = frozenset(
+    "。，、；：？！“”‘’（）《》〈〉【】〔〕…—·"
+)
+OCR_PRIVATE_USE_PERIOD_ALIASES = frozenset({".", "．", "｡"})
 
 
 @dataclass(slots=True)
@@ -150,7 +154,25 @@ class FontGlyphRenderer:
         self.font_path = font_path
         self.font_size = int(options.get("glyph_font_size") or 128)
         self.padding = int(options.get("glyph_padding") or 32)
-        self.font = ImageFont.truetype(BytesIO(self._normalize_font_bytes(font_bytes)), self.font_size)
+        self.small_glyph_font_size = int(
+            options.get("glyph_small_font_size")
+            or max(self.font_size * 2, self.font_size + 96)
+        )
+        self.small_glyph_padding = int(
+            options.get("glyph_small_padding") or max(8, self.padding // 2)
+        )
+        self.small_glyph_threshold = float(options.get("glyph_small_threshold") or 0.42)
+        self.normalized_font_bytes = self._normalize_font_bytes(font_bytes)
+        self.font_cache = {}
+        self.font = self._font_for_size(self.font_size)
+
+    def _font_for_size(self, size):
+        if size not in self.font_cache:
+            self.font_cache[size] = ImageFont.truetype(
+                BytesIO(self.normalized_font_bytes),
+                size,
+            )
+        return self.font_cache[size]
 
     def _normalize_font_bytes(self, font_bytes):
         try:
@@ -164,18 +186,40 @@ class FontGlyphRenderer:
             pass
         return font_bytes
 
-    def render(self, char):
-        probe = Image.new("L", (self.font_size * 3, self.font_size * 3), 255)
+    def measure_text_bbox(self, char, font, font_size):
+        probe = Image.new("L", (font_size * 3, font_size * 3), 255)
         draw = ImageDraw.Draw(probe)
-        bbox = draw.textbbox((0, 0), char, font=self.font)
-        width = max(1, bbox[2] - bbox[0]) + self.padding * 2
-        height = max(1, bbox[3] - bbox[1]) + self.padding * 2
+        return draw.textbbox((0, 0), char, font=font)
+
+    def is_small_glyph_bbox(self, bbox, font_size):
+        glyph_width = max(1, bbox[2] - bbox[0])
+        glyph_height = max(1, bbox[3] - bbox[1])
+        threshold = max(1, font_size * self.small_glyph_threshold)
+        return glyph_width <= threshold or glyph_height <= threshold
+
+    def render_spec(self, char):
+        font = self.font
+        bbox = self.measure_text_bbox(char, font, self.font_size)
+        padding = self.padding
+        if (
+            self.small_glyph_font_size > self.font_size
+            and self.is_small_glyph_bbox(bbox, self.font_size)
+        ):
+            font = self._font_for_size(self.small_glyph_font_size)
+            bbox = self.measure_text_bbox(char, font, self.small_glyph_font_size)
+            padding = self.small_glyph_padding
+        return font, bbox, padding
+
+    def render(self, char):
+        font, bbox, padding = self.render_spec(char)
+        width = max(1, bbox[2] - bbox[0]) + padding * 2
+        height = max(1, bbox[3] - bbox[1]) + padding * 2
         image = Image.new("L", (width, height), 255)
         draw = ImageDraw.Draw(image)
         draw.text(
-            (self.padding - bbox[0], self.padding - bbox[1]),
+            (padding - bbox[0], padding - bbox[1]),
             char,
-            font=self.font,
+            font=font,
             fill=0,
         )
         return image.convert("RGB")
@@ -719,6 +763,8 @@ class FontDecrypt:
         category = unicodedata.category(char)
         if category.startswith("C") and category != "Co":
             return False
+        if char in OCR_PASSTHROUGH_PUNCTUATION_CHARS:
+            return False
         return category.startswith(("L", "N")) or category in ("Co", "So")
 
     def clean_text(self):
@@ -734,9 +780,21 @@ class FontDecrypt:
             self.ocr_backend = create_ocr_backend(self.ocr_options)
         return self.ocr_backend
 
-    def normalize_ocr_text(self, text):
+    def normalize_ocr_punctuation(self, text, hint_char):
+        if (
+            hint_char
+            and unicodedata.category(hint_char) == "Co"
+            and text in OCR_PRIVATE_USE_PERIOD_ALIASES
+        ):
+            return "。"
+        return text
+
+    def normalize_ocr_text(self, text, hint_char=None):
         chars = [char for char in (text or "").strip() if not char.isspace()]
-        return "".join(chars)
+        normalized = "".join(chars)
+        if len(normalized) == 1:
+            return self.normalize_ocr_punctuation(normalized, hint_char)
+        return normalized
 
     def build_ocr_mapping(self):
         backend = self.get_ocr_backend()
@@ -762,7 +820,7 @@ class FontDecrypt:
                 try:
                     image = renderer.render(char)
                     result = backend.recognize(image, hint_char=char)
-                    text = self.normalize_ocr_text(result.text)
+                    text = self.normalize_ocr_text(result.text, hint_char=char)
                     if not text:
                         logger.write(
                             f"字体{font_path}字符 U+{ord(char):04X} OCR 为空，跳过{progress_text}"

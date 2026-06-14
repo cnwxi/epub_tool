@@ -9,6 +9,8 @@ from build_tool import build_python_sidecar
 from build_tool import ocr_model_config
 from utils.decrypt_font import (
     DEFAULT_OCR_MODEL_NAME,
+    FontDecrypt,
+    FontGlyphRenderer,
     OnnxGlyphOcrBackend,
     create_onnx_session_options,
     format_ocr_progress,
@@ -88,6 +90,36 @@ PostProcess:
 
         self.assertEqual(tensor.shape, (1, 3, 48, 320))
         self.assertEqual(tensor.dtype, np.float32)
+
+
+class FontGlyphRendererTest(unittest.TestCase):
+    def test_small_glyph_bbox_triggers_adaptive_rendering(self):
+        renderer = FontGlyphRenderer.__new__(FontGlyphRenderer)
+        renderer.small_glyph_threshold = 0.42
+
+        self.assertTrue(renderer.is_small_glyph_bbox((0, 0, 20, 20), 128))
+        self.assertTrue(renderer.is_small_glyph_bbox((0, 0, 120, 12), 128))
+        self.assertFalse(renderer.is_small_glyph_bbox((0, 0, 90, 100), 128))
+
+
+class FontDecryptOcrTextCleanupTest(unittest.TestCase):
+    def test_clean_text_keeps_encrypt_font_passthrough_punctuation_out_of_ocr(self):
+        font_decrypt = FontDecrypt.__new__(FontDecrypt)
+        font_decrypt.font_to_char_mapping = {
+            "font.ttf": "你。？，！、；：《》（）\ue000<& \u0000",
+        }
+
+        font_decrypt.clean_text()
+
+        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你\ue000")
+
+    def test_private_use_period_alias_normalizes_to_chinese_full_stop(self):
+        font_decrypt = FontDecrypt.__new__(FontDecrypt)
+
+        self.assertEqual(font_decrypt.normalize_ocr_text(".", hint_char="\ue000"), "。")
+        self.assertEqual(font_decrypt.normalize_ocr_text("．", hint_char="\ue000"), "。")
+        self.assertEqual(font_decrypt.normalize_ocr_text("｡", hint_char="\ue000"), "。")
+        self.assertEqual(font_decrypt.normalize_ocr_text(".", hint_char="。"), ".")
 
 
 class BuildPythonSidecarOcrBackendTest(unittest.TestCase):
