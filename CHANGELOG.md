@@ -1,5 +1,13 @@
 # 更新日志
 
+### 2026.06.14<br>
+版本号更新为 `26.6.14`。<br>
+优化本地与发布构建流程：升级 GitHub Actions 相关依赖，调整构建脚本命名与说明，明确本地打包需安装 `requirements.txt` 与 `pyinstaller`。<br>
+拆分 OCR 维护依赖：默认运行与打包仅使用 ONNX Runtime 依赖，Paddle 模型下载和 Paddle2ONNX 转换依赖迁移到 `requirements-ocr-conversion.txt`，避免默认构建安装维护期依赖。<br>
+更新 OCR 模型维护文档与测试说明：补充 ONNX 模型校验、转换命令和 CLI 使用说明，测试用例同步适配新的依赖入口。<br>
+修正字体解密维护提示：PaddleOCR 源模型仅作为 ONNX 模型刷新来源，默认字体解密继续使用内置 `PP-OCRv6_small_rec_onnx` 模型。<br>
+调整 bundle 资源目录占位文件，确保打包资源目录结构可被版本管理保留。<br>
+
 ### 2026.06.13<br>
 版本号更新为 `26.6.13-1`。<br>
 修复文件解密流程：检测到 `META-INF/encryption.xml` 标记 Text/Styles 资源时不再直接跳过，而是记录风险日志后继续尝试反混淆重构；若资源内容确实无法读取，则返回明确错误并中止处理。<br>
