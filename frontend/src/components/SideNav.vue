@@ -69,7 +69,7 @@ watch(
             <span class="brand-title-alias">E-Book Thor</span>
           </h1>
           <p class="brand-copy">
-            挥动小锤，批量锻造。
+            批量处理 EPUB 文件。
           </p>
         </div>
         <div class="brand-easter-stage" aria-hidden="true">

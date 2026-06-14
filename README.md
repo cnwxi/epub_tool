@@ -19,16 +19,16 @@
   </a>
 </p>
 
-一个面向 EPUB 批量处理的桌面工具。当前主入口已经切换到 `Tauri 2 + Vue 3 + TypeScript + Python sidecar`，围绕“批量导入、统一执行、结果回看、日志定位”组织桌面工作流。
+一个面向 EPUB 批量处理的桌面工具。当前主入口已经切换到 `Tauri 2 + Vue 3 + TypeScript + Python sidecar`，围绕“批量导入、统一执行、结果回看、日志定位”组织桌面工作流。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
 
 支持的处理能力：
 
-- `reformat`：重构 EPUB 结构，标准化文件布局
-- `decrypt`：处理文件名混淆
-- `encrypt`：生成混淆版 EPUB
-- `font_encrypt`：按每本 EPUB 单独选择字体范围并执行字体混淆
-- `font_decrypt`：渲染混淆字形，经 OCR 识别后回写 EPUB 正文
-- `transfer_img`：批量转换 EPUB 内 WEBP 图片
+- `reformat`：重构 EPUB 目录结构、OPF 清单与资源引用，标准化文件布局
+- `decrypt`：还原 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密
+- `encrypt`：生成文件名与资源引用混淆版 EPUB
+- `font_encrypt`：按每本 EPUB 单独选择字体 family，对内嵌字体与正文映射执行字形混淆
+- `font_decrypt`：按每本 EPUB 单独选择字体 family，渲染混淆字形，经内置 ONNX OCR 识别后回写正文
+- `transfer_img`：批量转换 EPUB 内 WEBP 图片为 PNG 或 JPEG，并同步更新 OPF 引用
 
 ## 当前桌面版实现
 
@@ -58,7 +58,7 @@
 ### 关于页
 
 - 汇总展示历史执行统计
-- 展示当前五类处理能力说明
+- 展示当前六类处理能力说明
 - 汇总各子功能默认输出目录
 - 展示开发态与打包态日志路径说明
 
@@ -209,6 +209,7 @@ conda run -n epub_tool npm run maintenance:convert-ocr-onnx
 - 如果书籍结构异常，可先执行“格式化”再继续其他流程
 - `font_encrypt` 只处理 EPUB 内已嵌入的字体，不处理系统字体
 - `font_decrypt` 只使用内置 ONNX OCR 模型，不依赖系统 OCR 工具、Paddle Python 运行时或运行时联网下载
+- `decrypt` 只还原文件名与资源引用混淆；如果 EPUB 内容本身被 DRM 或加密资源保护，工具无法还原明文
 - 如果 `content.opf` 等关键文件缺失或异常，相关任务可能直接失败
 - 反馈问题时，建议同时提供：
   - 样本文件

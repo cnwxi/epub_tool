@@ -36,14 +36,14 @@ const sectionItems: Array<{
   label: string;
   description: string;
 }> = [
-  { key: "reformat", label: "格式化", description: "重铸 EPUB 结构与布局" },
-  { key: "decrypt", label: "文件解密", description: "解除文件名混淆封印" },
-  { key: "encrypt", label: "文件加密", description: "锻造混淆版 EPUB" },
-  { key: "font_encrypt", label: "字体加密", description: "为字体刻上隐藏符文" },
-  { key: "font_decrypt", label: "字体解密", description: "剥离字体隐藏符文" },
-  { key: "transfer_img", label: "图片转换", description: "转炼 EPUB 内 WEBP 图片" },
+  { key: "reformat", label: "格式化", description: "重构 EPUB 目录与引用" },
+  { key: "decrypt", label: "文件解密", description: "还原文件名混淆" },
+  { key: "encrypt", label: "文件加密", description: "生成文件名混淆版" },
+  { key: "font_encrypt", label: "字体加密", description: "混淆内嵌字体字形" },
+  { key: "font_decrypt", label: "字体解密", description: "OCR 反混淆字体字形" },
+  { key: "transfer_img", label: "图片转换", description: "转换 EPUB 内 WEBP 图片" },
   { key: "settings", label: "设置", description: "更新、偏好、日志与历史" },
-  { key: "about", label: "关于", description: "锻造统计、能力范围与路径" },
+  { key: "about", label: "关于", description: "统计、能力范围与路径" },
 ];
 const taskSections: TaskType[] = [
   "reformat",
@@ -720,17 +720,17 @@ const masonryColumns = computed<MasonryCard[][]>(() => {
 const activeTaskDescription = computed(() => {
   switch (activeTask.value) {
     case "reformat":
-      return "重构 EPUB 结构与文件布局，适合先做标准化整理后再继续其他处理。";
+      return "重构 EPUB 目录结构、OPF 清单和资源引用，适合先做标准化整理后再继续其他处理。";
     case "decrypt":
-      return "还原文件名混淆，支持单本、多本和目录扫描。";
+      return "还原文件名与资源引用混淆，不提供 DRM 内容解密，支持单本、多本和目录扫描。";
     case "encrypt":
-      return "生成文件名混淆版 EPUB，支持单本、多本和目录扫描。";
+      return "生成文件名与资源引用混淆版 EPUB，支持单本、多本和目录扫描。";
     case "font_encrypt":
-      return "按每本 EPUB 独立选择目标字体 family，再批量执行字体混淆。";
+      return "按每本 EPUB 独立选择目标字体 family，再对内嵌字体与正文映射执行字形混淆。";
     case "font_decrypt":
-      return "按每本 EPUB 独立选择目标字体 family，渲染混淆字形并用 OCR 识别后回写正文。";
+      return "按每本 EPUB 独立选择目标字体 family，渲染混淆字形并用内置 ONNX OCR 识别后回写正文。";
     case "transfer_img":
-      return "批量转换 EPUB 内 WEBP 图片，支持单本、多本和目录扫描。";
+      return "批量转换 EPUB 内 WEBP 图片，并同步更新 OPF 图片引用，支持单本、多本和目录扫描。";
     default:
       return "";
   }
@@ -2600,8 +2600,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
 
             <section class="about-summary-grid section-animated-block">
               <article class="about-summary-card glass-medium">
-                <strong>5 类任务</strong>
-                <span>格式化、解密、加密、字体加密、图片转换</span>
+                <strong>6 类任务</strong>
+                <span>格式化、文件解密、文件加密、字体加密、字体解密、图片转换</span>
               </article>
               <article class="about-summary-card glass-medium">
                 <strong>统一任务视图</strong>
@@ -2621,7 +2621,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 </div>
                 <div class="about-list">
                   <span>任务页统一支持拖拽导入、系统文件选择和目录扫描三种输入方式。</span>
-                  <span>当前提供格式化、文件解密、文件加密、字体加密和图片转换五类 EPUB 处理任务。</span>
+                  <span>当前提供格式化、文件解密、文件加密、字体加密、字体解密和图片转换六类 EPUB 处理任务。</span>
+                  <span>文件解密/加密处理的是文件名与资源引用混淆，不提供 DRM 内容解密。</span>
                 </div>
               </article>
 
@@ -2631,7 +2632,9 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                   <h4>执行方式说明</h4>
                 </div>
                 <div class="about-list">
-                  <span>字体加密支持按每本 EPUB 单独选择目标字体 family 后再批量执行。</span>
+                  <span>字体加密和字体解密都支持按每本 EPUB 单独选择目标字体 family 后再批量执行。</span>
+                  <span>字体解密使用内置 ONNX OCR 模型识别混淆字形，默认不依赖 Paddle Python 运行时或联网下载模型。</span>
+                  <span>图片转换会将 EPUB 内 WEBP 图片改写为 PNG 或 JPEG，并同步更新 OPF 引用。</span>
                   <span>任务页实时展示待处理列表、处理日志和最近一次执行摘要。</span>
                   <span>设置页可查看更新状态、日志入口和最近任务历史。</span>
                 </div>
