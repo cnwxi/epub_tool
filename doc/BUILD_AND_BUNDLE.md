@@ -56,7 +56,11 @@ EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec conda run -n epub_tool npm run main
 EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec conda run -n epub_tool npm run maintenance:convert-ocr-onnx
 ```
 
-`PP-OCRv6_medium_rec` 不作为默认 bundle 资源，避免默认安装包重新回到 70 MiB 以上模型体积。
+`PP-OCRv6_medium_rec` 不改变本地默认 bundle 资源，避免本地默认安装包重新回到 70 MiB 以上模型体积。
+GitHub Actions 发布构建会额外按 OCR 模型拆分 small / medium 两组产物：small 版内置
+`PP-OCRv6_small_rec_onnx`，medium 版内置 `PP-OCRv6_medium_rec_onnx` 并在编译期把运行时默认模型切到
+`PP-OCRv6_medium_rec`。发布资产文件名以 `_small` 和 `_medium` 结尾；Homebrew Tap 继续选择
+`macos_arm64_small.dmg` 作为默认安装包。
 
 ## CI 构建矩阵
 

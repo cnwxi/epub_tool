@@ -58,15 +58,18 @@ jobs:
           echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build ${{ matrix.platform }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    name: Build ${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.ocr.variant }}
+    runs-on: ${{ matrix.target.runner }}
     needs: prepare
     permissions:
       contents: read
+    env:
+      EPUB_TOOL_OCR_MODEL_NAME: ${{ matrix.ocr.model_name }}
+      EPUB_TOOL_DEFAULT_OCR_MODEL_NAME: ${{ matrix.ocr.model_name }}
     strategy:
       fail-fast: false
       matrix:
-        include:
+        target:
           - platform: linux
             arch: x64
             runner: ubuntu-22.04
@@ -79,6 +82,11 @@ jobs:
             arch: arm64
             runner: macos-14
             artifact_name: macos-arm64-bundle
+        ocr:
+          - variant: small
+            model_name: PP-OCRv6_small_rec
+          - variant: medium
+            model_name: PP-OCRv6_medium_rec
 
     steps:
       - name: Checkout
@@ -109,7 +117,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux dependencies
-        if: matrix.platform == 'linux'
+        if: matrix.target.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -131,6 +139,9 @@ jobs:
 
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Configure OCR bundle variant
+        run: python build_tool/configure_ocr_bundle_variant.py
 
       - name: Verify bundled ONNX OCR model
         run: python build_tool/verify_ocr_onnx_models.py
@@ -154,7 +165,7 @@ jobs:
           cargo fetch --locked
 
       - name: Build Tauri app
-        if: matrix.platform != 'macos'
+        if: matrix.target.platform != 'macos'
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -163,11 +174,11 @@ jobs:
           tauriScript: npm run tauri --
 
       - name: Build macOS app bundle
-        if: matrix.platform == 'macos'
+        if: matrix.target.platform == 'macos'
         run: npm run tauri -- build --bundles app
 
       - name: Create macOS DMG
-        if: matrix.platform == 'macos'
+        if: matrix.target.platform == 'macos'
         shell: bash
         env:
           APP_VERSION: ${{ needs.prepare.outputs.app_version }}
@@ -203,8 +214,9 @@ jobs:
         shell: bash
         env:
           ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
-          PLATFORM: ${{ matrix.platform }}
-          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.target.platform }}
+          ARCH: ${{ matrix.target.arch }}
+          OCR_VARIANT: ${{ matrix.ocr.variant }}
           PRODUCT_STEM: Epub.Tool.NewUI
         run: |
           set -euo pipefail
@@ -217,25 +229,25 @@ jobs:
             filename="$(basename "$file")"
             case "$filename" in
               *.AppImage)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.AppImage"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.AppImage"
                 ;;
               *.deb)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.deb"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.deb"
                 ;;
               *.rpm)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.rpm"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.rpm"
                 ;;
               *.dmg)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.dmg"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.dmg"
                 ;;
               *.app.tar.gz)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.app.tar.gz"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.app.tar.gz"
                 ;;
               *-setup.exe)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_setup.exe"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}_setup.exe"
                 ;;
               *.msi)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.msi"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.msi"
                 ;;
               *)
                 continue
@@ -256,7 +268,7 @@ jobs:
         if: inputs.release
         uses: actions/upload-artifact@v7
         with:
-          name: release-assets-${{ matrix.platform }}-${{ matrix.arch }}
+          name: release-assets-${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.ocr.variant }}
           path: release-assets
           if-no-files-found: error
 
@@ -264,7 +276,7 @@ jobs:
         if: ${{ !inputs.release }}
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact_name }}
+          name: ${{ matrix.target.artifact_name }}-${{ matrix.ocr.variant }}
           path: src-tauri/target/release/bundle
           if-no-files-found: error
 
@@ -379,11 +391,12 @@ jobs:
           brew install --cask epub-tool-newui
           ```
 
-          或下载下方 `macos_arm64.dmg`，双击挂载后将应用拖入 `/Applications`。
+          Homebrew 默认安装 small 版。也可下载下方 `macos_arm64_small.dmg`；
+          如需高准确率 OCR 模型，下载 `macos_arm64_medium.dmg`。
 
           ### Linux
 
-          下载下方 `linux_x64.AppImage`，添加执行权限后运行：
+          下载下方 `linux_x64_small.AppImage` 或 `linux_x64_medium.AppImage`，添加执行权限后运行：
 
           ```bash
           chmod +x Epub.Tool.NewUI_*.AppImage
@@ -394,7 +407,7 @@ jobs:
 
           ### Windows
 
-          下载下方 `windows_x64_setup.exe` 或 `.msi`，双击安装。
+          下载下方 `windows_x64_small_setup.exe` / `windows_x64_medium_setup.exe` 或对应 `.msi`，双击安装。
 
           ---
 
@@ -434,7 +447,11 @@ jobs:
           set -euo pipefail
           tag="${{ needs.prepare.outputs.release_version }}"
           dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .url')
+            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .url' | head -n 1)
+          if [ -z "$dmg_url" ]; then
+            dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+              --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .url' | head -n 1)
+          fi
 
           if [ -z "$dmg_url" ]; then
             echo "未找到 macOS dmg 资产，跳过 Homebrew Tap 更新"

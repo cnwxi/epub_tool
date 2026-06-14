@@ -36,9 +36,15 @@ jobs:
         run: |
           tag="${{ steps.version.outputs.tag }}"
           dmg_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .name')
+            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .name' | head -n 1)
           dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .url')
+            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .url' | head -n 1)
+          if [ -z "$dmg_url" ]; then
+            dmg_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+              --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .name' | head -n 1)
+            dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+              --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .url' | head -n 1)
+          fi
 
           if [ -z "$dmg_url" ]; then
             echo "未找到 macOS dmg 资产，跳过更新"

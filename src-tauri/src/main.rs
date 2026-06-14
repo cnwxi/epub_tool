@@ -29,7 +29,7 @@ const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
 } else {
     "epub-tool-python"
 };
-const DEFAULT_OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec";
+const FALLBACK_OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec";
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -431,7 +431,7 @@ fn resolve_ocr_model_dir(app: &AppHandle) -> Option<PathBuf> {
     let onnx_model_name = std::env::var("EPUB_TOOL_OCR_MODEL_NAME")
         .ok()
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_OCR_MODEL_NAME.to_string())
+        .unwrap_or_else(|| default_ocr_model_name().to_string())
         + "_onnx";
 
     if let Some(root) = workspace_root() {
@@ -453,6 +453,12 @@ fn resolve_ocr_model_dir(app: &AppHandle) -> Option<PathBuf> {
     }
 
     None
+}
+
+fn default_ocr_model_name() -> &'static str {
+    option_env!("EPUB_TOOL_DEFAULT_OCR_MODEL_NAME")
+        .filter(|value| !value.is_empty())
+        .unwrap_or(FALLBACK_OCR_MODEL_NAME)
 }
 
 fn configure_backend_command(
