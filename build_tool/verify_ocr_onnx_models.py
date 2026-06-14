@@ -19,8 +19,8 @@ def verify_ocr_onnx_models() -> Path:
         raise SystemExit(
             "ONNX OCR 模型资源不完整: "
             + missing_text
-            + "。请在本地运行 `npm run build:prepare-ocr-models && "
-            "npm run build:prepare-ocr-onnx-models` 后提交生成的 ONNX 模型文件。"
+            + "。默认构建只校验已提交的 ONNX 模型；请恢复提交的模型文件，"
+            "或按 doc/BUILD_AND_BUNDLE.md 的维护流程重新生成后提交。"
         )
 
     try:

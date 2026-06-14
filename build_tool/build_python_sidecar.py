@@ -39,10 +39,6 @@ BASE_REQUIRED_MODULES = [
 ONNX_REQUIRED_MODULES = [
     "onnxruntime",
 ]
-PADDLE_CONVERSION_MODULES = [
-    "paddle",
-    "paddle2onnx",
-]
 REQUIRED_MODULES = [
     *BASE_REQUIRED_MODULES,
     *ONNX_REQUIRED_MODULES,

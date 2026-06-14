@@ -43,7 +43,7 @@ def ensure_paddle_model() -> None:
         raise SystemExit(
             "Paddle 源模型文件不完整: "
             + ", ".join(missing)
-            + "。请先运行 `npm run build:prepare-ocr-models`。"
+            + "。请先运行 `npm run maintenance:fetch-ocr-model`。"
         )
 
 
@@ -51,7 +51,10 @@ def run_paddle2onnx() -> None:
     ONNX_MODEL_DIR.mkdir(parents=True, exist_ok=True)
     paddle2onnx = shutil.which("paddle2onnx")
     if not paddle2onnx:
-        raise SystemExit("未找到 paddle2onnx CLI，请在 conda epub_tool 环境安装 paddle2onnx。")
+        raise SystemExit(
+            "未找到 paddle2onnx CLI。刷新 OCR 模型时，请在 conda epub_tool 环境安装 "
+            "`requirements-ocr-conversion.txt`。"
+        )
 
     command = [
         paddle2onnx,
@@ -77,7 +80,7 @@ def run_paddle2onnx() -> None:
     except subprocess.CalledProcessError as exc:
         raise SystemExit(
             "Paddle2ONNX 转换失败。请确认当前命令运行在 conda epub_tool 环境，"
-            "且已安装 paddlepaddle 与 paddle2onnx==2.1.0。"
+            "且已安装 requirements-ocr-conversion.txt。"
         ) from exc
 
 

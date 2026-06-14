@@ -34,6 +34,9 @@ src-tauri/binaries/*
 src-tauri/bundle-resources/
 !src-tauri/bundle-resources/
 src-tauri/bundle-resources/*
+!src-tauri/bundle-resources/binaries/
+src-tauri/bundle-resources/binaries/*
+!src-tauri/bundle-resources/binaries/.gitkeep
 !src-tauri/bundle-resources/ocr-models/
 src-tauri/bundle-resources/ocr-models/*
 !src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/

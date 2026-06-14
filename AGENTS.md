@@ -24,7 +24,7 @@ conda run -n epub_tool python -m python_backend.cli run --task-type font_decrypt
 conda run -n epub_tool python -m python_backend.cli run --task-type transfer_img --input-file ./book.epub
 conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
 
-# 仅构建 sidecar
+# 仅构建 ONNX-only sidecar
 npm run build:python-sidecar
 
 # 生产打包
@@ -56,7 +56,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
 - **`python_backend/task_runner.py`** — 编排批量任务执行。按任务类型动态导入 `utils/` 下的处理模块，将其 `logger` 替换为 `BroadcastLogger`，同时写入 `log.txt` 和 stdout JSON Lines 事件。按 `{stem}_{suffix}.epub` 规则推断输出路径。
 - **`python_backend/protocol.py`** — 数据类定义：`TaskRequest`、`TaskEvent`、`TaskResult`。
 - **`utils/`** — 六个 EPUB 处理模块（`reformat_epub.py`、`decrypt_epub.py`、`encrypt_epub.py`、`encrypt_font.py`、`decrypt_font.py`、`transfer_img.py`），各自对外暴露 `run()` 或等价入口，内部使用共享的 `logger` 对象，运行时由 task_runner 替换。另含 `log.py`（`logwriter` 类）。
-- **`build_tool/`** — `verify_ocr_onnx_models.py`（校验已提交 ONNX OCR 模型）、`prepare_ocr_models.py`（本地维护时准备 Paddle 源模型）、`prepare_ocr_onnx_models.py`（本地维护时转换 ONNX OCR 模型）、`build_python_sidecar.py`（PyInstaller `--onefile` 构建 ONNX-only sidecar）、`prepare_bundle_resources.py`（将 sidecar 复制到 `bundle-resources/`）。
+- **`build_tool/`** — `verify_ocr_onnx_models.py`（校验已提交 ONNX OCR 模型）、`prepare_ocr_models.py`（维护者刷新模型时准备官方 Paddle 源模型）、`prepare_ocr_onnx_models.py`（维护者刷新模型时转换 ONNX OCR 模型）、`build_python_sidecar.py`（PyInstaller `--onefile` 构建 ONNX-only sidecar）、`prepare_bundle_resources.py`（将 sidecar 复制到 `bundle-resources/`）。
 - **`test/`** — 本地测试用 EPUB 样本。
 - **`doc/`** — 协议、构建与 UI 设计规范文档。
 

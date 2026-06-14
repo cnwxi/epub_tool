@@ -228,7 +228,7 @@ def resolve_onnx_ocr_model_dir(options=None, required=True):
         return None
     raise RuntimeError(
         f"未找到内置 ONNX OCR 模型目录 {ONNX_OCR_MODEL_NAME}。"
-        "请先运行 `npm run build:prepare-ocr-onnx-models`。"
+        "请确认已提交的 ONNX 模型资源存在，或按构建文档的维护流程重新生成模型。"
     )
 
 

@@ -161,7 +161,7 @@ conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
 ```bash
 conda run -n epub_tool python -m pip install -r requirements.txt pyinstaller
 conda run -n epub_tool npm run build:bundle-assets
-npm run tauri:build
+conda run -n epub_tool npm run tauri:build
 ```
 
 打包流程会自动完成：
@@ -177,12 +177,12 @@ npm run tauri:build
 构建时会直接打进桌面安装包，运行时不再下载模型，也不加载 Paddle Python 运行时。
 如需本地验证高准确率档，可设置 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 后重新准备模型并转换 ONNX。
 
-默认构建不会下载 Paddle 源模型，也不会执行 Paddle2ONNX 转换。只有在需要刷新 OCR 模型时才安装转换依赖并运行：
+默认构建不会下载 Paddle 源模型，也不会执行 Paddle2ONNX 转换。只有维护者需要刷新已提交的 ONNX 模型时，才安装转换依赖并运行：
 
 ```bash
-conda run -n epub_tool python -m pip install -r requirements-build-ocr.txt
-conda run -n epub_tool npm run build:prepare-ocr-models
-conda run -n epub_tool npm run build:prepare-ocr-onnx-models
+conda run -n epub_tool python -m pip install -r requirements-ocr-conversion.txt
+conda run -n epub_tool npm run maintenance:fetch-ocr-model
+conda run -n epub_tool npm run maintenance:convert-ocr-onnx
 ```
 
 ## 仓库结构
