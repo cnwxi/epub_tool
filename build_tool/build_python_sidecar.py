@@ -14,16 +14,14 @@ WORK_ROOT = REPO_ROOT / "build" / "python-sidecar"
 CONFIG_DIR = WORK_ROOT / "cache"
 SIDECAR_STEM = "epub-tool-python"
 SIDE_CAR_NAME = f"{SIDECAR_STEM}.exe" if sys.platform == "win32" else SIDECAR_STEM
-REQUIRED_MODULES = [
+BASE_REQUIRED_MODULES = [
     "bs4",
     "emoji",
     "fontTools",
     "tinycss2",
     "tqdm",
     "PIL",
-    "paddle",
-    "paddleocr",
-    "paddlex",
+    "yaml",
     "chardet",
     "bidi",
     "cv2",
@@ -37,6 +35,25 @@ REQUIRED_MODULES = [
     "utils.encrypt_font",
     "utils.decrypt_font",
     "utils.transfer_img",
+]
+ONNX_REQUIRED_MODULES = [
+    "onnxruntime",
+]
+PADDLE_CONVERSION_MODULES = [
+    "paddle",
+    "paddle2onnx",
+]
+REQUIRED_MODULES = [
+    *BASE_REQUIRED_MODULES,
+    *ONNX_REQUIRED_MODULES,
+]
+PYINSTALLER_ONNX_ARGS = [
+    "--hidden-import",
+    "onnxruntime",
+    "--collect-binaries",
+    "onnxruntime",
+    "--copy-metadata",
+    "onnxruntime",
 ]
 
 if str(REPO_ROOT) not in sys.path:
@@ -83,7 +100,7 @@ def sidecar_exists() -> bool:
 def iter_sidecar_inputs():
     for package_dir in (REPO_ROOT / "python_backend", REPO_ROOT / "utils"):
         yield from package_dir.rglob("*.py")
-    yield REPO_ROOT / "requirements.txt"
+    yield from REPO_ROOT.glob("requirements*.txt")
     yield Path(__file__).resolve()
 
 
@@ -135,12 +152,7 @@ def build_sidecar() -> Path:
         "python_backend",
         "--collect-submodules",
         "utils",
-        "--collect-all",
-        "paddle",
-        "--collect-all",
-        "paddleocr",
-        "--collect-all",
-        "paddlex",
+        *PYINSTALLER_ONNX_ARGS,
         "--collect-submodules",
         "bidi",
         "--copy-metadata",
@@ -160,9 +172,7 @@ def build_sidecar() -> Path:
 
     env = os.environ.copy()
     env["PYINSTALLER_CONFIG_DIR"] = str(CONFIG_DIR)
-    env["PADDLE_PDX_CACHE_HOME"] = str(CONFIG_DIR / "paddlex")
     env["MPLCONFIGDIR"] = str(CONFIG_DIR / "matplotlib")
-    Path(env["PADDLE_PDX_CACHE_HOME"]).mkdir(parents=True, exist_ok=True)
     Path(env["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
 
     subprocess.run(command, cwd=REPO_ROOT, check=True, env=env)

@@ -6,14 +6,22 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+try:
+    from build_tool.ocr_model_config import (
+        ocr_model_dir,
+        ocr_model_url,
+        resolve_ocr_model_name,
+    )
+except ModuleNotFoundError:
+    from ocr_model_config import (
+        ocr_model_dir,
+        ocr_model_url,
+        resolve_ocr_model_name,
+    )
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-MODEL_NAME = "PP-OCRv5_server_rec"
-MODEL_URL = (
-    "https://paddle-model-ecology.bj.bcebos.com/paddlex/"
-    "official_inference_model/paddle3.0.0/PP-OCRv5_server_rec_infer.tar"
-)
-MODEL_DIR = REPO_ROOT / "src-tauri" / "bundle-resources" / "ocr-models" / MODEL_NAME
+MODEL_NAME = resolve_ocr_model_name()
+MODEL_URL = ocr_model_url(MODEL_NAME)
+MODEL_DIR = ocr_model_dir(MODEL_NAME)
 REQUIRED_FILES = ("inference.yml", "inference.pdiparams", "inference.json")
 
 

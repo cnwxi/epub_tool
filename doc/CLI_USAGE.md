@@ -5,33 +5,33 @@
 ## 安装依赖
 
 ```bash
-python -m pip install -r requirements.txt
+conda run -n epub_tool python -m pip install -r requirements.txt
 ```
 
 ## 查看帮助
 
 ```bash
-python -m python_backend.cli --help
-python -m python_backend.cli run --help
+conda run -n epub_tool python -m python_backend.cli --help
+conda run -n epub_tool python -m python_backend.cli run --help
 ```
 
 ## 直接执行任务
 
 ```bash
-python -m python_backend.cli run \
+conda run -n epub_tool python -m python_backend.cli run \
   --task-type reformat \
   --input-file /path/book.epub \
   --output-dir /path/output
 ```
 
 ```bash
-python -m python_backend.cli run \
+conda run -n epub_tool python -m python_backend.cli run \
   --task-type encrypt \
   --input-file /path/book.epub
 ```
 
 ```bash
-python -m python_backend.cli run \
+conda run -n epub_tool python -m python_backend.cli run \
   --task-type font_decrypt \
   --input-file /path/book.epub \
   --options-json '{
@@ -43,7 +43,7 @@ python -m python_backend.cli run \
 ## 使用完整请求 JSON
 
 ```bash
-python -m python_backend.cli run --request-json '{
+conda run -n epub_tool python -m python_backend.cli run --request-json '{
   "task_id": "demo-task",
   "task_type": "font_encrypt",
   "input_files": ["/path/book.epub"],
@@ -56,12 +56,12 @@ python -m python_backend.cli run --request-json '{
 }'
 ```
 
-`font_decrypt` 使用同一套 `target_font_families_by_file` 选项，并额外支持 `min_ocr_confidence` 等 OCR 参数。OCR 模型固定为构建时内置的 `PP-OCRv5_server_rec`，默认路径为 `src-tauri/bundle-resources/ocr-models/PP-OCRv5_server_rec/`；命令行单独调试时也可通过 `EPUB_TOOL_OCR_MODEL_DIR` 指定模型目录。
+`font_decrypt` 使用同一套 `target_font_families_by_file` 选项，并额外支持 `min_ocr_confidence` 等 OCR 参数。OCR 模型默认固定为构建时内置的 `PP-OCRv6_small_rec_onnx`，默认路径为 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`；命令行单独调试时也可通过 `EPUB_TOOL_OCR_ONNX_MODEL_DIR` 指定模型目录，或通过 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 选择已准备好的高准确率模型目录。
 
 ## 列出字体 family
 
 ```bash
-python -m python_backend.cli list-fonts /path/book.epub
+conda run -n epub_tool python -m python_backend.cli list-fonts /path/book.epub
 ```
 
 说明：

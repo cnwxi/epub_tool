@@ -29,7 +29,7 @@ const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
 } else {
     "epub-tool-python"
 };
-const OCR_MODEL_NAME: &str = "PP-OCRv5_server_rec";
+const DEFAULT_OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec";
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -423,25 +423,30 @@ fn build_backend_command(app: &AppHandle, subcommand: &str) -> Result<Command, S
 }
 
 fn resolve_ocr_model_dir(app: &AppHandle) -> Option<PathBuf> {
-    if let Ok(explicit_path) = std::env::var("EPUB_TOOL_OCR_MODEL_DIR") {
+    if let Ok(explicit_path) = std::env::var("EPUB_TOOL_OCR_ONNX_MODEL_DIR") {
         if !explicit_path.is_empty() {
             return Some(PathBuf::from(explicit_path));
         }
     }
+    let onnx_model_name = std::env::var("EPUB_TOOL_OCR_MODEL_NAME")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_OCR_MODEL_NAME.to_string())
+        + "_onnx";
 
     if let Some(root) = workspace_root() {
         let dev_model_dir = root
             .join("src-tauri")
             .join("bundle-resources")
             .join("ocr-models")
-            .join(OCR_MODEL_NAME);
+            .join(&onnx_model_name);
         if dev_model_dir.is_dir() {
             return Some(dev_model_dir);
         }
     }
 
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled_model_dir = resource_dir.join("ocr-models").join(OCR_MODEL_NAME);
+        let bundled_model_dir = resource_dir.join("ocr-models").join(&onnx_model_name);
         if bundled_model_dir.is_dir() {
             return Some(bundled_model_dir);
         }
@@ -457,7 +462,7 @@ fn configure_backend_command(
 ) {
     command.env("EPUB_TOOL_LOG_PATH", log_path);
     if let Some(ocr_model_dir) = ocr_model_dir {
-        command.env("EPUB_TOOL_OCR_MODEL_DIR", ocr_model_dir);
+        command.env("EPUB_TOOL_OCR_ONNX_MODEL_DIR", ocr_model_dir);
     }
     command.env("PYTHONUTF8", "1");
     command.env("PYTHONIOENCODING", "utf-8");

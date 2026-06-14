@@ -39,7 +39,7 @@
     "targets": "all",
     "resources": {
       "bundle-resources/binaries/*": "binaries/",
-      "bundle-resources/ocr-models/PP-OCRv5_server_rec/*": "ocr-models/PP-OCRv5_server_rec/"
+      "bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*": "ocr-models/PP-OCRv6_small_rec_onnx/"
     },
     "icon": [
       "../img/icon.png",

@@ -3,7 +3,6 @@ import os
 import posixpath
 import re
 import sys
-import tempfile
 import traceback
 import unicodedata
 import uuid
@@ -24,7 +23,13 @@ except Exception:
 
 logger = logwriter()
 
-PADDLE_OCR_MODEL_NAME = "PP-OCRv5_server_rec"
+DEFAULT_OCR_MODEL_NAME = "PP-OCRv6_small_rec"
+OCR_MODEL_NAME = os.environ.get("EPUB_TOOL_OCR_MODEL_NAME", DEFAULT_OCR_MODEL_NAME).strip()
+if not OCR_MODEL_NAME:
+    OCR_MODEL_NAME = DEFAULT_OCR_MODEL_NAME
+ONNX_OCR_MODEL_NAME = f"{OCR_MODEL_NAME}_onnx"
+ONNX_MODEL_FILE_NAME = "inference.onnx"
+ONNX_LOG_SEVERITY_ERROR = 3
 
 
 @dataclass(slots=True)
@@ -33,73 +38,110 @@ class OcrTextResult:
     confidence: float | None = None
 
 
-class PaddleGlyphOcrBackend:
+def format_ocr_progress(processed_count, total_count):
+    if total_count <= 0:
+        return ""
+    percent = processed_count / total_count * 100
+    return f"，进度 {processed_count}/{total_count} ({percent:.1f}%)"
+
+
+def create_onnx_session_options(ort):
+    session_options = ort.SessionOptions()
+    session_options.log_severity_level = ONNX_LOG_SEVERITY_ERROR
+    return session_options
+
+
+class OnnxGlyphOcrBackend:
     def __init__(self, options=None):
         options = options or {}
-        os.environ.setdefault(
-            "PADDLE_PDX_CACHE_HOME",
-            options.get("paddle_cache_dir")
-            or os.path.join(tempfile.gettempdir(), "epub_tool_paddlex_cache"),
-        )
-        os.environ.setdefault(
-            "MPLCONFIGDIR",
-            options.get("matplotlib_cache_dir")
-            or os.path.join(tempfile.gettempdir(), "epub_tool_matplotlib_cache"),
-        )
         try:
-            from paddleocr import TextRecognition
+            import numpy as np
+            import onnxruntime as ort
         except Exception as exc:
-            raise RuntimeError(
-                "PaddleOCR 不可用，请确认构建环境已安装 paddleocr 与 paddlepaddle。"
-            ) from exc
+            raise RuntimeError("ONNX OCR 运行时不可用，请先安装 onnxruntime。") from exc
 
-        model_dir = resolve_paddle_ocr_model_dir(options)
-        self.batch_size = int(options.get("paddle_batch_size") or 1)
-        self.model = TextRecognition(
-            model_name=PADDLE_OCR_MODEL_NAME,
-            model_dir=str(model_dir),
+        self.np = np
+        self.model_dir = resolve_onnx_ocr_model_dir(options)
+        self.model_path = resolve_onnx_model_path(self.model_dir)
+        self.config = load_text_recognition_config(
+            resolve_onnx_ocr_config_path(self.model_dir, options)
         )
+        self.session = ort.InferenceSession(
+            self.model_path,
+            sess_options=create_onnx_session_options(ort),
+            providers=options.get("onnx_providers") or ["CPUExecutionProvider"],
+        )
+        inputs = self.session.get_inputs()
+        if not inputs:
+            raise RuntimeError(f"ONNX 模型没有输入节点: {self.model_path}")
+        self.input_name = inputs[0].name
+        self.characters = ["blank", *self.config["character_dict"], " "]
+        self.image_shape = self.config["image_shape"]
+        self.image_mode = self.config["img_mode"]
+        self.max_img_width = int(options.get("onnx_max_image_width") or 3200)
 
     def recognize(self, image, hint_char=""):
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as file:
-            temp_path = file.name
-        try:
-            image.save(temp_path)
-            results = self.model.predict(input=temp_path, batch_size=self.batch_size)
-            if not results:
-                return OcrTextResult("")
-            return self._extract_result(results[0])
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        tensor = self.preprocess_image(image)
+        outputs = self.session.run(None, {self.input_name: tensor})
+        if not outputs:
+            return OcrTextResult("")
+        return self.decode_prediction(outputs[0])
 
-    def _extract_result(self, result):
-        data = None
-        raw_json = getattr(result, "json", None)
-        if callable(raw_json):
-            data = raw_json()
-        elif isinstance(raw_json, dict):
-            data = raw_json
-        elif isinstance(result, dict):
-            data = result
+    def preprocess_image(self, image):
+        import cv2
 
-        if isinstance(data, dict):
-            payload = data.get("res") if isinstance(data.get("res"), dict) else data
-            text = payload.get("rec_text") or payload.get("text") or ""
-            score = payload.get("rec_score") or payload.get("score")
-            return OcrTextResult(str(text), self._normalize_score(score))
+        img_c, img_h, img_w = self.image_shape
+        if img_c != 3:
+            raise RuntimeError(f"暂不支持非 3 通道 OCR 输入: {self.image_shape}")
 
-        text = getattr(result, "rec_text", "") or getattr(result, "text", "")
-        score = getattr(result, "rec_score", None) or getattr(result, "score", None)
-        return OcrTextResult(str(text), self._normalize_score(score))
+        array = self.np.array(image.convert("RGB"))
+        if self.image_mode.upper() == "BGR":
+            array = array[:, :, ::-1]
 
-    def _normalize_score(self, value):
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
+        h, w = array.shape[:2]
+        if h <= 0 or w <= 0:
+            raise RuntimeError(f"OCR 输入图像尺寸无效: {w}x{h}")
+
+        ratio = w / float(h)
+        max_wh_ratio = max(img_w / float(img_h), ratio)
+        target_w = min(self.max_img_width, int(img_h * max_wh_ratio))
+        resized_w = min(target_w, max(1, int(round(img_h * ratio))))
+        resized = cv2.resize(array, (resized_w, img_h))
+        resized = resized.astype("float32")
+        resized = resized.transpose((2, 0, 1)) / 255.0
+        resized -= 0.5
+        resized /= 0.5
+
+        padded = self.np.zeros((img_c, img_h, target_w), dtype=self.np.float32)
+        padded[:, :, :resized_w] = resized
+        return self.np.expand_dims(padded, axis=0)
+
+    def decode_prediction(self, prediction):
+        preds = self.np.array(prediction)
+        if preds.ndim == 2:
+            preds = self.np.expand_dims(preds, axis=0)
+        if preds.ndim != 3:
+            raise RuntimeError(f"OCR ONNX 输出维度无效: {preds.shape}")
+
+        pred = preds[0]
+        token_ids = pred.argmax(axis=-1)
+        token_scores = pred.max(axis=-1)
+        chars = []
+        scores = []
+        previous = None
+        for token_id, score in zip(token_ids, token_scores, strict=False):
+            token_id = int(token_id)
+            if token_id == 0 or token_id == previous:
+                previous = token_id
+                continue
+            previous = token_id
+            if token_id >= len(self.characters):
+                continue
+            chars.append(self.characters[token_id])
+            scores.append(float(score))
+
+        confidence = sum(scores) / len(scores) if scores else 0.0
+        return OcrTextResult("".join(chars), confidence)
 
 
 class FontGlyphRenderer:
@@ -139,25 +181,24 @@ class FontGlyphRenderer:
         return image.convert("RGB")
 
 
-def iter_paddle_ocr_model_dir_candidates(options=None):
+def iter_onnx_ocr_model_dir_candidates(options=None):
     options = options or {}
-    explicit = options.get("paddle_model_dir") or os.environ.get("EPUB_TOOL_OCR_MODEL_DIR")
+    explicit = options.get("onnx_model_dir") or os.environ.get("EPUB_TOOL_OCR_ONNX_MODEL_DIR")
     if explicit:
         yield os.path.abspath(explicit)
 
-    # 冻结后的 sidecar 可能位于开发态 src-tauri/binaries，也可能位于打包态资源目录 binaries。
     if getattr(sys, "frozen", False):
         executable_dir = os.path.dirname(os.path.abspath(sys.executable))
         yield os.path.join(
             os.path.dirname(executable_dir),
             "bundle-resources",
             "ocr-models",
-            PADDLE_OCR_MODEL_NAME,
+            ONNX_OCR_MODEL_NAME,
         )
         yield os.path.join(
             os.path.dirname(executable_dir),
             "ocr-models",
-            PADDLE_OCR_MODEL_NAME,
+            ONNX_OCR_MODEL_NAME,
         )
 
     cwd = os.path.abspath(os.getcwd())
@@ -166,7 +207,7 @@ def iter_paddle_ocr_model_dir_candidates(options=None):
         "src-tauri",
         "bundle-resources",
         "ocr-models",
-        PADDLE_OCR_MODEL_NAME,
+        ONNX_OCR_MODEL_NAME,
     )
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -175,22 +216,84 @@ def iter_paddle_ocr_model_dir_candidates(options=None):
         "src-tauri",
         "bundle-resources",
         "ocr-models",
-        PADDLE_OCR_MODEL_NAME,
+        ONNX_OCR_MODEL_NAME,
     )
 
 
-def resolve_paddle_ocr_model_dir(options=None):
-    for candidate in iter_paddle_ocr_model_dir_candidates(options):
-        if os.path.isdir(candidate):
+def resolve_onnx_ocr_model_dir(options=None, required=True):
+    for candidate in iter_onnx_ocr_model_dir_candidates(options):
+        if os.path.isdir(candidate) and os.path.isfile(resolve_onnx_model_path(candidate)):
             return candidate
+    if not required:
+        return None
     raise RuntimeError(
-        f"未找到内置 PaddleOCR 模型目录 {PADDLE_OCR_MODEL_NAME}。"
-        "请先运行 `npm run build:prepare-ocr-models` 或完整构建命令。"
+        f"未找到内置 ONNX OCR 模型目录 {ONNX_OCR_MODEL_NAME}。"
+        "请先运行 `npm run build:prepare-ocr-onnx-models`。"
     )
+
+
+def resolve_onnx_model_path(model_dir):
+    explicit = os.path.join(model_dir, ONNX_MODEL_FILE_NAME)
+    if os.path.isfile(explicit):
+        return explicit
+    for name in os.listdir(model_dir) if os.path.isdir(model_dir) else []:
+        if name.lower().endswith(".onnx"):
+            return os.path.join(model_dir, name)
+    return explicit
+
+
+def resolve_onnx_ocr_config_path(model_dir, options=None):
+    options = options or {}
+    explicit = options.get("onnx_config_path")
+    if explicit and os.path.isfile(explicit):
+        return explicit
+    bundled = os.path.join(model_dir, "inference.yml")
+    if os.path.isfile(bundled):
+        return bundled
+    raise RuntimeError(f"未找到 OCR 配置文件: {model_dir}")
+
+
+def _find_transform_config(config, op_name):
+    preprocess = config.get("PreProcess") or {}
+    for transform in preprocess.get("transform_ops") or []:
+        if not isinstance(transform, dict):
+            continue
+        op_config = transform.get(op_name)
+        if isinstance(op_config, dict):
+            return op_config
+    return {}
+
+
+def load_text_recognition_config(config_path):
+    try:
+        import yaml
+    except Exception as exc:
+        raise RuntimeError("OCR 配置解析需要 PyYAML，请先安装 base 运行依赖。") from exc
+
+    with open(config_path, "r", encoding="utf-8") as file:
+        config = yaml.safe_load(file) or {}
+
+    resize_config = _find_transform_config(config, "RecResizeImg")
+    image_shape = [int(value) for value in resize_config.get("image_shape") or []]
+    if len(image_shape) != 3:
+        image_shape = [3, 48, 320]
+
+    postprocess = config.get("PostProcess") or {}
+    character_dict = [str(value) for value in postprocess.get("character_dict") or []]
+    if not character_dict:
+        raise RuntimeError(f"OCR 配置缺少 character_dict: {config_path}")
+
+    decode_config = _find_transform_config(config, "DecodeImage")
+    img_mode = str(decode_config.get("img_mode") or "BGR")
+    return {
+        "image_shape": image_shape,
+        "character_dict": character_dict,
+        "img_mode": img_mode,
+    }
 
 
 def create_ocr_backend(options=None):
-    return PaddleGlyphOcrBackend(options)
+    return OnnxGlyphOcrBackend(options)
 
 
 class FontDecrypt:
@@ -639,6 +742,8 @@ class FontDecrypt:
         backend = self.get_ocr_backend()
         threshold = self.ocr_options.get("min_ocr_confidence")
         threshold = float(threshold) if threshold is not None else None
+        total_chars = sum(len(chars) for chars in self.font_to_char_mapping.values())
+        processed_count = 0
 
         for font_path, chars in self.font_to_char_mapping.items():
             if not chars:
@@ -652,16 +757,20 @@ class FontDecrypt:
             )
             replace_table = {}
             for char in chars:
+                processed_count += 1
+                progress_text = format_ocr_progress(processed_count, total_chars)
                 try:
                     image = renderer.render(char)
                     result = backend.recognize(image, hint_char=char)
                     text = self.normalize_ocr_text(result.text)
                     if not text:
-                        logger.write(f"字体{font_path}字符 U+{ord(char):04X} OCR 为空，跳过")
+                        logger.write(
+                            f"字体{font_path}字符 U+{ord(char):04X} OCR 为空，跳过{progress_text}"
+                        )
                         continue
                     if len(text) != 1:
                         logger.write(
-                            f"字体{font_path}字符 U+{ord(char):04X} OCR 结果不是单字: {text}"
+                            f"字体{font_path}字符 U+{ord(char):04X} OCR 结果不是单字: {text}{progress_text}"
                         )
                         continue
                     if (
@@ -670,7 +779,7 @@ class FontDecrypt:
                         and result.confidence < threshold
                     ):
                         logger.write(
-                            f"字体{font_path}字符 U+{ord(char):04X} OCR 置信度过低: {result.confidence}"
+                            f"字体{font_path}字符 U+{ord(char):04X} OCR 置信度过低: {result.confidence}{progress_text}"
                         )
                         continue
                     replace_table[char] = text
@@ -680,10 +789,12 @@ class FontDecrypt:
                         else ""
                     )
                     logger.write(
-                        f"字体{font_path}字符 U+{ord(char):04X} -> {text}{confidence_text}"
+                        f"字体{font_path}字符 U+{ord(char):04X} -> {text}{confidence_text}{progress_text}"
                     )
                 except Exception as exc:
-                    logger.write(f"字体{font_path}字符 U+{ord(char):04X} OCR 失败: {exc}")
+                    logger.write(
+                        f"字体{font_path}字符 U+{ord(char):04X} OCR 失败: {exc}{progress_text}"
+                    )
             self.font_to_replace_mapping[font_path] = replace_table
 
         logger.write(f"字体OCR反混淆映射: {self.font_to_replace_mapping}")

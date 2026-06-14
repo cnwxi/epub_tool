@@ -36,8 +36,8 @@ src-tauri/bundle-resources/
 src-tauri/bundle-resources/*
 !src-tauri/bundle-resources/ocr-models/
 src-tauri/bundle-resources/ocr-models/*
-!src-tauri/bundle-resources/ocr-models/PP-OCRv5_server_rec/
-!src-tauri/bundle-resources/ocr-models/PP-OCRv5_server_rec/*
+!src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/
+!src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*
 *.tsbuildinfo
 
 # 日志与本地结果

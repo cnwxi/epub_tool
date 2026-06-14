@@ -84,7 +84,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 }
 ```
 
-`font_decrypt` 使用构建时内置的固定 PaddleOCR 模型：
+`font_decrypt` 使用构建时内置的固定 ONNX OCR 模型：
 
 ```json
 {
@@ -94,7 +94,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 }
 ```
 
-固定模型为 `PP-OCRv5_server_rec`，资源目录为
-`ocr-models/PP-OCRv5_server_rec/`。Tauri 启动 Python sidecar 时会通过
-`EPUB_TOOL_OCR_MODEL_DIR` 注入模型路径。若模型目录缺失，任务会直接失败并提示先运行
-`npm run build:prepare-ocr-models` 或完整构建命令。
+默认模型为 `PP-OCRv6_small_rec_onnx`，资源目录为
+`ocr-models/PP-OCRv6_small_rec_onnx/`。Tauri 启动 Python sidecar 时会通过
+`EPUB_TOOL_OCR_ONNX_MODEL_DIR` 注入模型路径。若模型目录缺失，任务会直接失败并提示先运行
+`npm run build:prepare-ocr-onnx-models` 或完整构建命令。
