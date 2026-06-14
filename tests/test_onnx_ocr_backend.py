@@ -12,6 +12,7 @@ from utils.decrypt_font import (
     DEFAULT_OCR_MODEL_NAME,
     OCR_CHAR_POLICY_COMPATIBLE,
     OCR_CHAR_POLICY_STRICT,
+    OCR_LOW_CONF,
     FontDecrypt,
     FontGlyphRenderer,
     OcrTextResult,
@@ -268,6 +269,19 @@ class FontDecryptOcrTextCleanupTest(unittest.TestCase):
         self.assertEqual(
             font_decrypt.build_ocr_failed_placeholder("\ue000"),
             "[U+E000 OCR_FAILED]",
+        )
+
+    def test_ocr_failure_image_path_uses_font_hash_codepoint_and_status(self):
+        font_decrypt = self.create_font_decrypt()
+        font_decrypt.opf_path = "OEBPS/content.opf"
+
+        self.assertEqual(
+            font_decrypt.build_ocr_failure_image_path(
+                "a13f9c2b",
+                "\ue000",
+                OCR_LOW_CONF,
+            ),
+            "OEBPS/Images/ocr-failures/a13f9c2b_U-E000_OCR_LOW_CONF.png",
         )
 
     def test_target_decrypt_fonts_are_marked_for_output_skip(self):

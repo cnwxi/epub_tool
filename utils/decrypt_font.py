@@ -1,4 +1,5 @@
 import codecs
+import hashlib
 import os
 import posixpath
 import re
@@ -49,6 +50,12 @@ OCR_EMPTY = "OCR_EMPTY"
 OCR_MULTI_CHAR = "OCR_MULTI_CHAR"
 OCR_LOW_CONF = "OCR_LOW_CONF"
 OCR_EXCEPTION = "OCR_EXCEPTION"
+OCR_FAILURE_IMAGE_DIR = "Images/ocr-failures"
+OCR_FAILURE_STYLE_CLASS = "epub-tool-ocr-failure-style"
+OCR_FAILURE_STYLE_CSS = (
+    ".ocr-failure{font-size:1em;white-space:nowrap;}"
+    ".ocr-failure-glyph{height:1em;width:auto;vertical-align:-0.15em;}"
+)
 
 
 @dataclass(slots=True)
@@ -430,6 +437,7 @@ class FontDecrypt:
         self.ocr_backend = ocr_backend
         self.ocr_options = ocr_options or {}
         self.font_to_ocr_failure_mapping = {}
+        self.ocr_failure_image_bytes = {}
         self.target_epub = None
         self.opf_path = None
         self._init_opf_path()
@@ -896,16 +904,70 @@ class FontDecrypt:
             return DEFAULT_MIN_OCR_CONFIDENCE
         return float(threshold)
 
-    def build_ocr_failed_placeholder(self, char, status_code=OCR_FAILED):
-        return f"[U+{ord(char):04X} {status_code}]"
+    def format_ocr_codepoint(self, char):
+        return f"U+{ord(char):04X}"
 
-    def record_ocr_failure(self, failure_table, char, status_code, reason, progress_text):
+    def format_ocr_codepoint_filename_part(self, char):
+        return f"U-{ord(char):04X}"
+
+    def build_ocr_failed_placeholder(self, char, status_code=OCR_FAILED):
+        return f"[{self.format_ocr_codepoint(char)} {status_code}]"
+
+    def build_ocr_failure_image_path(self, font_hash, char, status_code):
+        filename = (
+            f"{font_hash}_{self.format_ocr_codepoint_filename_part(char)}_"
+            f"{status_code}.png"
+        )
+        opf_dir = posixpath.dirname(getattr(self, "opf_path", "") or "")
+        return posixpath.normpath(posixpath.join(opf_dir, OCR_FAILURE_IMAGE_DIR, filename))
+
+    def encode_ocr_failure_image(self, image):
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def build_ocr_failure_image_record(self, font_hash, char, status_code, image):
+        image_path = self.build_ocr_failure_image_path(font_hash, char, status_code)
+        if not hasattr(self, "ocr_failure_image_bytes"):
+            self.ocr_failure_image_bytes = {}
+        self.ocr_failure_image_bytes.setdefault(
+            image_path,
+            self.encode_ocr_failure_image(image),
+        )
+        return {
+            "image_path": image_path,
+            "image_alt": f"{self.format_ocr_codepoint(char)} {status_code}",
+        }
+
+    def record_ocr_failure(
+        self,
+        failure_table,
+        char,
+        status_code,
+        reason,
+        progress_text,
+        font_path=None,
+        font_hash=None,
+        glyph_image=None,
+    ):
         placeholder = self.build_ocr_failed_placeholder(char, status_code)
-        failure_table[char] = {
+        failure_record = {
+            "codepoint": self.format_ocr_codepoint(char),
             "status_code": status_code,
+            "font_path": font_path,
             "reason": reason,
             "placeholder": placeholder,
         }
+        if font_hash and glyph_image is not None:
+            failure_record.update(
+                self.build_ocr_failure_image_record(
+                    font_hash,
+                    char,
+                    status_code,
+                    glyph_image,
+                )
+            )
+        failure_table[char] = failure_record
         logger.write(
             f"字体字符 U+{ord(char):04X} OCR 未替换，状态: {status_code}，原因: {reason}，"
             f"使用占位符 {placeholder}{progress_text}"
@@ -924,16 +986,15 @@ class FontDecrypt:
                 self.font_to_ocr_failure_mapping[font_path] = {}
                 continue
 
-            renderer = FontGlyphRenderer(
-                self.epub.read(font_path),
-                font_path,
-                self.ocr_options,
-            )
+            font_bytes = self.epub.read(font_path)
+            font_hash = hashlib.sha1(font_bytes).hexdigest()[:8]
+            renderer = FontGlyphRenderer(font_bytes, font_path, self.ocr_options)
             replace_table = {}
             failure_table = {}
             for char in chars:
                 processed_count += 1
                 progress_text = format_ocr_progress(processed_count, total_chars)
+                image = None
                 try:
                     image = renderer.render(char)
                     result = backend.recognize(image, hint_char=char)
@@ -950,6 +1011,9 @@ class FontDecrypt:
                             OCR_EMPTY,
                             f"OCR 为空，字体 {font_path}",
                             progress_text,
+                            font_path=font_path,
+                            font_hash=font_hash,
+                            glyph_image=image,
                         )
                         continue
                     if len(text) != 1:
@@ -959,6 +1023,9 @@ class FontDecrypt:
                             OCR_MULTI_CHAR,
                             f"OCR 结果不是单字: {text}，字体 {font_path}",
                             progress_text,
+                            font_path=font_path,
+                            font_hash=font_hash,
+                            glyph_image=image,
                         )
                         continue
                     if result.confidence is not None and result.confidence < threshold:
@@ -971,6 +1038,9 @@ class FontDecrypt:
                                 f"< {threshold:.4f}，字体 {font_path}"
                             ),
                             progress_text,
+                            font_path=font_path,
+                            font_hash=font_hash,
+                            glyph_image=image,
                         )
                         continue
                     replace_table[char] = text
@@ -989,6 +1059,9 @@ class FontDecrypt:
                         OCR_EXCEPTION,
                         f"OCR 异常: {exc}，字体 {font_path}",
                         progress_text,
+                        font_path=font_path,
+                        font_hash=font_hash,
+                        glyph_image=image,
                     )
             self.font_to_replace_mapping[font_path] = replace_table
             self.font_to_ocr_failure_mapping[font_path] = failure_table
@@ -1042,11 +1115,79 @@ class FontDecrypt:
             restored = restored.replace(placeholder, entity)
         return restored
 
-    def replace_text_node(self, text_node, replace_table):
+    def build_relative_href(self, from_path, to_path):
+        from_dir = posixpath.dirname(from_path) or "."
+        return posixpath.relpath(to_path, from_dir)
+
+    def build_ocr_failure_span(self, soup, html_path, failure_record):
+        span = soup.new_tag(
+            "span",
+            attrs={
+                "class": "ocr-failure",
+                "data-codepoint": failure_record.get("codepoint", ""),
+                "data-status": failure_record.get("status_code", ""),
+            },
+        )
+        if failure_record.get("font_path"):
+            span["data-font-path"] = failure_record["font_path"]
+        if failure_record.get("reason"):
+            span["data-reason"] = failure_record["reason"]
+
+        span.append("[")
+        image_path = failure_record.get("image_path")
+        if image_path:
+            image = soup.new_tag(
+                "img",
+                attrs={
+                    "class": "ocr-failure-glyph",
+                    "src": self.build_relative_href(html_path, image_path),
+                    "alt": failure_record.get("image_alt")
+                    or failure_record.get("placeholder", ""),
+                },
+            )
+            span.append(image)
+            span.append(" ")
+        span.append(failure_record.get("status_code", OCR_FAILED))
+        span.append("]")
+        return span
+
+    def replace_text_node(self, soup, html_path, text_node, replace_table, failure_table=None):
         if not replace_table:
-            return
-        trans_table = str.maketrans(replace_table)
-        text_node.replace_with(text_node.translate(trans_table))
+            return False
+
+        failure_table = failure_table or {}
+        text = str(text_node)
+        if not any(char in replace_table for char in text):
+            return False
+
+        fragments = []
+        text_buffer = []
+        inserted_failure_markup = False
+
+        def flush_text_buffer():
+            if text_buffer:
+                fragments.append(NavigableString("".join(text_buffer)))
+                text_buffer.clear()
+
+        for char in text:
+            if char not in replace_table:
+                text_buffer.append(char)
+                continue
+
+            flush_text_buffer()
+            if char in failure_table:
+                fragments.append(
+                    self.build_ocr_failure_span(soup, html_path, failure_table[char])
+                )
+                inserted_failure_markup = True
+            else:
+                fragments.append(NavigableString(replace_table[char]))
+
+        flush_text_buffer()
+        for fragment in fragments:
+            text_node.insert_before(fragment)
+        text_node.extract()
+        return inserted_failure_markup
 
     def get_decrypt_target_font_files(self):
         return set(self.css_selector_to_font_mapping.values()) | set(
@@ -1255,6 +1396,96 @@ class FontDecrypt:
             else:
                 del tag["style"]
 
+    def ensure_ocr_failure_style(self, soup):
+        if soup.find("style", class_=OCR_FAILURE_STYLE_CLASS):
+            return
+
+        style_tag = soup.new_tag(
+            "style",
+            attrs={"type": "text/css", "class": OCR_FAILURE_STYLE_CLASS},
+        )
+        style_tag.string = OCR_FAILURE_STYLE_CSS
+        head = soup.find("head")
+        if head:
+            head.append(style_tag)
+            return
+        html_tag = soup.find("html")
+        if html_tag:
+            html_tag.insert(0, style_tag)
+            return
+        soup.insert(0, style_tag)
+
+    def escape_xml_attr(self, value):
+        return (
+            str(value)
+            .replace("&", "&amp;")
+            .replace('"', "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
+    def build_opf_href(self, book_path):
+        opf_dir = posixpath.dirname(getattr(self, "opf_path", "") or "") or "."
+        return posixpath.relpath(book_path, opf_dir)
+
+    def add_opf_manifest_ocr_failure_images(self, opf_text):
+        image_paths = sorted(getattr(self, "ocr_failure_image_bytes", {}).keys())
+        if not image_paths:
+            return opf_text
+
+        existing_ids = set(
+            match.group(2)
+            for match in re.finditer(
+                r"\bid\s*=\s*([\"'])(.*?)\1",
+                opf_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+        )
+        existing_hrefs = set(
+            match.group(2)
+            for match in re.finditer(
+                r"\bhref\s*=\s*([\"'])(.*?)\1",
+                opf_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+        )
+
+        manifest_items = []
+        index = 1
+        for image_path in image_paths:
+            href = self.build_opf_href(image_path)
+            if href in existing_hrefs:
+                continue
+            while True:
+                item_id = f"ocr_failure_{index}"
+                index += 1
+                if item_id not in existing_ids:
+                    existing_ids.add(item_id)
+                    break
+            existing_hrefs.add(href)
+            manifest_items.append(
+                '    <item id="{item_id}" href="{href}" media-type="image/png"/>'.format(
+                    item_id=self.escape_xml_attr(item_id),
+                    href=self.escape_xml_attr(href),
+                )
+            )
+
+        if not manifest_items:
+            return opf_text
+
+        match = re.search(r"(?is)</manifest\s*>", opf_text)
+        if not match:
+            logger.write("未找到 OPF manifest，跳过 OCR 失败字形图片登记")
+            return opf_text
+        return f"{opf_text[:match.start()]}\n{chr(10).join(manifest_items)}\n{opf_text[match.start():]}"
+
+    def write_ocr_failure_images(self):
+        for image_path, image_bytes in sorted(
+            getattr(self, "ocr_failure_image_bytes", {}).items()
+        ):
+            self.target_epub.writestr(image_path, image_bytes, zipfile.ZIP_DEFLATED)
+            logger.write(f"写入 OCR 失败字形缩略图: {image_path}")
+
     def write_epub(self):
         self.create_target_epub()
         if "mimetype" in self.epub.namelist():
@@ -1271,18 +1502,29 @@ class FontDecrypt:
             content = self.epub.read(one_html).decode("utf-8")
             protected_content, placeholder_map = self.protect_escaped_angle_entities(content)
             soup = BeautifulSoup(protected_content, "html.parser")
+            has_ocr_failure_markup = False
 
             for css_selector, font_file in self.css_selector_to_font_mapping.items():
                 replace_table = self.font_to_replace_mapping.get(font_file, {})
                 if not replace_table:
                     continue
+                failure_table = self.font_to_ocr_failure_mapping.get(font_file, {})
                 try:
                     selector_tags = soup.select(css_selector)
                 except Exception:
                     continue
                 for tag in selector_tags:
                     for text_node in list(self.iter_direct_text_nodes(tag)):
-                        self.replace_text_node(text_node, replace_table)
+                        has_ocr_failure_markup = (
+                            self.replace_text_node(
+                                soup,
+                                one_html,
+                                text_node,
+                                replace_table,
+                                failure_table,
+                            )
+                            or has_ocr_failure_markup
+                        )
 
             for tag in soup.find_all(style=True):
                 declarations = parse_declaration_list(tag.get("style", ""))
@@ -1301,8 +1543,18 @@ class FontDecrypt:
                 replace_table = self.font_to_replace_mapping.get(font_file, {})
                 if not replace_table:
                     continue
+                failure_table = self.font_to_ocr_failure_mapping.get(font_file, {})
                 for text_node in list(self.iter_direct_text_nodes(tag)):
-                    self.replace_text_node(text_node, replace_table)
+                    has_ocr_failure_markup = (
+                        self.replace_text_node(
+                            soup,
+                            one_html,
+                            text_node,
+                            replace_table,
+                            failure_table,
+                        )
+                        or has_ocr_failure_markup
+                    )
 
             self.clean_html_font_references(
                 soup,
@@ -1310,6 +1562,8 @@ class FontDecrypt:
                 target_font_files,
                 target_font_families,
             )
+            if has_ocr_failure_markup:
+                self.ensure_ocr_failure_style(soup)
             formatted_html = soup.decode(formatter="minimal")
             restored_html = self.restore_escaped_angle_entities(formatted_html, placeholder_map)
             self.target_epub.writestr(
@@ -1321,6 +1575,9 @@ class FontDecrypt:
         for item in self.ori_files:
             if item == "mimetype" or item not in self.epub.namelist():
                 continue
+            if item in getattr(self, "ocr_failure_image_bytes", {}):
+                logger.write(f"跳过原始同名 OCR 失败字形图片: {item}")
+                continue
             if item in target_font_files:
                 logger.write(f"跳过写入目标反混淆字体文件: {item}")
                 continue
@@ -1330,6 +1587,7 @@ class FontDecrypt:
                     opf_text,
                     target_font_files,
                 )
+                cleaned_opf = self.add_opf_manifest_ocr_failure_images(cleaned_opf)
                 self.target_epub.writestr(item, cleaned_opf.encode("utf-8"), zipfile.ZIP_DEFLATED)
                 continue
             if item in self.css:
@@ -1343,6 +1601,7 @@ class FontDecrypt:
                 self.target_epub.writestr(item, cleaned_css.encode("utf-8"), zipfile.ZIP_DEFLATED)
                 continue
             self.target_epub.writestr(item, self.epub.read(item), zipfile.ZIP_DEFLATED)
+        self.write_ocr_failure_images()
         self.close_file()
         logger.write(f"EPUB文件处理完成，输出文件路径: {self.file_write_path}")
 

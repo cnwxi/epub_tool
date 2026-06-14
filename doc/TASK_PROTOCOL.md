@@ -110,5 +110,5 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 反混淆输出策略：
 
 - 高置信度单字 OCR 结果会替换 HTML 文本节点中的混淆字符。
-- OCR 为空、非单字、置信度低于阈值或异常时，会分别写入 `[U+XXXX OCR_EMPTY]`、`[U+XXXX OCR_MULTI_CHAR]`、`[U+XXXX OCR_LOW_CONF]`、`[U+XXXX OCR_EXCEPTION]` 占位字符串，便于人工回查和脚本统计。`[U+XXXX OCR_FAILED]` 仅作为无细分原因时的兜底格式。
+- OCR 为空、非单字、置信度低于阈值或异常时，会分别写入带 `ocr-failure` class 的 HTML 可视化占位，正文显示为 `[字形缩略图 OCR_EMPTY]`、`[字形缩略图 OCR_MULTI_CHAR]`、`[字形缩略图 OCR_LOW_CONF]`、`[字形缩略图 OCR_EXCEPTION]`。缩略图 PNG 按 `Images/ocr-failures/{font_hash}_U-E000_OCR_LOW_CONF.png` 规则写入 EPUB，并在 OPF manifest 中登记为 `image/png`；HTML 属性保留 `U+XXXX`、状态码、字体路径和失败原因，便于人工回查和脚本统计。`OCR_FAILED` 仅作为无细分原因时的兜底状态。
 - 输出 EPUB 不再写入目标反混淆字体文件，并同步清理 OPF manifest 与 CSS 中的目标字体引用，避免混淆字体继续影响阅读器或后续文本工具的显示结果。

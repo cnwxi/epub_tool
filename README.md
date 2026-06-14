@@ -176,7 +176,7 @@ conda run -n epub_tool npm run tauri:build
 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`，当前落盘约 20 MiB，
 构建时会直接打进桌面安装包，运行时不再下载模型，也不加载 Paddle Python 运行时。
 如需本地验证高准确率档，可设置 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 后重新准备模型并转换 ONNX。
-`font_decrypt` 默认最低 OCR 置信度为 `0.8`；桌面 UI 可将阈值下调到 `0.4`，并会随任务请求显式传入。默认 OCR 字符筛选策略为 `strict`，适合处理本工具生成的字体混淆 EPUB。需要处理外部混淆工具生成的文件时，可将 `ocr_char_policy` 设为 `compatible`，该模式会对用户选中的目标字体命中文本放宽筛选，允许非 ASCII 可见字符进入 OCR，但仍排除空白、控制字符、真实中文标点和 ASCII 普通文本；识别面扩大后，目标字体作用下的真实特殊符号也可能被 OCR 改写。低于阈值、空结果、非单字结果或异常结果会在正文中写入 `[U+XXXX OCR_LOW_CONF]`、`[U+XXXX OCR_EMPTY]`、`[U+XXXX OCR_MULTI_CHAR]`、`[U+XXXX OCR_EXCEPTION]` 等状态码占位符。输出 EPUB 会跳过目标反混淆字体文件，并同步清理 OPF manifest 与 CSS 中的目标字体引用，避免混淆字体继续影响阅读器显示和后续文本比对。
+`font_decrypt` 默认最低 OCR 置信度为 `0.8`；桌面 UI 可将阈值下调到 `0.4`，并会随任务请求显式传入。默认 OCR 字符筛选策略为 `strict`，适合处理本工具生成的字体混淆 EPUB。需要处理外部混淆工具生成的文件时，可将 `ocr_char_policy` 设为 `compatible`，该模式会对用户选中的目标字体命中文本放宽筛选，允许非 ASCII 可见字符进入 OCR，但仍排除空白、控制字符、真实中文标点和 ASCII 普通文本；识别面扩大后，目标字体作用下的真实特殊符号也可能被 OCR 改写。低于阈值、空结果、非单字结果或异常结果会在正文中写入带 `ocr-failure` class 的可视化占位，形如 `[字形缩略图 OCR_LOW_CONF]`；缩略图资源写入 `Images/ocr-failures/{font_hash}_U-E000_OCR_LOW_CONF.png`，HTML 属性中保留 `U+XXXX`、状态码、字体路径和失败原因，便于人工回查与脚本统计。输出 EPUB 会跳过目标反混淆字体文件，并同步清理 OPF manifest 与 CSS 中的目标字体引用，避免混淆字体继续影响阅读器显示和后续文本比对。
 
 默认构建不会下载 Paddle 源模型，也不会执行 Paddle2ONNX 转换。只有维护者需要刷新已提交的 ONNX 模型时，才安装转换依赖并运行：
 
