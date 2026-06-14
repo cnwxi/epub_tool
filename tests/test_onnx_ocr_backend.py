@@ -320,12 +320,14 @@ class BuildPythonSidecarOcrBackendTest(unittest.TestCase):
         self.assertIn("bs4", build_python_sidecar.BASE_REQUIRED_MODULES)
         self.assertIn("onnxruntime", build_python_sidecar.ONNX_REQUIRED_MODULES)
         self.assertNotIn("onnxruntime", build_python_sidecar.BASE_REQUIRED_MODULES)
+        self.assertNotIn("cv2", build_python_sidecar.BASE_REQUIRED_MODULES)
         self.assertFalse(any(name.startswith("PADDLE") for name in dir(build_python_sidecar)))
 
     def test_sidecar_runtime_modules_are_onnx_only(self):
         modules = build_python_sidecar.REQUIRED_MODULES
 
         self.assertIn("onnxruntime", modules)
+        self.assertNotIn("cv2", modules)
         self.assertNotIn("paddle", modules)
         self.assertNotIn("paddleocr", modules)
         self.assertNotIn("paddlex", modules)

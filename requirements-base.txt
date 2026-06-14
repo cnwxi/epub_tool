@@ -8,7 +8,6 @@ PyYAML
 chardet>=3.0.2,<6.0.0
 python-bidi
 pypdfium2
-opencv-contrib-python==4.10.0.84
 pyclipper
 shapely
 imagesize

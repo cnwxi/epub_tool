@@ -114,17 +114,12 @@ class OnnxGlyphOcrBackend:
         return self.decode_prediction(outputs[0])
 
     def preprocess_image(self, image):
-        import cv2
-
         img_c, img_h, img_w = self.image_shape
         if img_c != 3:
             raise RuntimeError(f"暂不支持非 3 通道 OCR 输入: {self.image_shape}")
 
-        array = self.np.array(image.convert("RGB"))
-        if self.image_mode.upper() == "BGR":
-            array = array[:, :, ::-1]
-
-        h, w = array.shape[:2]
+        rgb_image = image.convert("RGB")
+        w, h = rgb_image.size
         if h <= 0 or w <= 0:
             raise RuntimeError(f"OCR 输入图像尺寸无效: {w}x{h}")
 
@@ -132,7 +127,11 @@ class OnnxGlyphOcrBackend:
         max_wh_ratio = max(img_w / float(img_h), ratio)
         target_w = min(self.max_img_width, int(img_h * max_wh_ratio))
         resized_w = min(target_w, max(1, int(round(img_h * ratio))))
-        resized = cv2.resize(array, (resized_w, img_h))
+        resample_filter = getattr(Image, "Resampling", Image).BILINEAR
+        resized_image = rgb_image.resize((resized_w, img_h), resample_filter)
+        resized = self.np.array(resized_image)
+        if self.image_mode.upper() == "BGR":
+            resized = resized[:, :, ::-1]
         resized = resized.astype("float32")
         resized = resized.transpose((2, 0, 1)) / 255.0
         resized -= 0.5
