@@ -1,0 +1,45 @@
+name: 问题反馈
+description: 反馈 EPUB 处理任务中遇到的问题
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        反馈问题时，建议同时提供当前任务类型、问题描述、样本文件和 `log.txt`，便于复现与定位。
+  - type: dropdown
+    id: task-type
+    attributes:
+      label: 当前任务类型
+      description: 请选择出现问题时执行的任务类型。
+      options:
+        - reformat
+        - decrypt
+        - encrypt
+        - font_encrypt
+        - font_decrypt
+        - transfer_img
+    validations:
+      required: true
+  - type: textarea
+    id: problem-description
+    attributes:
+      label: 问题描述
+      description: 请说明遇到的问题，并粘贴应用结果区显示的提示、错误信息或异常现象。
+      placeholder: 例如：任务失败、输出文件缺失、转换结果异常、期望结果与实际结果不一致等。
+    validations:
+      required: true
+  - type: textarea
+    id: sample-file
+    attributes:
+      label: 样本文件
+      description: 可将 EPUB 样本或可复现问题的最小文件直接拖拽到此处上传。
+      placeholder: 请上传样本文件，或说明无法提供样本的原因。
+    validations:
+      required: false
+  - type: textarea
+    id: log-text
+    attributes:
+      label: log.txt
+      description: 请粘贴 `log.txt` 的相关内容，或将日志文件直接拖拽到此处上传。
+    validations:
+      required: false

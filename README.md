@@ -212,10 +212,10 @@ conda run -n epub_tool npm run maintenance:convert-ocr-onnx
 - `font_decrypt` 只使用内置 ONNX OCR 模型，不依赖系统 OCR 工具、Paddle Python 运行时或运行时联网下载
 - `decrypt` 只还原文件名与资源引用混淆；如果 EPUB 内容本身被 DRM 或加密资源保护，工具无法还原明文
 - 如果 `content.opf` 等关键文件缺失或异常，相关任务可能直接失败
-- 反馈问题时，建议同时提供：
-  - 样本文件
+- 反馈问题时，可使用 [问题反馈模板](https://github.com/cnwxi/epub_tool/issues/new?template=bug_report.yml)，建议同时提供：
   - 当前任务类型
-  - 结果区提示
+  - 问题描述
+  - 样本文件
   - `log.txt`
 
 ## 相关项目
