@@ -9,7 +9,6 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_TAURI_DIR = REPO_ROOT / "src-tauri"
 CARGO_TOML = SRC_TAURI_DIR / "Cargo.toml"
@@ -92,7 +91,10 @@ def main() -> int:
         run_command(["npm", "run", "tauri", "--", "build", "--bundles", "app"])
         create_macos_dmg()
     else:
-        run_command(["npm", "run", "tauri", "--", "build"])
+        try:
+            run_command(["npm", "run", "tauri", "--", "build"])
+        except:
+            run_command(["npm.cmd", "run", "tauri", "--", "build"])
     return 0
 
 
