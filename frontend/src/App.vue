@@ -10,7 +10,9 @@ import { usePersistentState } from "./composables/usePersistentState";
 import { useTaskBridge } from "./composables/useTaskBridge";
 import type {
   AppSettings,
+  FontDecryptSettings,
   FontLoadStatus,
+  OcrCharPolicy,
   QueuedFile,
   SectionKey,
   TaskAggregateStats,
@@ -70,6 +72,12 @@ const defaultSettings: AppSettings = {
   autoOpenLogFile: false,
   autoCheckUpdates: true,
   keepHistoryCount: 10,
+};
+const ocrCharPolicies: OcrCharPolicy[] = ["strict", "compatible"];
+const FRONTEND_MIN_OCR_CONFIDENCE = 0.4;
+const defaultFontDecryptSettings: FontDecryptSettings = {
+  ocrCharPolicy: "strict",
+  minOcrConfidence: 0.8,
 };
 
 const createTaskRecord = <T,>(factory: () => T): Record<TaskType, T> => ({
@@ -220,6 +228,36 @@ const normalizeSettings = (value: unknown): AppSettings => {
   };
 };
 
+const normalizeOcrCharPolicy = (value: unknown): OcrCharPolicy =>
+  ocrCharPolicies.includes(value as OcrCharPolicy)
+    ? (value as OcrCharPolicy)
+    : defaultFontDecryptSettings.ocrCharPolicy;
+
+const normalizeMinOcrConfidence = (value: unknown): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return defaultFontDecryptSettings.minOcrConfidence;
+  }
+  return Math.max(FRONTEND_MIN_OCR_CONFIDENCE, Math.min(1, numeric));
+};
+
+const normalizeFontDecryptSettings = (value: unknown): FontDecryptSettings => {
+  const raw =
+    value && typeof value === "object"
+      ? (value as Partial<FontDecryptSettings> & {
+        ocr_char_policy?: unknown;
+        min_ocr_confidence?: unknown;
+      })
+      : {};
+
+  return {
+    ocrCharPolicy: normalizeOcrCharPolicy(raw.ocrCharPolicy ?? raw.ocr_char_policy),
+    minOcrConfidence: normalizeMinOcrConfidence(
+      raw.minOcrConfidence ?? raw.min_ocr_confidence,
+    ),
+  };
+};
+
 const normalizeOutputDirectoryMap = (value: unknown): TaskOutputDirectoryMap => {
   const raw = value && typeof value === "object" ? (value as Partial<TaskOutputDirectoryMap>) : {};
   return {
@@ -283,6 +321,11 @@ const settings = usePersistentState<AppSettings>(
   "epub-tool.settings",
   defaultSettings,
   normalizeSettings,
+);
+const fontDecryptSettings = usePersistentState<FontDecryptSettings>(
+  "epub-tool.font-decrypt-settings",
+  defaultFontDecryptSettings,
+  normalizeFontDecryptSettings,
 );
 const taskHistory = usePersistentState<TaskHistoryEntry[]>(
   "epub-tool.task-history",
@@ -480,6 +523,7 @@ const scheduleCustomScrollbarUpdate = () => {
 };
 
 settings.value = normalizeSettings(settings.value);
+fontDecryptSettings.value = normalizeFontDecryptSettings(fontDecryptSettings.value);
 outputDirs.value = {
   ...createOutputDirectoryMap(),
   ...(outputDirs.value ?? {}),
@@ -1508,7 +1552,21 @@ const buildRequest = (): TaskRequest => {
     };
   }
 
+  if (activeTask.value === "font_decrypt") {
+    const normalizedSettings = normalizeFontDecryptSettings(fontDecryptSettings.value);
+    fontDecryptSettings.value = normalizedSettings;
+    request.options = {
+      ...(request.options ?? {}),
+      ocr_char_policy: normalizedSettings.ocrCharPolicy,
+      min_ocr_confidence: normalizedSettings.minOcrConfidence,
+    };
+  }
+
   return request;
+};
+
+const normalizeFontDecryptSettingsInPlace = () => {
+  fontDecryptSettings.value = normalizeFontDecryptSettings(fontDecryptSettings.value);
 };
 
 const formatTaskType = (taskType: TaskType): string => {
@@ -2188,6 +2246,28 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                           type="button" @click="loadFontFamilies({ force: true })">
                           {{ fontLoading ? "刷新中..." : "刷新字体列表" }}
                         </button>
+                      </div>
+                    </div>
+                    <div v-if="activeTask === 'font_decrypt'" class="font-advanced-options glass-soft">
+                      <div class="font-advanced-head">
+                        <p class="eyebrow">OCR 设置</p>
+                        <h4>高级选项</h4>
+                      </div>
+                      <div class="font-setting-grid">
+                        <label class="font-setting-field">
+                          <span>OCR 字符范围</span>
+                          <select v-model="fontDecryptSettings.ocrCharPolicy"
+                            @change="normalizeFontDecryptSettingsInPlace">
+                            <option value="strict">严格模式（默认）</option>
+                            <option value="compatible">兼容外部混淆</option>
+                          </select>
+                        </label>
+                        <label class="font-setting-field">
+                          <span>最低 OCR 置信度</span>
+                          <input v-model.number="fontDecryptSettings.minOcrConfidence" max="1" min="0.4"
+                            step="0.05" type="number" @blur="normalizeFontDecryptSettingsInPlace"
+                            @change="normalizeFontDecryptSettingsInPlace" />
+                        </label>
                       </div>
                     </div>
                     <div class="font-grid">

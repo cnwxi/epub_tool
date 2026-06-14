@@ -24,6 +24,9 @@ except:
 
 logger = logwriter()
 
+FONT_OBFUSCATION_EAST_ASIAN_WIDTHS = frozenset({"W", "F"})
+FONT_OBFUSCATION_PRIVATE_CODEPOINTS = tuple(range(0xE000, 0xF900))
+
 
 def list_epub_font_encrypt_targets(epub_path):
     if not os.path.exists(epub_path):
@@ -574,10 +577,18 @@ class FontEncrypt:
     def should_obfuscate_char(self, char):
         category = unicodedata.category(char)
         east_asian_width = unicodedata.east_asian_width(char)
-        return (category.startswith("L") or category.startswith("N")) and east_asian_width in (
-            "W",
-            "F",
+        return (
+            category.startswith(("L", "N"))
+            and east_asian_width in FONT_OBFUSCATION_EAST_ASIAN_WIDTHS
         )
+
+    def sample_obfuscation_codepoints(self, count):
+        if count > len(FONT_OBFUSCATION_PRIVATE_CODEPOINTS):
+            raise ValueError(
+                "可用私用区混淆码位不足，"
+                f"需要 {count} 个，最多 {len(FONT_OBFUSCATION_PRIVATE_CODEPOINTS)} 个"
+            )
+        return random.sample(FONT_OBFUSCATION_PRIVATE_CODEPOINTS, count)
 
     def clean_text(self):
         passthrough_mapping = {}
@@ -689,7 +700,7 @@ class FontEncrypt:
 
                 available_ranges = [ord(char) for char in plain_text]
                 glyphs, metrics, cmap = {}, {}, {}
-                private_codes = random.sample(range(0xAC00, 0xD7AF), len(plain_text))
+                private_codes = self.sample_obfuscation_codepoints(len(plain_text))
                 cjk_codes = random.sample(available_ranges, len(plain_text))
 
                 glyph_set = original_font.getGlyphSet()

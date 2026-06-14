@@ -1,16 +1,20 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from build_tool import build_python_sidecar
 from build_tool import ocr_model_config
 from utils.decrypt_font import (
     DEFAULT_OCR_MODEL_NAME,
+    OCR_CHAR_POLICY_COMPATIBLE,
+    OCR_CHAR_POLICY_STRICT,
     FontDecrypt,
     FontGlyphRenderer,
+    OcrTextResult,
     OnnxGlyphOcrBackend,
     create_onnx_session_options,
     format_ocr_progress,
@@ -101,25 +105,184 @@ class FontGlyphRendererTest(unittest.TestCase):
         self.assertTrue(renderer.is_small_glyph_bbox((0, 0, 120, 12), 128))
         self.assertFalse(renderer.is_small_glyph_bbox((0, 0, 90, 100), 128))
 
+    def test_period_like_image_rejects_zero_sized_glyphs(self):
+        period_image = Image.new("RGB", (160, 120), (255, 255, 255))
+        period_draw = ImageDraw.Draw(period_image)
+        period_draw.ellipse((72, 48, 92, 68), outline=0, width=3)
+
+        zero_image = Image.new("RGB", (160, 120), (255, 255, 255))
+        zero_draw = ImageDraw.Draw(zero_image)
+        zero_draw.ellipse((42, 16, 118, 104), outline=0, width=6)
+
+        self.assertTrue(FontGlyphRenderer.is_period_like_image(period_image))
+        self.assertFalse(FontGlyphRenderer.is_period_like_image(zero_image))
+
 
 class FontDecryptOcrTextCleanupTest(unittest.TestCase):
-    def test_clean_text_keeps_encrypt_font_passthrough_punctuation_out_of_ocr(self):
+    def create_font_decrypt(self, policy=OCR_CHAR_POLICY_STRICT):
         font_decrypt = FontDecrypt.__new__(FontDecrypt)
+        font_decrypt.ocr_options = {"ocr_char_policy": policy}
+        return font_decrypt
+
+    def test_clean_text_keeps_encrypt_font_passthrough_punctuation_out_of_ocr(self):
+        font_decrypt = self.create_font_decrypt()
         font_decrypt.font_to_char_mapping = {
-            "font.ttf": "你。？，！、；：《》（）\ue000<& \u0000",
+            "font.ttf": "你０❶0。？，！、；：《》（）\ue000<& \u0000",
         }
 
         font_decrypt.clean_text()
 
-        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你\ue000")
+        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你０\ue000")
+
+    def test_strict_ocr_policy_matches_encrypt_font_obfuscation_scope(self):
+        font_decrypt = self.create_font_decrypt(OCR_CHAR_POLICY_STRICT)
+
+        self.assertFalse(font_decrypt.should_ocr_char("❶"))
+        self.assertFalse(font_decrypt.should_ocr_char("0"))
+        self.assertFalse(font_decrypt.should_ocr_char("。"))
+        self.assertFalse(font_decrypt.should_ocr_char("\u0000"))
+        self.assertTrue(font_decrypt.should_ocr_char("你"))
+        self.assertTrue(font_decrypt.should_ocr_char("０"))
+        self.assertTrue(font_decrypt.should_ocr_char("\ue000"))
+        self.assertTrue(font_decrypt.should_ocr_char("\ud73c"))
+
+    def test_compatible_ocr_policy_accepts_external_visible_obfuscation_chars(self):
+        font_decrypt = self.create_font_decrypt(OCR_CHAR_POLICY_COMPATIBLE)
+
+        self.assertTrue(font_decrypt.should_ocr_char("你"))
+        self.assertTrue(font_decrypt.should_ocr_char("❶"))
+        self.assertTrue(font_decrypt.should_ocr_char("０"))
+        self.assertTrue(font_decrypt.should_ocr_char("\ue000"))
+        self.assertFalse(font_decrypt.should_ocr_char(" "))
+        self.assertFalse(font_decrypt.should_ocr_char("\u0000"))
+        self.assertFalse(font_decrypt.should_ocr_char("。"))
+        self.assertFalse(font_decrypt.should_ocr_char("A"))
+        self.assertFalse(font_decrypt.should_ocr_char("0"))
+
+    def test_clean_text_uses_compatible_policy_for_external_obfuscation_chars(self):
+        font_decrypt = self.create_font_decrypt(OCR_CHAR_POLICY_COMPATIBLE)
+        font_decrypt.font_to_char_mapping = {
+            "font.ttf": "你０❶0。？，！、；：《》（）\ue000<& \u0000",
+        }
+
+        font_decrypt.clean_text()
+
+        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你０❶\ue000")
+
+    def test_external_ocr_policy_alias_uses_compatible_mode(self):
+        font_decrypt = self.create_font_decrypt("external")
+
+        self.assertEqual(font_decrypt.get_ocr_char_policy(), OCR_CHAR_POLICY_COMPATIBLE)
+        self.assertTrue(font_decrypt.should_ocr_char("❶"))
 
     def test_private_use_period_alias_normalizes_to_chinese_full_stop(self):
-        font_decrypt = FontDecrypt.__new__(FontDecrypt)
+        font_decrypt = self.create_font_decrypt()
 
         self.assertEqual(font_decrypt.normalize_ocr_text(".", hint_char="\ue000"), "。")
         self.assertEqual(font_decrypt.normalize_ocr_text("．", hint_char="\ue000"), "。")
         self.assertEqual(font_decrypt.normalize_ocr_text("｡", hint_char="\ue000"), "。")
         self.assertEqual(font_decrypt.normalize_ocr_text(".", hint_char="。"), ".")
+
+    def test_zero_alias_only_normalizes_for_period_like_obfuscated_glyph(self):
+        font_decrypt = self.create_font_decrypt()
+
+        self.assertEqual(
+            font_decrypt.normalize_ocr_text(
+                "0",
+                hint_char="\ud73c",
+                period_like_glyph=True,
+            ),
+            "。",
+        )
+        self.assertEqual(
+            font_decrypt.normalize_ocr_text(
+                "0",
+                hint_char="\ud73c",
+                period_like_glyph=False,
+            ),
+            "0",
+        )
+        self.assertEqual(
+            font_decrypt.normalize_ocr_text(
+                "0",
+                hint_char="０",
+                period_like_glyph=True,
+            ),
+            "0",
+        )
+
+    def test_build_ocr_mapping_uses_status_code_failure_markers(self):
+        class FakeEpub:
+            def read(self, path):
+                return b"font-bytes"
+
+        class FakeRenderer:
+            def __init__(self, font_bytes, font_path, options):
+                pass
+
+            def render(self, char):
+                return Image.new("RGB", (16, 16), (255, 255, 255))
+
+            def is_period_like_image(self, image):
+                return False
+
+        cases = [
+            (OcrTextResult("", 0.9), None, "OCR_EMPTY", "[U+E000 OCR_EMPTY]"),
+            (OcrTextResult("错错", 0.9), None, "OCR_MULTI_CHAR", "[U+E000 OCR_MULTI_CHAR]"),
+            (OcrTextResult("错", 0.5), None, "OCR_LOW_CONF", "[U+E000 OCR_LOW_CONF]"),
+            (None, RuntimeError("boom"), "OCR_EXCEPTION", "[U+E000 OCR_EXCEPTION]"),
+        ]
+
+        for result, error, status_code, expected in cases:
+            with self.subTest(status_code=status_code):
+                class FakeBackend:
+                    def recognize(self, image, hint_char=""):
+                        if error:
+                            raise error
+                        return result
+
+                font_decrypt = FontDecrypt.__new__(FontDecrypt)
+                font_decrypt.epub = FakeEpub()
+                font_decrypt.ocr_backend = FakeBackend()
+                font_decrypt.ocr_options = {"min_ocr_confidence": 0.8}
+                font_decrypt.font_to_char_mapping = {"font.ttf": "\ue000"}
+                font_decrypt.font_to_replace_mapping = {}
+                font_decrypt.font_to_ocr_failure_mapping = {}
+
+                with patch("utils.decrypt_font.FontGlyphRenderer", FakeRenderer):
+                    font_decrypt.build_ocr_mapping()
+
+                self.assertEqual(
+                    font_decrypt.font_to_replace_mapping["font.ttf"]["\ue000"],
+                    expected,
+                )
+                self.assertEqual(
+                    font_decrypt.font_to_ocr_failure_mapping["font.ttf"]["\ue000"][
+                        "status_code"
+                    ],
+                    status_code,
+                )
+
+    def test_ocr_failed_placeholder_has_default_status_code(self):
+        font_decrypt = self.create_font_decrypt()
+        self.assertEqual(
+            font_decrypt.build_ocr_failed_placeholder("\ue000"),
+            "[U+E000 OCR_FAILED]",
+        )
+
+    def test_target_decrypt_fonts_are_marked_for_output_skip(self):
+        font_decrypt = self.create_font_decrypt()
+        font_decrypt.css_selector_to_font_mapping = {
+            ".body": "fonts/obfuscated.ttf",
+        }
+        font_decrypt.font_to_char_mapping = {
+            "fonts/inline-obfuscated.ttf": "\ue000",
+        }
+
+        self.assertEqual(
+            font_decrypt.get_decrypt_target_font_files(),
+            {"fonts/obfuscated.ttf", "fonts/inline-obfuscated.ttf"},
+        )
 
 
 class BuildPythonSidecarOcrBackendTest(unittest.TestCase):

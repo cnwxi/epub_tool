@@ -7,6 +7,7 @@ export type TaskType =
   | "transfer_img";
 export type SectionKey = TaskType | "settings" | "about";
 export type FontLoadStatus = "idle" | "loading" | "loaded" | "error";
+export type OcrCharPolicy = "strict" | "compatible";
 export type TaskOutputDirectoryMap = Record<TaskType, string>;
 
 export interface QueuedFile {
@@ -60,6 +61,11 @@ export interface AppSettings {
   autoOpenLogFile: boolean;
   autoCheckUpdates: boolean;
   keepHistoryCount: number;
+}
+
+export interface FontDecryptSettings {
+  ocrCharPolicy: OcrCharPolicy;
+  minOcrConfidence: number;
 }
 
 export interface TaskAggregateStats {

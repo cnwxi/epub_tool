@@ -2026,6 +2026,63 @@ input {
   color: var(--muted);
 }
 
+.font-advanced-options {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--layout-radius-sm);
+  border: 1px solid var(--glass-soft-border);
+  background: var(--layout-surface-bg-soft);
+  box-shadow: var(--layout-shadow-surface);
+}
+
+.font-advanced-head {
+  display: grid;
+  gap: 2px;
+}
+
+.font-advanced-head h4 {
+  margin: 0;
+}
+
+.font-setting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 10px;
+}
+
+.font-setting-field {
+  display: grid;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.font-setting-field span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.font-setting-field select,
+.font-setting-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--glass-soft-border) 82%, white 18%);
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--glass-soft-bg) 96%, white 4%),
+      color-mix(in srgb, var(--glass-soft-bg) 90%, #fbf5ed 10%));
+  color: var(--text-primary);
+}
+
+.font-setting-field select:focus,
+.font-setting-field input:focus {
+  border-color: color-mix(in srgb, var(--accent-gold-700) 34%, white 66%);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-gold-300) 26%, white 74%);
+  outline: none;
+}
+
 .font-option {
   display: flex;
   gap: 10px;

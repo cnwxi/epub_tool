@@ -33,7 +33,22 @@ ONNX_LOG_SEVERITY_ERROR = 3
 OCR_PASSTHROUGH_PUNCTUATION_CHARS = frozenset(
     "。，、；：？！“”‘’（）《》〈〉【】〔〕…—·"
 )
-OCR_PRIVATE_USE_PERIOD_ALIASES = frozenset({".", "．", "｡"})
+OCR_PERIOD_ALIASES = frozenset({".", "．", "｡"})
+OCR_ZERO_PERIOD_ALIAS = "0"
+OCR_HANGUL_OBFUSCATION_RANGE = (0xAC00, 0xD7AF)
+OCR_OBFUSCATION_EAST_ASIAN_WIDTHS = frozenset({"W", "F"})
+DEFAULT_MIN_OCR_CONFIDENCE = 0.8
+OCR_CHAR_POLICY_STRICT = "strict"
+OCR_CHAR_POLICY_COMPATIBLE = "compatible"
+OCR_CHAR_POLICY_ALIASES = {
+    "external": OCR_CHAR_POLICY_COMPATIBLE,
+}
+OCR_CHAR_POLICIES = frozenset({OCR_CHAR_POLICY_STRICT, OCR_CHAR_POLICY_COMPATIBLE})
+OCR_FAILED = "OCR_FAILED"
+OCR_EMPTY = "OCR_EMPTY"
+OCR_MULTI_CHAR = "OCR_MULTI_CHAR"
+OCR_LOW_CONF = "OCR_LOW_CONF"
+OCR_EXCEPTION = "OCR_EXCEPTION"
 
 
 @dataclass(slots=True)
@@ -196,6 +211,31 @@ class FontGlyphRenderer:
         glyph_height = max(1, bbox[3] - bbox[1])
         threshold = max(1, font_size * self.small_glyph_threshold)
         return glyph_width <= threshold or glyph_height <= threshold
+
+    @staticmethod
+    def get_ink_bbox(image):
+        gray = image.convert("L")
+        ink_mask = gray.point(lambda pixel: 255 if pixel < 250 else 0)
+        return ink_mask.getbbox()
+
+    @classmethod
+    def is_period_like_image(cls, image):
+        ink_bbox = cls.get_ink_bbox(image)
+        if not ink_bbox:
+            return False
+
+        ink_width = max(1, ink_bbox[2] - ink_bbox[0])
+        ink_height = max(1, ink_bbox[3] - ink_bbox[1])
+        image_width = max(1, image.width)
+        image_height = max(1, image.height)
+        aspect_ratio = ink_width / ink_height
+
+        # 仅把墨迹占比很小且接近正方形的小字形视为句号候选，避免数字 0 / 圈号误归一。
+        return (
+            ink_width <= image_width * 0.38
+            and ink_height <= image_height * 0.46
+            and 0.55 <= aspect_ratio <= 1.6
+        )
 
     def render_spec(self, char):
         font = self.font
@@ -389,6 +429,7 @@ class FontDecrypt:
         )
         self.ocr_backend = ocr_backend
         self.ocr_options = ocr_options or {}
+        self.font_to_ocr_failure_mapping = {}
         self.target_epub = None
         self.opf_path = None
         self._init_opf_path()
@@ -757,15 +798,64 @@ class FontDecrypt:
         logger.write(f"CSS选择器映射: {self.css_selector_to_font_mapping}")
         logger.write(f"字体文件到混淆字符映射: {self.font_to_char_mapping}")
 
-    def should_ocr_char(self, char):
-        if not char or char.isspace():
+    def is_encrypt_obfuscated_char(self, char):
+        category = unicodedata.category(char)
+        east_asian_width = unicodedata.east_asian_width(char)
+        return (
+            category.startswith(("L", "N"))
+            and east_asian_width in OCR_OBFUSCATION_EAST_ASIAN_WIDTHS
+        )
+
+    def is_ocr_obfuscation_hint_char(self, char):
+        if not char:
             return False
+        codepoint = ord(char)
+        return (
+            unicodedata.category(char) == "Co"
+            or OCR_HANGUL_OBFUSCATION_RANGE[0]
+            <= codepoint
+            <= OCR_HANGUL_OBFUSCATION_RANGE[1]
+        )
+
+    def get_ocr_char_policy(self):
+        raw_policy = str(
+            getattr(self, "ocr_options", {}).get(
+                "ocr_char_policy",
+                OCR_CHAR_POLICY_STRICT,
+            )
+            or OCR_CHAR_POLICY_STRICT
+        ).strip().lower()
+        policy = OCR_CHAR_POLICY_ALIASES.get(raw_policy, raw_policy)
+        if policy in OCR_CHAR_POLICIES:
+            return policy
+        logger.write(f"未知 OCR 字符筛选策略 {raw_policy}，回退到 strict")
+        return OCR_CHAR_POLICY_STRICT
+
+    def is_ocr_char_common_exclusion(self, char):
+        if not char or char.isspace():
+            return True
         category = unicodedata.category(char)
         if category.startswith("C") and category != "Co":
-            return False
+            return True
         if char in OCR_PASSTHROUGH_PUNCTUATION_CHARS:
+            return True
+        return False
+
+    def is_compatible_ocr_candidate_char(self, char):
+        if self.is_ocr_char_common_exclusion(char):
             return False
-        return category.startswith(("L", "N")) or category in ("Co", "So")
+        if ord(char) < 0x80:
+            return False
+        return True
+
+    def should_ocr_char(self, char):
+        if self.is_ocr_char_common_exclusion(char):
+            return False
+        if self.is_ocr_obfuscation_hint_char(char):
+            return True
+        if self.get_ocr_char_policy() == OCR_CHAR_POLICY_COMPATIBLE:
+            return self.is_compatible_ocr_candidate_char(char)
+        return self.is_encrypt_obfuscated_char(char)
 
     def clean_text(self):
         for key in list(self.font_to_char_mapping.keys()):
@@ -780,32 +870,58 @@ class FontDecrypt:
             self.ocr_backend = create_ocr_backend(self.ocr_options)
         return self.ocr_backend
 
-    def normalize_ocr_punctuation(self, text, hint_char):
-        if (
-            hint_char
-            and unicodedata.category(hint_char) == "Co"
-            and text in OCR_PRIVATE_USE_PERIOD_ALIASES
-        ):
+    def normalize_ocr_punctuation(self, text, hint_char, period_like_glyph=False):
+        if not self.is_ocr_obfuscation_hint_char(hint_char):
+            return text
+        if text in OCR_PERIOD_ALIASES:
+            return "。"
+        if text == OCR_ZERO_PERIOD_ALIAS and period_like_glyph:
             return "。"
         return text
 
-    def normalize_ocr_text(self, text, hint_char=None):
+    def normalize_ocr_text(self, text, hint_char=None, period_like_glyph=False):
         chars = [char for char in (text or "").strip() if not char.isspace()]
         normalized = "".join(chars)
         if len(normalized) == 1:
-            return self.normalize_ocr_punctuation(normalized, hint_char)
+            return self.normalize_ocr_punctuation(
+                normalized,
+                hint_char,
+                period_like_glyph=period_like_glyph,
+            )
         return normalized
+
+    def get_min_ocr_confidence(self):
+        threshold = self.ocr_options.get("min_ocr_confidence", DEFAULT_MIN_OCR_CONFIDENCE)
+        if threshold is None:
+            return DEFAULT_MIN_OCR_CONFIDENCE
+        return float(threshold)
+
+    def build_ocr_failed_placeholder(self, char, status_code=OCR_FAILED):
+        return f"[U+{ord(char):04X} {status_code}]"
+
+    def record_ocr_failure(self, failure_table, char, status_code, reason, progress_text):
+        placeholder = self.build_ocr_failed_placeholder(char, status_code)
+        failure_table[char] = {
+            "status_code": status_code,
+            "reason": reason,
+            "placeholder": placeholder,
+        }
+        logger.write(
+            f"字体字符 U+{ord(char):04X} OCR 未替换，状态: {status_code}，原因: {reason}，"
+            f"使用占位符 {placeholder}{progress_text}"
+        )
+        return placeholder
 
     def build_ocr_mapping(self):
         backend = self.get_ocr_backend()
-        threshold = self.ocr_options.get("min_ocr_confidence")
-        threshold = float(threshold) if threshold is not None else None
+        threshold = self.get_min_ocr_confidence()
         total_chars = sum(len(chars) for chars in self.font_to_char_mapping.values())
         processed_count = 0
 
         for font_path, chars in self.font_to_char_mapping.items():
             if not chars:
                 self.font_to_replace_mapping[font_path] = {}
+                self.font_to_ocr_failure_mapping[font_path] = {}
                 continue
 
             renderer = FontGlyphRenderer(
@@ -814,30 +930,47 @@ class FontDecrypt:
                 self.ocr_options,
             )
             replace_table = {}
+            failure_table = {}
             for char in chars:
                 processed_count += 1
                 progress_text = format_ocr_progress(processed_count, total_chars)
                 try:
                     image = renderer.render(char)
                     result = backend.recognize(image, hint_char=char)
-                    text = self.normalize_ocr_text(result.text, hint_char=char)
+                    period_like_glyph = renderer.is_period_like_image(image)
+                    text = self.normalize_ocr_text(
+                        result.text,
+                        hint_char=char,
+                        period_like_glyph=period_like_glyph,
+                    )
                     if not text:
-                        logger.write(
-                            f"字体{font_path}字符 U+{ord(char):04X} OCR 为空，跳过{progress_text}"
+                        replace_table[char] = self.record_ocr_failure(
+                            failure_table,
+                            char,
+                            OCR_EMPTY,
+                            f"OCR 为空，字体 {font_path}",
+                            progress_text,
                         )
                         continue
                     if len(text) != 1:
-                        logger.write(
-                            f"字体{font_path}字符 U+{ord(char):04X} OCR 结果不是单字: {text}{progress_text}"
+                        replace_table[char] = self.record_ocr_failure(
+                            failure_table,
+                            char,
+                            OCR_MULTI_CHAR,
+                            f"OCR 结果不是单字: {text}，字体 {font_path}",
+                            progress_text,
                         )
                         continue
-                    if (
-                        threshold is not None
-                        and result.confidence is not None
-                        and result.confidence < threshold
-                    ):
-                        logger.write(
-                            f"字体{font_path}字符 U+{ord(char):04X} OCR 置信度过低: {result.confidence}{progress_text}"
+                    if result.confidence is not None and result.confidence < threshold:
+                        replace_table[char] = self.record_ocr_failure(
+                            failure_table,
+                            char,
+                            OCR_LOW_CONF,
+                            (
+                                f"OCR 置信度过低: {result.confidence:.4f} "
+                                f"< {threshold:.4f}，字体 {font_path}"
+                            ),
+                            progress_text,
                         )
                         continue
                     replace_table[char] = text
@@ -850,12 +983,18 @@ class FontDecrypt:
                         f"字体{font_path}字符 U+{ord(char):04X} -> {text}{confidence_text}{progress_text}"
                     )
                 except Exception as exc:
-                    logger.write(
-                        f"字体{font_path}字符 U+{ord(char):04X} OCR 失败: {exc}{progress_text}"
+                    replace_table[char] = self.record_ocr_failure(
+                        failure_table,
+                        char,
+                        OCR_EXCEPTION,
+                        f"OCR 异常: {exc}，字体 {font_path}",
+                        progress_text,
                     )
             self.font_to_replace_mapping[font_path] = replace_table
+            self.font_to_ocr_failure_mapping[font_path] = failure_table
 
         logger.write(f"字体OCR反混淆映射: {self.font_to_replace_mapping}")
+        logger.write(f"字体OCR失败字符映射: {self.font_to_ocr_failure_mapping}")
 
     def create_target_epub(self):
         self.target_epub = zipfile.ZipFile(
@@ -909,6 +1048,213 @@ class FontDecrypt:
         trans_table = str.maketrans(replace_table)
         text_node.replace_with(text_node.translate(trans_table))
 
+    def get_decrypt_target_font_files(self):
+        return set(self.css_selector_to_font_mapping.values()) | set(
+            self.font_to_char_mapping.keys()
+        )
+
+    def extract_xml_attr(self, text, attr_name):
+        match = re.search(
+            rf"\b{re.escape(attr_name)}\s*=\s*([\"'])(.*?)\1",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        return match.group(2) if match else None
+
+    def iter_css_url_book_paths(self, css_path, value_text):
+        for raw_url in re.findall(r"url\((.*?)\)", value_text or "", flags=re.IGNORECASE):
+            url = raw_url.strip().strip("'\"")
+            if not url or "://" in url or url.lower().startswith("data:"):
+                continue
+            book_path = self.resolve_book_path(css_path, url)
+            if book_path:
+                yield book_path
+
+    def parse_font_face_reference(self, css_path, font_face_body):
+        declarations = parse_declaration_list(font_face_body)
+        family_names = set()
+        source_paths = set()
+        for declaration in declarations:
+            if declaration.type != "declaration":
+                continue
+            if declaration.lower_name == "font-family":
+                for candidate in self.extract_font_candidates_from_declaration(declaration):
+                    normalized = self.normalize_font_name(candidate)
+                    if normalized:
+                        family_names.add(normalized)
+            elif declaration.lower_name == "src":
+                source_paths.update(
+                    self.iter_css_url_book_paths(css_path, serialize(declaration.value))
+                )
+        return family_names, source_paths
+
+    def get_decrypt_target_font_families(self, target_font_files=None):
+        target_font_files = target_font_files or self.get_decrypt_target_font_files()
+        target_font_families = set(self.target_font_families or set())
+        for family_name, font_file in self.font_to_font_family_mapping.items():
+            if font_file in target_font_files:
+                target_font_families.add(family_name)
+
+        for css_path in self.css:
+            try:
+                css_text = self.epub.read(css_path).decode("utf-8")
+            except Exception:
+                continue
+            for match in re.finditer(
+                r"@font-face\s*\{(?P<body>[^{}]*)\}",
+                css_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            ):
+                family_names, source_paths = self.parse_font_face_reference(
+                    css_path,
+                    match.group("body"),
+                )
+                if source_paths & target_font_files:
+                    target_font_families.update(family_names)
+        return target_font_families
+
+    def split_css_family_list(self, value):
+        families = []
+        current = []
+        quote = None
+        depth = 0
+        index = 0
+        while index < len(value):
+            char = value[index]
+            current.append(char)
+            if quote:
+                if char == "\\" and index + 1 < len(value):
+                    index += 1
+                    current.append(value[index])
+                elif char == quote:
+                    quote = None
+            elif char in ("'", '"'):
+                quote = char
+            elif char == "(":
+                depth += 1
+            elif char == ")" and depth > 0:
+                depth -= 1
+            elif char == "," and depth == 0:
+                current.pop()
+                families.append("".join(current).strip())
+                current = []
+            index += 1
+        if current:
+            families.append("".join(current).strip())
+        return [family for family in families if family]
+
+    def strip_css_important(self, value):
+        match = re.search(r"\s*!important\s*$", value, flags=re.IGNORECASE)
+        if not match:
+            return value.strip(), ""
+        return value[: match.start()].strip(), value[match.start() :].strip()
+
+    def clean_css_font_family_declarations(self, css_text, target_font_families):
+        if not target_font_families:
+            return css_text
+
+        def replace_font_family(match):
+            value, important = self.strip_css_important(match.group("value"))
+            families = self.split_css_family_list(value)
+            kept_families = [
+                family
+                for family in families
+                if self.normalize_font_name(family) not in target_font_families
+            ]
+            if len(kept_families) == len(families):
+                return match.group(0)
+            if not kept_families:
+                logger.write(
+                    f"清理目标反混淆字体 font-family 引用: {match.group(0).strip()}"
+                )
+                return ""
+            suffix = match.group("suffix") or ";"
+            important_text = f" {important}" if important else ""
+            cleaned = f"{match.group('prefix')}{', '.join(kept_families)}{important_text}{suffix}"
+            logger.write(f"清理目标反混淆字体 font-family 引用: {cleaned.strip()}")
+            return cleaned
+
+        return re.sub(
+            r"(?is)(?P<prefix>\bfont-family\s*:\s*)(?P<value>[^;{}]+)(?P<suffix>;?)",
+            replace_font_family,
+            css_text,
+        )
+
+    def clean_css_font_references(
+        self,
+        css_text,
+        css_path,
+        target_font_files,
+        target_font_families,
+    ):
+        if not target_font_files and not target_font_families:
+            return css_text
+
+        def replace_font_face(match):
+            family_names, source_paths = self.parse_font_face_reference(
+                css_path,
+                match.group("body"),
+            )
+            if source_paths & target_font_files or family_names & target_font_families:
+                logger.write(
+                    f"清理目标反混淆字体 @font-face 引用: {css_path} -> "
+                    f"{sorted(family_names) or sorted(source_paths)}"
+                )
+                return ""
+            return match.group(0)
+
+        css_text = re.sub(
+            r"\s*@font-face\s*\{(?P<body>[^{}]*)\}",
+            replace_font_face,
+            css_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        return self.clean_css_font_family_declarations(css_text, target_font_families)
+
+    def clean_opf_manifest_font_references(self, opf_text, target_font_files):
+        if not target_font_files or not self.opf_path:
+            return opf_text
+
+        def replace_manifest_item(match):
+            href = self.extract_xml_attr(match.group("attrs"), "href")
+            if href and self.resolve_book_path(self.opf_path, href) in target_font_files:
+                logger.write(f"清理 OPF manifest 目标反混淆字体项: {href}")
+                return ""
+            return match.group(0)
+
+        return re.sub(
+            r"(?is)(?P<leading>\n?[ \t]*)<item\b(?P<attrs>[^>]*)>\s*(?:</item>)?",
+            replace_manifest_item,
+            opf_text,
+        )
+
+    def clean_html_font_references(
+        self,
+        soup,
+        html_path,
+        target_font_files,
+        target_font_families,
+    ):
+        for style_tag in soup.find_all("style"):
+            css_text = style_tag.get_text() or ""
+            cleaned_css = self.clean_css_font_references(
+                css_text,
+                html_path,
+                target_font_files,
+                target_font_families,
+            )
+            style_tag.string = cleaned_css
+
+        for tag in soup.find_all(style=True):
+            cleaned_style = self.clean_css_font_family_declarations(
+                tag.get("style", ""),
+                target_font_families,
+            ).strip()
+            if cleaned_style:
+                tag["style"] = cleaned_style
+            else:
+                del tag["style"]
+
     def write_epub(self):
         self.create_target_epub()
         if "mimetype" in self.epub.namelist():
@@ -917,6 +1263,9 @@ class FontDecrypt:
                 self.epub.read("mimetype"),
                 zipfile.ZIP_STORED,
             )
+
+        target_font_files = self.get_decrypt_target_font_files()
+        target_font_families = self.get_decrypt_target_font_families(target_font_files)
 
         for one_html in self.htmls:
             content = self.epub.read(one_html).decode("utf-8")
@@ -955,6 +1304,12 @@ class FontDecrypt:
                 for text_node in list(self.iter_direct_text_nodes(tag)):
                     self.replace_text_node(text_node, replace_table)
 
+            self.clean_html_font_references(
+                soup,
+                one_html,
+                target_font_files,
+                target_font_families,
+            )
             formatted_html = soup.decode(formatter="minimal")
             restored_html = self.restore_escaped_angle_entities(formatted_html, placeholder_map)
             self.target_epub.writestr(
@@ -964,8 +1319,30 @@ class FontDecrypt:
             )
 
         for item in self.ori_files:
-            if item != "mimetype" and item in self.epub.namelist():
-                self.target_epub.writestr(item, self.epub.read(item), zipfile.ZIP_DEFLATED)
+            if item == "mimetype" or item not in self.epub.namelist():
+                continue
+            if item in target_font_files:
+                logger.write(f"跳过写入目标反混淆字体文件: {item}")
+                continue
+            if item == self.opf_path:
+                opf_text = self._decode_xml_bytes(self.epub.read(item))
+                cleaned_opf = self.clean_opf_manifest_font_references(
+                    opf_text,
+                    target_font_files,
+                )
+                self.target_epub.writestr(item, cleaned_opf.encode("utf-8"), zipfile.ZIP_DEFLATED)
+                continue
+            if item in self.css:
+                css_text = self.epub.read(item).decode("utf-8")
+                cleaned_css = self.clean_css_font_references(
+                    css_text,
+                    item,
+                    target_font_files,
+                    target_font_families,
+                )
+                self.target_epub.writestr(item, cleaned_css.encode("utf-8"), zipfile.ZIP_DEFLATED)
+                continue
+            self.target_epub.writestr(item, self.epub.read(item), zipfile.ZIP_DEFLATED)
         self.close_file()
         logger.write(f"EPUB文件处理完成，输出文件路径: {self.file_write_path}")
 

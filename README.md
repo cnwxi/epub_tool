@@ -27,7 +27,7 @@
 - `decrypt`：还原 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密
 - `encrypt`：生成文件名与资源引用混淆版 EPUB
 - `font_encrypt`：按每本 EPUB 单独选择字体 family，对内嵌字体与正文映射执行字形混淆
-- `font_decrypt`：按每本 EPUB 单独选择字体 family，渲染混淆字形，经内置 ONNX OCR 识别后回写正文
+- `font_decrypt`：按每本 EPUB 单独选择字体 family，渲染混淆字形，经内置 ONNX OCR 识别后回写正文，并用可见占位符标记低置信度字符
 - `transfer_img`：批量转换 EPUB 内 WEBP 图片为 PNG 或 JPEG，并同步更新 OPF 引用
 
 ## 当前桌面版实现
@@ -39,7 +39,7 @@
 - 每个任务分别保存默认输出目录
 - 任务页内统一展示：
   - 待处理列表
-  - 字体范围面板（`font_encrypt`、`font_decrypt`）
+  - 字体范围面板（`font_encrypt`、`font_decrypt`），字体解密页额外提供 OCR 字符范围与最低置信度设置
   - 处理日志
   - 最近一次执行摘要
 - 处理过程中实时刷新进度、日志、成功/失败/跳过结果
@@ -87,7 +87,7 @@ brew upgrade --cask epub-tool-newui
 1. 在左侧切换功能类型。
 2. 拖入 EPUB、选择文件，或扫描目录收集 `.epub`。
 3. 根据当前任务选择输出目录。
-4. 若当前任务为 `font_encrypt` 或 `font_decrypt`，先为每本书选择需要参与处理的字体 family。
+4. 若当前任务为 `font_encrypt` 或 `font_decrypt`，先为每本书选择需要参与处理的字体 family；`font_decrypt` 可按需调整 OCR 字符范围和最低置信度。
 5. 点击“开始执行”，在结果区查看摘要、失败原因、跳过原因，并按需打开输出目录或日志文件。
 
 ## 日志与输出
@@ -176,6 +176,7 @@ conda run -n epub_tool npm run tauri:build
 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`，当前落盘约 20 MiB，
 构建时会直接打进桌面安装包，运行时不再下载模型，也不加载 Paddle Python 运行时。
 如需本地验证高准确率档，可设置 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 后重新准备模型并转换 ONNX。
+`font_decrypt` 默认最低 OCR 置信度为 `0.8`；桌面 UI 可将阈值下调到 `0.4`，并会随任务请求显式传入。默认 OCR 字符筛选策略为 `strict`，适合处理本工具生成的字体混淆 EPUB。需要处理外部混淆工具生成的文件时，可将 `ocr_char_policy` 设为 `compatible`，该模式会对用户选中的目标字体命中文本放宽筛选，允许非 ASCII 可见字符进入 OCR，但仍排除空白、控制字符、真实中文标点和 ASCII 普通文本；识别面扩大后，目标字体作用下的真实特殊符号也可能被 OCR 改写。低于阈值、空结果、非单字结果或异常结果会在正文中写入 `[U+XXXX OCR_LOW_CONF]`、`[U+XXXX OCR_EMPTY]`、`[U+XXXX OCR_MULTI_CHAR]`、`[U+XXXX OCR_EXCEPTION]` 等状态码占位符。输出 EPUB 会跳过目标反混淆字体文件，并同步清理 OPF manifest 与 CSS 中的目标字体引用，避免混淆字体继续影响阅读器显示和后续文本比对。
 
 默认构建不会下载 Paddle 源模型，也不会执行 Paddle2ONNX 转换。只有维护者需要刷新已提交的 ONNX 模型时，才安装转换依赖并运行：
 
