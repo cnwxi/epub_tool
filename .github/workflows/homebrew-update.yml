@@ -83,14 +83,20 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           SHA="${{ steps.sha.outputs.sha256 }}"
+          ASSET_NAME="${{ steps.asset.outputs.name }}"
           FORMULA="tap-repo/Casks/epub-tool-newui.rb"
+          VERSION_PLACEHOLDER='#{version}'
+          ASSET_NAME_TEMPLATE="${ASSET_NAME//$VERSION/$VERSION_PLACEHOLDER}"
+          URL="https://github.com/cnwxi/epub_tool/releases/download/v${VERSION_PLACEHOLDER}/${ASSET_NAME_TEMPLATE}"
 
           echo "更新公式:"
           echo "  version: $VERSION"
           echo "  sha256:  $SHA"
+          echo "  url:     $URL"
 
           sed -i "s/version \".*\"/version \"$VERSION\"/" "$FORMULA"
           sed -i "s/sha256 \".*\"/sha256 \"$SHA\"/" "$FORMULA"
+          sed -i "s|^  url \".*\"|  url \"$URL\"|" "$FORMULA"
 
           echo "--- 更新后的公式 ---"
           cat "$FORMULA"

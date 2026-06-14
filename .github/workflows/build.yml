@@ -446,9 +446,13 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ needs.prepare.outputs.release_version }}"
+          dmg_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .name' | head -n 1)
           dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
             --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .url' | head -n 1)
           if [ -z "$dmg_url" ]; then
+            dmg_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+              --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .name' | head -n 1)
             dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
               --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .url' | head -n 1)
           fi
@@ -459,6 +463,7 @@ jobs:
             exit 0
           fi
 
+          echo "name=$dmg_name" >> "$GITHUB_OUTPUT"
           echo "url=$dmg_url" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
@@ -489,14 +494,20 @@ jobs:
         run: |
           VERSION="${{ needs.prepare.outputs.asset_version }}"
           SHA="${{ steps.sha.outputs.sha256 }}"
+          ASSET_NAME="${{ steps.asset.outputs.name }}"
           FORMULA="tap-repo/Casks/epub-tool-newui.rb"
+          VERSION_PLACEHOLDER='#{version}'
+          ASSET_NAME_TEMPLATE="${ASSET_NAME//$VERSION/$VERSION_PLACEHOLDER}"
+          URL="https://github.com/cnwxi/epub_tool/releases/download/v${VERSION_PLACEHOLDER}/${ASSET_NAME_TEMPLATE}"
 
           echo "更新公式:"
           echo "  version: $VERSION"
           echo "  sha256:  $SHA"
+          echo "  url:     $URL"
 
           sed -i "s/version \".*\"/version \"$VERSION\"/" "$FORMULA"
           sed -i "s/sha256 \".*\"/sha256 \"$SHA\"/" "$FORMULA"
+          sed -i "s|^  url \".*\"|  url \"$URL\"|" "$FORMULA"
 
           echo "--- 更新后的公式 ---"
           cat "$FORMULA"
