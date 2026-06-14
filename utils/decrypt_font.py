@@ -1477,7 +1477,8 @@ class FontDecrypt:
         if not match:
             logger.write("未找到 OPF manifest，跳过 OCR 失败字形图片登记")
             return opf_text
-        return f"{opf_text[:match.start()]}\n{chr(10).join(manifest_items)}\n{opf_text[match.start():]}"
+        items_text = "\n".join(manifest_items)
+        return f"{opf_text[:match.start()]}\n{items_text}\n{opf_text[match.start():]}"
 
     def write_ocr_failure_images(self):
         for image_path, image_bytes in sorted(
