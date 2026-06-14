@@ -40,6 +40,7 @@ const sectionItems: Array<{
   { key: "decrypt", label: "文件解密", description: "解除文件名混淆封印" },
   { key: "encrypt", label: "文件加密", description: "锻造混淆版 EPUB" },
   { key: "font_encrypt", label: "字体加密", description: "为字体刻上隐藏符文" },
+  { key: "font_decrypt", label: "字体解密", description: "剥离字体隐藏符文" },
   { key: "transfer_img", label: "图片转换", description: "转炼 EPUB 内 WEBP 图片" },
   { key: "settings", label: "设置", description: "更新、偏好、日志与历史" },
   { key: "about", label: "关于", description: "锻造统计、能力范围与路径" },
@@ -49,6 +50,7 @@ const taskSections: TaskType[] = [
   "decrypt",
   "encrypt",
   "font_encrypt",
+  "font_decrypt",
   "transfer_img",
 ];
 const legacySectionMap: Record<string, SectionKey> = {
@@ -58,6 +60,10 @@ const legacySectionMap: Record<string, SectionKey> = {
   settings: "settings",
   about: "about",
 };
+
+const fontTargetTaskTypes: TaskType[] = ["font_encrypt", "font_decrypt"];
+const isFontTargetTask = (value: SectionKey | TaskType | null): value is TaskType =>
+  fontTargetTaskTypes.includes(value as TaskType);
 
 const defaultSettings: AppSettings = {
   autoOpenOutputFolder: false,
@@ -71,6 +77,7 @@ const createTaskRecord = <T,>(factory: () => T): Record<TaskType, T> => ({
   decrypt: factory(),
   encrypt: factory(),
   font_encrypt: factory(),
+  font_decrypt: factory(),
   transfer_img: factory(),
 });
 const createOutputDirectoryMap = (): TaskOutputDirectoryMap => createTaskRecord(() => "");
@@ -657,7 +664,7 @@ const masonryCards = computed<MasonryCard[]>(() => {
       { key: "task-log", weight: 320 },
     ];
 
-    if (activeTask.value === "font_encrypt") {
+    if (isFontTargetTask(activeTask.value)) {
       cards.splice(2, 0, { key: "font-panel", weight: 340 });
     }
 
@@ -672,7 +679,7 @@ const masonryCards = computed<MasonryCard[]>(() => {
     { key: "task-result", weight: 220 },
   ];
 
-  if (activeTask.value === "font_encrypt") {
+  if (isFontTargetTask(activeTask.value)) {
     cards.splice(2, 0, { key: "font-panel", weight: 340, preferredColumn: 0 });
   }
 
@@ -720,6 +727,8 @@ const activeTaskDescription = computed(() => {
       return "生成文件名混淆版 EPUB，支持单本、多本和目录扫描。";
     case "font_encrypt":
       return "按每本 EPUB 独立选择目标字体 family，再批量执行字体混淆。";
+    case "font_decrypt":
+      return "按每本 EPUB 独立选择目标字体 family，渲染混淆字形并用 OCR 识别后回写正文。";
     case "transfer_img":
       return "批量转换 EPUB 内 WEBP 图片，支持单本、多本和目录扫描。";
     default:
@@ -913,6 +922,8 @@ const activeTitle = computed(() => {
       return "文件加密";
     case "font_encrypt":
       return "字体加密";
+    case "font_decrypt":
+      return "字体解密";
     case "transfer_img":
       return "图片转换";
     case "settings":
@@ -928,6 +939,7 @@ const activeDescription = computed(() => {
     case "decrypt":
     case "encrypt":
     case "font_encrypt":
+    case "font_decrypt":
     case "transfer_img":
       return activeTaskDescription.value;
     case "settings":
@@ -1243,7 +1255,7 @@ const queuePaths = (paths: string[]) => {
     ensureSelectedFile(firstQueuedPath);
   }
 
-  if (activeSection.value === "font_encrypt" && addedPaths.length > 0) {
+  if (isFontTargetTask(activeSection.value) && addedPaths.length > 0) {
     void nextTick(async () => {
       await loadFontFamilies({
         filePaths: addedPaths,
@@ -1488,7 +1500,7 @@ const buildRequest = (): TaskRequest => {
     options: {},
   };
 
-  if (activeTask.value === "font_encrypt") {
+  if (isFontTargetTask(activeTask.value)) {
     request.options = {
       target_font_families_by_file: Object.fromEntries(
         files.value.map((item) => [item.path, item.selectedFontFamilies]),
@@ -1509,6 +1521,8 @@ const formatTaskType = (taskType: TaskType): string => {
       return "文件加密";
     case "font_encrypt":
       return "字体加密";
+    case "font_decrypt":
+      return "字体解密";
     case "transfer_img":
       return "图片转换";
   }
@@ -1662,7 +1676,7 @@ const runSelectedTask = async () => {
     return;
   }
   const taskType = activeTask.value;
-  if (taskType === "font_encrypt") {
+  if (isFontTargetTask(taskType)) {
     await loadFontFamilies();
   }
 
@@ -1758,7 +1772,7 @@ watch(activeSection, async (section) => {
   if (activeSection.value === "about") {
     animateAboutDashboard();
   }
-  if (activeSection.value === "font_encrypt" && files.value.length > 0) {
+  if (isFontTargetTask(activeSection.value) && files.value.length > 0) {
     await loadFontFamilies({
       filePaths: files.value
         .filter((item) => item.fontLoadStatus !== "loaded")
@@ -1811,7 +1825,7 @@ watch(
   () => files.value.map((item) => item.path).join("|"),
   async (currentPaths, previousPaths) => {
     ensureSelectedFile();
-    if (activeSection.value === "font_encrypt") {
+    if (isFontTargetTask(activeSection.value)) {
       const previous = new Set(
         previousPaths
           .split("|")
@@ -1838,7 +1852,7 @@ watch(
 );
 
 watch(selectedFilePath, async (path) => {
-  if (activeSection.value !== "font_encrypt" || !path) {
+  if (!isFontTargetTask(activeSection.value) || !path) {
     return;
   }
 

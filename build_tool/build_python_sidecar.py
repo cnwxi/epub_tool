@@ -21,10 +21,21 @@ REQUIRED_MODULES = [
     "tinycss2",
     "tqdm",
     "PIL",
+    "paddle",
+    "paddleocr",
+    "paddlex",
+    "chardet",
+    "bidi",
+    "cv2",
+    "pypdfium2",
+    "pyclipper",
+    "shapely",
+    "imagesize",
     "utils.reformat_epub",
     "utils.decrypt_epub",
     "utils.encrypt_epub",
     "utils.encrypt_font",
+    "utils.decrypt_font",
     "utils.transfer_img",
 ]
 
@@ -69,6 +80,25 @@ def sidecar_exists() -> bool:
     return sidecar_output_path().is_file()
 
 
+def iter_sidecar_inputs():
+    for package_dir in (REPO_ROOT / "python_backend", REPO_ROOT / "utils"):
+        yield from package_dir.rglob("*.py")
+    yield REPO_ROOT / "requirements.txt"
+    yield Path(__file__).resolve()
+
+
+def sidecar_is_current() -> bool:
+    target_path = sidecar_output_path()
+    if not target_path.is_file():
+        return False
+
+    target_mtime = target_path.stat().st_mtime
+    for source_path in iter_sidecar_inputs():
+        if source_path.is_file() and source_path.stat().st_mtime > target_mtime:
+            return False
+    return True
+
+
 def build_sidecar() -> Path:
     ensure_pyinstaller()
     ensure_runtime_dependencies()
@@ -105,11 +135,35 @@ def build_sidecar() -> Path:
         "python_backend",
         "--collect-submodules",
         "utils",
+        "--collect-all",
+        "paddle",
+        "--collect-all",
+        "paddleocr",
+        "--collect-all",
+        "paddlex",
+        "--collect-submodules",
+        "bidi",
+        "--copy-metadata",
+        "python-bidi",
+        "--copy-metadata",
+        "pypdfium2",
+        "--copy-metadata",
+        "opencv-contrib-python",
+        "--copy-metadata",
+        "pyclipper",
+        "--copy-metadata",
+        "shapely",
+        "--copy-metadata",
+        "imagesize",
         str(ENTRYPOINT),
     ]
 
     env = os.environ.copy()
     env["PYINSTALLER_CONFIG_DIR"] = str(CONFIG_DIR)
+    env["PADDLE_PDX_CACHE_HOME"] = str(CONFIG_DIR / "paddlex")
+    env["MPLCONFIGDIR"] = str(CONFIG_DIR / "matplotlib")
+    Path(env["PADDLE_PDX_CACHE_HOME"]).mkdir(parents=True, exist_ok=True)
+    Path(env["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
 
     subprocess.run(command, cwd=REPO_ROOT, check=True, env=env)
 
@@ -124,7 +178,7 @@ def build_sidecar() -> Path:
 
 def main() -> int:
     ensure_only = "--ensure" in sys.argv[1:]
-    if ensure_only and sidecar_exists():
+    if ensure_only and sidecar_is_current():
         print(f"Python sidecar reused: {sidecar_output_path()}")
         return 0
 

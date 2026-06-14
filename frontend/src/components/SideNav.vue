@@ -21,6 +21,7 @@ const executionSectionKeys: SectionKey[] = [
   "decrypt",
   "encrypt",
   "font_encrypt",
+  "font_decrypt",
   "transfer_img",
 ];
 const utilitySectionKeys: SectionKey[] = ["settings", "about"];

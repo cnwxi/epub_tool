@@ -27,6 +27,7 @@
 - `decrypt`：处理文件名混淆
 - `encrypt`：生成混淆版 EPUB
 - `font_encrypt`：按每本 EPUB 单独选择字体范围并执行字体混淆
+- `font_decrypt`：渲染混淆字形，经 OCR 识别后回写 EPUB 正文
 - `transfer_img`：批量转换 EPUB 内 WEBP 图片
 
 ## 当前桌面版实现
@@ -38,7 +39,7 @@
 - 每个任务分别保存默认输出目录
 - 任务页内统一展示：
   - 待处理列表
-  - 字体范围面板（仅 `font_encrypt`）
+  - 字体范围面板（`font_encrypt`、`font_decrypt`）
   - 处理日志
   - 最近一次执行摘要
 - 处理过程中实时刷新进度、日志、成功/失败/跳过结果
@@ -86,7 +87,7 @@ brew upgrade --cask epub-tool-newui
 1. 在左侧切换功能类型。
 2. 拖入 EPUB、选择文件，或扫描目录收集 `.epub`。
 3. 根据当前任务选择输出目录。
-4. 若当前任务为 `font_encrypt`，先为每本书选择需要参与处理的字体 family。
+4. 若当前任务为 `font_encrypt` 或 `font_decrypt`，先为每本书选择需要参与处理的字体 family。
 5. 点击“开始执行”，在结果区查看摘要、失败原因、跳过原因，并按需打开输出目录或日志文件。
 
 ## 日志与输出
@@ -146,6 +147,7 @@ python -m python_backend.cli run --task-type reformat --input-file ./book.epub
 python -m python_backend.cli run --task-type decrypt --input-file ./book.epub
 python -m python_backend.cli run --task-type encrypt --input-file ./book.epub
 python -m python_backend.cli run --task-type font_encrypt --input-file ./book.epub
+python -m python_backend.cli run --task-type font_decrypt --input-file ./book.epub
 python -m python_backend.cli run --task-type transfer_img --input-file ./book.epub
 python -m python_backend.cli list-fonts ./book.epub
 ```
@@ -162,9 +164,14 @@ npm run tauri:build
 打包流程会自动完成：
 
 1. 构建前端资源
-2. 构建 Python sidecar
-3. 准备 `src-tauri/bundle-resources/`
-4. 执行 Tauri 打包
+2. 复用或准备内置 PaddleOCR 模型
+3. 构建 Python sidecar
+4. 准备 `src-tauri/bundle-resources/`
+5. 执行 Tauri 打包
+
+`font_decrypt` 使用固定内置模型 `PP-OCRv5_server_rec`。模型文件位于
+`src-tauri/bundle-resources/ocr-models/PP-OCRv5_server_rec/`，当前落盘约 81 MiB，
+构建时会直接打进桌面安装包，运行时不再下载模型。
 
 ## 仓库结构
 
@@ -189,6 +196,7 @@ npm run tauri:build
 - 处理失败时，先看“最近一次执行摘要”中的失败原因、跳过原因，再看“处理日志”
 - 如果书籍结构异常，可先执行“格式化”再继续其他流程
 - `font_encrypt` 只处理 EPUB 内已嵌入的字体，不处理系统字体
+- `font_decrypt` 只使用内置 PaddleOCR 模型，不依赖系统 OCR 工具或运行时联网下载
 - 如果 `content.opf` 等关键文件缺失或异常，相关任务可能直接失败
 - 反馈问题时，建议同时提供：
   - 样本文件

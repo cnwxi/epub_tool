@@ -30,6 +30,16 @@ python -m python_backend.cli run \
   --input-file /path/book.epub
 ```
 
+```bash
+python -m python_backend.cli run \
+  --task-type font_decrypt \
+  --input-file /path/book.epub \
+  --options-json '{
+    "target_font_families": ["ObfuscatedFont"],
+    "min_ocr_confidence": 0.8
+  }'
+```
+
 ## 使用完整请求 JSON
 
 ```bash
@@ -46,6 +56,8 @@ python -m python_backend.cli run --request-json '{
 }'
 ```
 
+`font_decrypt` 使用同一套 `target_font_families_by_file` 选项，并额外支持 `min_ocr_confidence` 等 OCR 参数。OCR 模型固定为构建时内置的 `PP-OCRv5_server_rec`，默认路径为 `src-tauri/bundle-resources/ocr-models/PP-OCRv5_server_rec/`；命令行单独调试时也可通过 `EPUB_TOOL_OCR_MODEL_DIR` 指定模型目录。
+
 ## 列出字体 family
 
 ```bash
@@ -57,4 +69,3 @@ python -m python_backend.cli list-fonts /path/book.epub
 - `run` 会输出 JSON Lines 事件流。
 - 成功时退出码为 `0`，存在失败项时为 `1`。
 - 日志文件固定写入仓库根目录 `log.txt`。
-

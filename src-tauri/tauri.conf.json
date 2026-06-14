@@ -38,7 +38,8 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "bundle-resources/binaries/*": "binaries/"
+      "bundle-resources/binaries/*": "binaries/",
+      "bundle-resources/ocr-models/PP-OCRv5_server_rec/*": "ocr-models/PP-OCRv5_server_rec/"
     },
     "icon": [
       "../img/icon.png",
