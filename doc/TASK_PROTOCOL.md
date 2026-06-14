@@ -98,8 +98,8 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 
 `ocr_char_policy` 可选值：
 
-- `strict`：默认值，保持本工具生成 EPUB 的反混淆范围，只对私用区、旧版韩文区兼容码位，以及 Unicode 类别为 L/N 且 East Asian Width 为 W/F 的字符做 OCR；空白、控制字符、真实中文标点、ASCII 普通文本和符号数字不会进入 OCR。
-- `compatible`：兼容外部字体混淆工具。对用户选中目标字体命中的文本放宽筛选，允许非 ASCII 可见字符进入 OCR；仍排除空白、控制字符、真实中文标点和 ASCII 普通文本。该模式识别面更大，可能把目标字体作用下的真实特殊符号也改写为 OCR 结果。
+- `strict`：默认值，保持本工具生成 EPUB 的反混淆范围，只对私用区、韩文音节区兼容码位、同宽码位池混淆的半角/全角拉丁字母数字，以及 Unicode 类别为 L/N 且 East Asian Width 为 W/F 的字符做 OCR；空白、控制字符、真实中文标点和符号数字不会进入 OCR。
+- `compatible`：兼容外部字体混淆工具。保留 `strict` 的全部识别范围，并对用户选中目标字体命中的文本放宽筛选，额外允许非 ASCII 可见字符进入 OCR；仍排除空白、控制字符、真实中文标点和 ASCII 标点/普通符号。该模式识别面更大，可能把目标字体作用下的真实特殊符号也改写为 OCR 结果。
 
 后端也接受 `external` 作为 `compatible` 的兼容别名。
 

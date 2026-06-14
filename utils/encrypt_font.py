@@ -8,8 +8,6 @@ from tinycss2 import parse_stylesheet, serialize, parse_declaration_list
 import re
 from xml.etree import ElementTree
 from fontTools.ttLib import TTFont
-from fontTools.fontBuilder import FontBuilder
-from fontTools.pens.ttGlyphPen import TTGlyphPen
 from io import BytesIO
 import random
 import traceback
@@ -25,7 +23,41 @@ except:
 logger = logwriter()
 
 FONT_OBFUSCATION_EAST_ASIAN_WIDTHS = frozenset({"W", "F"})
-FONT_OBFUSCATION_PRIVATE_CODEPOINTS = tuple(range(0xE000, 0xF900))
+FONT_OBFUSCATION_ASCII_ALNUM_CODEPOINTS = tuple(
+    ord(char) for char in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+)
+FONT_OBFUSCATION_FULLWIDTH_ALNUM_CODEPOINTS = tuple(
+    list(range(ord("０"), ord("９") + 1))
+    + list(range(ord("Ａ"), ord("Ｚ") + 1))
+    + list(range(ord("ａ"), ord("ｚ") + 1))
+)
+FONT_OBFUSCATION_HANGUL_RANGE = (0xAC00, 0xD7AF)
+FONT_OBFUSCATION_LAYOUT_CODEPOINTS = tuple(
+    codepoint
+    for codepoint in range(
+        FONT_OBFUSCATION_HANGUL_RANGE[0],
+        FONT_OBFUSCATION_HANGUL_RANGE[1] + 1,
+    )
+    if unicodedata.category(chr(codepoint)).startswith(("L", "N"))
+    and unicodedata.east_asian_width(chr(codepoint))
+    in FONT_OBFUSCATION_EAST_ASIAN_WIDTHS
+)
+
+
+def is_ascii_latin_alnum(char):
+    return (
+        "0" <= char <= "9"
+        or "A" <= char <= "Z"
+        or "a" <= char <= "z"
+    )
+
+
+def is_fullwidth_latin_alnum(char):
+    return (
+        "０" <= char <= "９"
+        or "Ａ" <= char <= "Ｚ"
+        or "ａ" <= char <= "ｚ"
+    )
 
 
 def list_epub_font_encrypt_targets(epub_path):
@@ -575,6 +607,8 @@ class FontEncrypt:
         )
 
     def should_obfuscate_char(self, char):
+        if is_ascii_latin_alnum(char) or is_fullwidth_latin_alnum(char):
+            return True
         category = unicodedata.category(char)
         east_asian_width = unicodedata.east_asian_width(char)
         return (
@@ -582,13 +616,101 @@ class FontEncrypt:
             and east_asian_width in FONT_OBFUSCATION_EAST_ASIAN_WIDTHS
         )
 
-    def sample_obfuscation_codepoints(self, count):
-        if count > len(FONT_OBFUSCATION_PRIVATE_CODEPOINTS):
+    def get_obfuscation_codepoint_pool(self, char):
+        if is_ascii_latin_alnum(char):
+            return FONT_OBFUSCATION_ASCII_ALNUM_CODEPOINTS
+        if is_fullwidth_latin_alnum(char):
+            return FONT_OBFUSCATION_FULLWIDTH_ALNUM_CODEPOINTS
+        return FONT_OBFUSCATION_LAYOUT_CODEPOINTS
+
+    def sample_obfuscation_codepoints(self, count, excluded_codepoints=None):
+        excluded_codepoints = set(excluded_codepoints or set())
+        candidates = [
+            codepoint
+            for codepoint in FONT_OBFUSCATION_LAYOUT_CODEPOINTS
+            if codepoint not in excluded_codepoints
+        ]
+        if count > len(candidates):
             raise ValueError(
-                "可用私用区混淆码位不足，"
-                f"需要 {count} 个，最多 {len(FONT_OBFUSCATION_PRIVATE_CODEPOINTS)} 个"
+                "可用布局安全混淆码位不足，"
+                f"需要 {count} 个，最多 {len(candidates)} 个"
             )
-        return random.sample(FONT_OBFUSCATION_PRIVATE_CODEPOINTS, count)
+        return random.sample(candidates, count)
+
+    def sample_codepoints_from_pool(
+        self,
+        source_codepoints,
+        candidate_pool,
+        excluded_codepoints=None,
+    ):
+        source_codepoints = list(source_codepoints)
+        excluded_codepoints = set(excluded_codepoints or set())
+        candidates = [
+            codepoint
+            for codepoint in candidate_pool
+            if codepoint not in excluded_codepoints
+        ]
+        if len(source_codepoints) > len(candidates):
+            raise ValueError(
+                "可用同类混淆码位不足，"
+                f"需要 {len(source_codepoints)} 个，最多 {len(candidates)} 个"
+            )
+
+        targets = []
+        used = set()
+        shuffled_candidates = random.sample(candidates, len(candidates))
+        for source_codepoint in source_codepoints:
+            available = [
+                codepoint
+                for codepoint in shuffled_candidates
+                if codepoint not in used and codepoint != source_codepoint
+            ]
+            if not available:
+                available = [
+                    codepoint
+                    for codepoint in shuffled_candidates
+                    if codepoint not in used
+                ]
+            if not available:
+                raise ValueError("可用同类混淆码位不足")
+            target_codepoint = available[0]
+            targets.append(target_codepoint)
+            used.add(target_codepoint)
+
+        for index, source_codepoint in enumerate(source_codepoints):
+            if targets[index] != source_codepoint:
+                continue
+            for swap_index, swap_target in enumerate(targets):
+                if index == swap_index:
+                    continue
+                if (
+                    swap_target != source_codepoint
+                    and targets[index] != source_codepoints[swap_index]
+                ):
+                    targets[index], targets[swap_index] = (
+                        targets[swap_index],
+                        targets[index],
+                    )
+                    break
+        return targets
+
+    def build_obfuscation_codepoint_mapping(self, plain_text, preserved_text):
+        preserved_codepoints = {ord(char) for char in preserved_text}
+        grouped_chars = {}
+        for char in plain_text:
+            pool = self.get_obfuscation_codepoint_pool(char)
+            grouped_chars.setdefault(pool, []).append(char)
+
+        codepoint_mapping = {}
+        for pool, chars in grouped_chars.items():
+            source_codepoints = [ord(char) for char in chars]
+            target_codepoints = self.sample_codepoints_from_pool(
+                source_codepoints,
+                pool,
+                excluded_codepoints=preserved_codepoints,
+            )
+            codepoint_mapping.update(zip(source_codepoints, target_codepoints))
+        return codepoint_mapping
 
     def clean_text(self):
         passthrough_mapping = {}
@@ -623,6 +745,22 @@ class FontEncrypt:
                 exsit_chars.append(char)
         return missing_chars, "".join(exsit_chars)
 
+    def get_unicode_cmap_tables(self, font):
+        if "cmap" not in font:
+            return []
+        return [table for table in font["cmap"].tables if table.isUnicode()]
+
+    def rewrite_unicode_cmaps(self, font, replace_codepoint_to_glyph, source_text):
+        unicode_cmap_tables = self.get_unicode_cmap_tables(font)
+        if not unicode_cmap_tables:
+            raise ValueError("字体缺少 Unicode cmap 表")
+
+        source_codepoints = {ord(char) for char in source_text}
+        for table in unicode_cmap_tables:
+            for codepoint in source_codepoints:
+                table.cmap.pop(codepoint, None)
+            table.cmap.update(replace_codepoint_to_glyph)
+
     def set_timestamps(self, font):
         # 设置 'head' 表的时间戳
         head_table = font["head"]
@@ -650,36 +788,6 @@ class FontEncrypt:
             try:
                 original_bytes = self.epub.read(font_path)
                 original_font = TTFont(BytesIO(original_bytes))
-                # 部分字体（如部分 OTF/CFF/WOFF）没有 glyf 表，当前混淆流程不支持，回退为原字体
-                required_tables = ("glyf", "hmtx", "hhea", "head", "name", "maxp", "loca")
-                missing_tables = [table for table in required_tables if table not in original_font]
-                if missing_tables:
-                    raise ValueError(f"字体缺少必要表: {', '.join(missing_tables)}")
-
-                name_table = original_font["name"]
-                family_name = None
-                style_name = None
-                for record in name_table.names:
-                    if record.nameID == 1:
-                        family_name = record.string.decode(record.getEncoding())
-                    elif record.nameID == 2:
-                        style_name = record.string.decode(record.getEncoding())
-
-                    if family_name and style_name:
-                        break
-                if family_name is None:
-                    family_name = f"ETFamily_{i}"
-                if style_name is None:
-                    style_name = "Regular"
-
-                NAME_STRING = {
-                    "familyName": family_name,
-                    "styleName": style_name,
-                    "psName": family_name + "-" + style_name,
-                    "copyright": "Created by EpubTool",
-                    "version": "Version 1.0",
-                    "vendorURL": "https://EpubTool.com/",
-                }
                 original_cmap: dict = original_font.getBestCmap() or {}
                 miss_char, plain_text = self.ensure_cmap_has_all_text(
                     original_cmap, plain_text
@@ -698,119 +806,29 @@ class FontEncrypt:
                     self.font_to_char_mapping[font_path] = {}
                     continue
 
-                available_ranges = [ord(char) for char in plain_text]
-                glyphs, metrics, cmap = {}, {}, {}
-                private_codes = self.sample_obfuscation_codepoints(len(plain_text))
-                cjk_codes = random.sample(available_ranges, len(plain_text))
+                obfuscation_codepoint_mapping = self.build_obfuscation_codepoint_mapping(
+                    plain_text,
+                    preserved_text,
+                )
+                replace_codepoint_to_glyph = {}
+                replace_table = {}
+                for plain in plain_text:
+                    codepoint = obfuscation_codepoint_mapping[ord(plain)]
+                    replace_codepoint_to_glyph[codepoint] = original_cmap[ord(plain)]
+                    replace_table[plain] = hex(codepoint).replace("0x", "&#x")
 
-                glyph_set = original_font.getGlyphSet()
-                glyph_order = original_font.getGlyphOrder()
-                final_shadow_text: list = []
-                spescial_glyphs = [
-                    "null",
-                    ".notdef",
-                    "minus",
-                    "dotlessi",
-                    "uni0307",
-                    "quotesingle",
-                    "zero.dnom",
-                    "fraction",
-                    "uni0237",
-                ]
-
-                for special_glyph in spescial_glyphs:
-                    if special_glyph in glyph_order:
-                        pen = TTGlyphPen(glyph_set)
-                        glyph_set[special_glyph].draw(pen)
-                        glyphs[special_glyph] = pen.glyph()
-                        metrics[special_glyph] = original_font["hmtx"][special_glyph]
-                        final_shadow_text += [special_glyph]
-
-                html_entities = []
-
-                for preserved in preserved_text:
-                    glyph_name = original_cmap[ord(preserved)]
-                    pen = TTGlyphPen(glyph_set)
-                    glyph_set[glyph_name].draw(pen)
-                    glyphs[glyph_name] = pen.glyph()
-                    metrics[glyph_name] = original_font["hmtx"][glyph_name]
-                    cmap[ord(preserved)] = glyph_name
-                    final_shadow_text += [glyph_name]
-
-                for index, plain in enumerate(plain_text):
-                    try:
-                        shadow_cmap_name = original_cmap[cjk_codes[index]]
-                    except KeyError:
-                        logger.write(
-                            f"字体文件缺少字符，unicode:{cjk_codes[index]}，请检查"
-                        )
-                        continue
-
-                    final_shadow_text += [shadow_cmap_name]
-                    pen = TTGlyphPen(glyph_set)
-                    glyph_set[original_cmap[ord(plain)]].draw(pen)
-                    glyphs[shadow_cmap_name] = pen.glyph()
-                    metrics[shadow_cmap_name] = original_font["hmtx"][
-                        original_cmap[ord(plain)]
-                    ]
-                    cmap[private_codes[index]] = shadow_cmap_name
-                    html_entities += [hex(private_codes[index]).replace("0x", "&#x")]
-
-                horizontal_header = {
-                    "ascent": original_font["hhea"].ascent,
-                    "descent": original_font["hhea"].descent,
-                }
-                missing_glyphs = [
-                    glyph for glyph in final_shadow_text if glyph not in glyphs
-                ]
-                if missing_glyphs:
-                    logger.write(f"以下字形在 glyphs 中缺失: {missing_glyphs}")
-                    for glyph in missing_glyphs:
-                        glyphs[glyph] = TTGlyphPen(glyph_set).glyph()
-                        metrics[glyph] = (0, 0)
-
-                glyf_table = original_font["glyf"]
-                glyphs_to_keep = set(glyphs.keys())
-                new_glyph_order = [
-                    glyph for glyph in glyph_order if glyph in glyphs_to_keep
-                ]
-                original_font.setGlyphOrder(new_glyph_order)
-
-                # 删除不必要的字形
-                for glyph in glyph_order:
-                    if glyph not in glyphs_to_keep:
-                        if glyph in glyf_table.glyphs:
-                            del glyf_table.glyphs[glyph]
-                        if glyph in original_font["hmtx"].metrics:
-                            del original_font["hmtx"].metrics[glyph]
-                        loca_index = glyph_order.index(glyph)
-                        if 0 <= loca_index < len(original_font["loca"].locations):
-                            original_font["loca"].locations[loca_index] = 0
-
-                # 更新 maxp 表
-                original_font["maxp"].numGlyphs = len(new_glyph_order)
-
+                self.rewrite_unicode_cmaps(
+                    original_font,
+                    replace_codepoint_to_glyph,
+                    plain_text,
+                )
                 self.set_timestamps(original_font)
-
-                fb = FontBuilder(original_font["head"].unitsPerEm, isTTF=True)
-                fb.setupGlyphOrder(new_glyph_order)
-                fb.setupCharacterMap(cmap)
-                fb.setupGlyf(glyphs)
-                fb.setupHorizontalMetrics(metrics)
-                fb.setupHorizontalHeader(**horizontal_header)
-                fb.setupNameTable(NAME_STRING)
-                fb.setupOS2()
-                fb.setupPost()
                 font_stream = BytesIO()
-                fb.save(font_stream)
+                original_font.save(font_stream)
 
                 self.target_epub.writestr(
                     font_path, font_stream.getvalue(), zipfile.ZIP_DEFLATED
                 )
-                text_list = list(plain_text)
-                replace_table = {}
-                for a0, a1 in zip(text_list, html_entities):
-                    replace_table[a0] = a1
                 self.font_to_char_mapping[font_path] = replace_table
                 logger.write(f"字体文件{font_path}的加密映射: \n{replace_table}")
             except Exception as e:

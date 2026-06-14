@@ -58,7 +58,7 @@ conda run -n epub_tool python -m python_backend.cli run --request-json '{
 }'
 ```
 
-`font_decrypt` 使用同一套 `target_font_families_by_file` 选项，并额外支持 `ocr_char_policy` 与 `min_ocr_confidence` 等 OCR 参数。`ocr_char_policy` 默认值为 `strict`，适合处理本工具生成的字体混淆 EPUB；`compatible` 用于兼容外部混淆工具，会对用户选中的目标字体命中文本放宽 OCR 字符筛选，但仍排除空白、控制字符、真实中文标点和 ASCII 普通文本。后端也接受 `external` 作为 `compatible` 的兼容别名。`min_ocr_confidence` 默认最低置信度为 `0.8`。OCR 模型默认固定为构建时内置的 `PP-OCRv6_small_rec_onnx`，默认路径为 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`；命令行单独调试时也可通过 `EPUB_TOOL_OCR_ONNX_MODEL_DIR` 指定模型目录，或通过 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 选择已准备好的高准确率模型目录。
+`font_decrypt` 使用同一套 `target_font_families_by_file` 选项，并额外支持 `ocr_char_policy` 与 `min_ocr_confidence` 等 OCR 参数。`ocr_char_policy` 默认值为 `strict`，适合处理本工具生成的字体混淆 EPUB，会识别同宽码位池混淆后的半角/全角拉丁字母数字；`compatible` 用于兼容外部混淆工具，会保留 `strict` 的全部识别范围，并对用户选中的目标字体命中文本放宽 OCR 字符筛选，额外允许非 ASCII 可见字符进入 OCR，但仍排除空白、控制字符、真实中文标点和 ASCII 标点/普通符号。后端也接受 `external` 作为 `compatible` 的兼容别名。`min_ocr_confidence` 默认最低置信度为 `0.8`。OCR 模型默认固定为构建时内置的 `PP-OCRv6_small_rec_onnx`，默认路径为 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`；命令行单独调试时也可通过 `EPUB_TOOL_OCR_ONNX_MODEL_DIR` 指定模型目录，或通过 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 选择已准备好的高准确率模型目录。
 
 反混淆时，高置信度单字 OCR 结果会回写 HTML 文本；失败分支会写入带 `ocr-failure` class 的可视化 HTML 占位，形如 `[字形缩略图 OCR_LOW_CONF]`。字形 PNG 会按 `Images/ocr-failures/{font_hash}_U-E000_OCR_LOW_CONF.png` 规则写入 EPUB，HTML 的 `data-codepoint`、`data-status`、`data-font-path` 和 `data-reason` 属性会保留原码位与失败原因，便于人工回查和脚本统计。输出 EPUB 会跳过目标反混淆字体文件，并同步清理 OPF manifest 与 CSS 中的目标字体引用，避免混淆字体继续影响显示和后续文本比对。
 

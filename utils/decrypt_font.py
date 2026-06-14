@@ -58,6 +58,22 @@ OCR_FAILURE_STYLE_CSS = (
 )
 
 
+def is_ascii_latin_alnum(char):
+    return (
+        "0" <= char <= "9"
+        or "A" <= char <= "Z"
+        or "a" <= char <= "z"
+    )
+
+
+def is_fullwidth_latin_alnum(char):
+    return (
+        "０" <= char <= "９"
+        or "Ａ" <= char <= "Ｚ"
+        or "ａ" <= char <= "ｚ"
+    )
+
+
 @dataclass(slots=True)
 class OcrTextResult:
     text: str
@@ -806,6 +822,8 @@ class FontDecrypt:
         logger.write(f"字体文件到混淆字符映射: {self.font_to_char_mapping}")
 
     def is_encrypt_obfuscated_char(self, char):
+        if is_ascii_latin_alnum(char) or is_fullwidth_latin_alnum(char):
+            return True
         category = unicodedata.category(char)
         east_asian_width = unicodedata.east_asian_width(char)
         return (
@@ -860,9 +878,11 @@ class FontDecrypt:
             return False
         if self.is_ocr_obfuscation_hint_char(char):
             return True
+        if self.is_encrypt_obfuscated_char(char):
+            return True
         if self.get_ocr_char_policy() == OCR_CHAR_POLICY_COMPATIBLE:
             return self.is_compatible_ocr_candidate_char(char)
-        return self.is_encrypt_obfuscated_char(char)
+        return False
 
     def clean_text(self):
         for key in list(self.font_to_char_mapping.keys()):

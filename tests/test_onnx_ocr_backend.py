@@ -125,25 +125,29 @@ class FontDecryptOcrTextCleanupTest(unittest.TestCase):
         font_decrypt.ocr_options = {"ocr_char_policy": policy}
         return font_decrypt
 
-    def test_clean_text_keeps_encrypt_font_passthrough_punctuation_out_of_ocr(self):
+    def test_clean_text_keeps_encrypt_font_passthrough_text_out_of_ocr(self):
         font_decrypt = self.create_font_decrypt()
         font_decrypt.font_to_char_mapping = {
-            "font.ttf": "你０❶0。？，！、；：《》（）\ue000<& \u0000",
+            "font.ttf": "你０Ａ❶0A。？，！、；：《》（）\ue000<& \u0000",
         }
 
         font_decrypt.clean_text()
 
-        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你０\ue000")
+        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你０Ａ0A\ue000")
 
     def test_strict_ocr_policy_matches_encrypt_font_obfuscation_scope(self):
         font_decrypt = self.create_font_decrypt(OCR_CHAR_POLICY_STRICT)
 
         self.assertFalse(font_decrypt.should_ocr_char("❶"))
-        self.assertFalse(font_decrypt.should_ocr_char("0"))
+        self.assertTrue(font_decrypt.should_ocr_char("0"))
+        self.assertTrue(font_decrypt.should_ocr_char("A"))
+        self.assertTrue(font_decrypt.should_ocr_char("z"))
+        self.assertTrue(font_decrypt.should_ocr_char("０"))
+        self.assertTrue(font_decrypt.should_ocr_char("Ａ"))
+        self.assertTrue(font_decrypt.should_ocr_char("ｚ"))
         self.assertFalse(font_decrypt.should_ocr_char("。"))
         self.assertFalse(font_decrypt.should_ocr_char("\u0000"))
         self.assertTrue(font_decrypt.should_ocr_char("你"))
-        self.assertTrue(font_decrypt.should_ocr_char("０"))
         self.assertTrue(font_decrypt.should_ocr_char("\ue000"))
         self.assertTrue(font_decrypt.should_ocr_char("\ud73c"))
 
@@ -153,22 +157,24 @@ class FontDecryptOcrTextCleanupTest(unittest.TestCase):
         self.assertTrue(font_decrypt.should_ocr_char("你"))
         self.assertTrue(font_decrypt.should_ocr_char("❶"))
         self.assertTrue(font_decrypt.should_ocr_char("０"))
+        self.assertTrue(font_decrypt.should_ocr_char("Ａ"))
+        self.assertTrue(font_decrypt.should_ocr_char("ｚ"))
         self.assertTrue(font_decrypt.should_ocr_char("\ue000"))
         self.assertFalse(font_decrypt.should_ocr_char(" "))
         self.assertFalse(font_decrypt.should_ocr_char("\u0000"))
         self.assertFalse(font_decrypt.should_ocr_char("。"))
-        self.assertFalse(font_decrypt.should_ocr_char("A"))
-        self.assertFalse(font_decrypt.should_ocr_char("0"))
+        self.assertTrue(font_decrypt.should_ocr_char("A"))
+        self.assertTrue(font_decrypt.should_ocr_char("0"))
 
     def test_clean_text_uses_compatible_policy_for_external_obfuscation_chars(self):
         font_decrypt = self.create_font_decrypt(OCR_CHAR_POLICY_COMPATIBLE)
         font_decrypt.font_to_char_mapping = {
-            "font.ttf": "你０❶0。？，！、；：《》（）\ue000<& \u0000",
+            "font.ttf": "你０Ａ❶0A。？，！、；：《》（）\ue000<& \u0000",
         }
 
         font_decrypt.clean_text()
 
-        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你０❶\ue000")
+        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你０Ａ❶0A\ue000")
 
     def test_external_ocr_policy_alias_uses_compatible_mode(self):
         font_decrypt = self.create_font_decrypt("external")
