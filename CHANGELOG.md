@@ -1,7 +1,9 @@
 # 更新日志
 
 ### 2026.06.14<br>
-版本号更新为 `26.6.14`。<br>
+版本号更新为 `26.6.14-1`。<br>
+优化 Python sidecar 打包体积：移除 OpenCV 运行依赖，OCR 图像缩放改用既有 Pillow 实现，打包后的后端可执行文件由约 78M 降至约 38M。<br>
+清理未使用的 Python 运行依赖：移除 `pypdfium2`、`pyclipper`、`shapely`、`imagesize`，减少默认依赖安装和 sidecar 构建维护面。<br>
 优化本地与发布构建流程：升级 GitHub Actions 相关依赖，调整构建脚本命名与说明，明确本地打包需安装 `requirements.txt` 与 `pyinstaller`。<br>
 拆分 OCR 维护依赖：默认运行与打包仅使用 ONNX Runtime 依赖，Paddle 模型下载和 Paddle2ONNX 转换依赖迁移到 `requirements-ocr-conversion.txt`，避免默认构建安装维护期依赖。<br>
 更新 OCR 模型维护文档与测试说明：补充 ONNX 模型校验、转换命令和 CLI 使用说明，测试用例同步适配新的依赖入口。<br>
