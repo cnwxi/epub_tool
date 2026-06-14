@@ -3,6 +3,7 @@ export type TaskType =
   | "decrypt"
   | "encrypt"
   | "font_encrypt"
+  | "font_decrypt"
   | "transfer_img";
 export type SectionKey = TaskType | "settings" | "about";
 export type FontLoadStatus = "idle" | "loading" | "loaded" | "error";

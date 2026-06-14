@@ -20,6 +20,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 - `decrypt`
 - `encrypt`
 - `font_encrypt`
+- `font_decrypt`
 - `transfer_img`
 
 ## 运行时事件
@@ -69,7 +70,9 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 }
 ```
 
-## 字体加密选项
+## 字体任务选项
+
+`font_encrypt` 和 `font_decrypt` 都使用同一套按文件选择字体 family 的选项：
 
 ```json
 {
@@ -81,3 +84,16 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 }
 ```
 
+`font_decrypt` 使用构建时内置的固定 ONNX OCR 模型：
+
+```json
+{
+  "options": {
+    "min_ocr_confidence": 0.8
+  }
+}
+```
+
+默认模型为 `PP-OCRv6_small_rec_onnx`，资源目录为
+`ocr-models/PP-OCRv6_small_rec_onnx/`。Tauri 启动 Python sidecar 时会通过
+`EPUB_TOOL_OCR_ONNX_MODEL_DIR` 注入模型路径。若模型目录缺失，任务会直接失败；默认构建只校验已提交的 ONNX 模型资源，不会在运行时下载或转换 Paddle 源模型。

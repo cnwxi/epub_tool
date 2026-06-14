@@ -27,6 +27,7 @@
 - `decrypt`：处理文件名混淆
 - `encrypt`：生成混淆版 EPUB
 - `font_encrypt`：按每本 EPUB 单独选择字体范围并执行字体混淆
+- `font_decrypt`：渲染混淆字形，经 OCR 识别后回写 EPUB 正文
 - `transfer_img`：批量转换 EPUB 内 WEBP 图片
 
 ## 当前桌面版实现
@@ -38,7 +39,7 @@
 - 每个任务分别保存默认输出目录
 - 任务页内统一展示：
   - 待处理列表
-  - 字体范围面板（仅 `font_encrypt`）
+  - 字体范围面板（`font_encrypt`、`font_decrypt`）
   - 处理日志
   - 最近一次执行摘要
 - 处理过程中实时刷新进度、日志、成功/失败/跳过结果
@@ -86,7 +87,7 @@ brew upgrade --cask epub-tool-newui
 1. 在左侧切换功能类型。
 2. 拖入 EPUB、选择文件，或扫描目录收集 `.epub`。
 3. 根据当前任务选择输出目录。
-4. 若当前任务为 `font_encrypt`，先为每本书选择需要参与处理的字体 family。
+4. 若当前任务为 `font_encrypt` 或 `font_decrypt`，先为每本书选择需要参与处理的字体 family。
 5. 点击“开始执行”，在结果区查看摘要、失败原因、跳过原因，并按需打开输出目录或日志文件。
 
 ## 日志与输出
@@ -107,6 +108,8 @@ brew upgrade --cask epub-tool-newui
 ### 环境准备
 
 ```bash
+conda create -n epub_tool python=3.12 -y
+conda activate epub_tool
 python -m pip install -r requirements.txt
 npm install
 npm --prefix frontend install
@@ -142,12 +145,13 @@ npm run dev
 ### 单独调试 Python 处理逻辑
 
 ```bash
-python -m python_backend.cli run --task-type reformat --input-file ./book.epub
-python -m python_backend.cli run --task-type decrypt --input-file ./book.epub
-python -m python_backend.cli run --task-type encrypt --input-file ./book.epub
-python -m python_backend.cli run --task-type font_encrypt --input-file ./book.epub
-python -m python_backend.cli run --task-type transfer_img --input-file ./book.epub
-python -m python_backend.cli list-fonts ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type reformat --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type decrypt --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type encrypt --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type font_encrypt --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type font_decrypt --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type transfer_img --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
 ```
 
 这些入口适合排障、协议验证和单功能调试，不是默认使用方式。
@@ -155,16 +159,31 @@ python -m python_backend.cli list-fonts ./book.epub
 ## 本地打包
 
 ```bash
-python -m pip install -r requirements.txt pyinstaller
-npm run tauri:build
+conda run -n epub_tool python -m pip install -r requirements.txt pyinstaller
+conda run -n epub_tool npm run build:bundle-assets
+conda run -n epub_tool npm run tauri:build
 ```
 
 打包流程会自动完成：
 
 1. 构建前端资源
-2. 构建 Python sidecar
-3. 准备 `src-tauri/bundle-resources/`
-4. 执行 Tauri 打包
+2. 校验已提交的内置 ONNX OCR 模型
+3. 构建 ONNX-only Python sidecar
+4. 准备 `src-tauri/bundle-resources/`
+5. 执行 Tauri 打包
+
+`font_decrypt` 默认使用固定内置模型 `PP-OCRv6_small_rec_onnx`。模型文件位于
+`src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`，当前落盘约 20 MiB，
+构建时会直接打进桌面安装包，运行时不再下载模型，也不加载 Paddle Python 运行时。
+如需本地验证高准确率档，可设置 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 后重新准备模型并转换 ONNX。
+
+默认构建不会下载 Paddle 源模型，也不会执行 Paddle2ONNX 转换。只有维护者需要刷新已提交的 ONNX 模型时，才安装转换依赖并运行：
+
+```bash
+conda run -n epub_tool python -m pip install -r requirements-ocr-conversion.txt
+conda run -n epub_tool npm run maintenance:fetch-ocr-model
+conda run -n epub_tool npm run maintenance:convert-ocr-onnx
+```
 
 ## 仓库结构
 
@@ -189,6 +208,7 @@ npm run tauri:build
 - 处理失败时，先看“最近一次执行摘要”中的失败原因、跳过原因，再看“处理日志”
 - 如果书籍结构异常，可先执行“格式化”再继续其他流程
 - `font_encrypt` 只处理 EPUB 内已嵌入的字体，不处理系统字体
+- `font_decrypt` 只使用内置 ONNX OCR 模型，不依赖系统 OCR 工具、Paddle Python 运行时或运行时联网下载
 - 如果 `content.opf` 等关键文件缺失或异常，相关任务可能直接失败
 - 反馈问题时，建议同时提供：
   - 样本文件

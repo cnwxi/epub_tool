@@ -1,6 +1,2 @@
-beautifulsoup4
-emoji
-fonttools
-tinycss2
-tqdm
-pillow
+-r requirements-base.txt
+-r requirements-onnx.txt

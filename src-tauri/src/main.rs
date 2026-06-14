@@ -29,6 +29,7 @@ const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
 } else {
     "epub-tool-python"
 };
+const DEFAULT_OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec";
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -393,12 +394,13 @@ fn resolve_system_python() -> Result<(String, Vec<String>), String> {
 fn build_backend_command(app: &AppHandle, subcommand: &str) -> Result<Command, String> {
     let log_path = resolve_log_path(app)?;
     let work_dir = resolve_runtime_root(app)?;
+    let ocr_model_dir = resolve_ocr_model_dir(app);
 
     if let Some(sidecar_path) = resolve_sidecar(app)? {
         let mut command = Command::new(sidecar_path);
         command.current_dir(&work_dir);
         command.arg(subcommand);
-        configure_backend_command(&mut command, &log_path);
+        configure_backend_command(&mut command, &log_path, ocr_model_dir.as_deref());
         return Ok(command);
     }
 
@@ -416,12 +418,52 @@ fn build_backend_command(app: &AppHandle, subcommand: &str) -> Result<Command, S
     let mut command = Command::new(bin);
     command.current_dir(workspace);
     command.args(prefix);
-    configure_backend_command(&mut command, &log_path);
+    configure_backend_command(&mut command, &log_path, ocr_model_dir.as_deref());
     Ok(command)
 }
 
-fn configure_backend_command(command: &mut Command, log_path: &Path) {
+fn resolve_ocr_model_dir(app: &AppHandle) -> Option<PathBuf> {
+    if let Ok(explicit_path) = std::env::var("EPUB_TOOL_OCR_ONNX_MODEL_DIR") {
+        if !explicit_path.is_empty() {
+            return Some(PathBuf::from(explicit_path));
+        }
+    }
+    let onnx_model_name = std::env::var("EPUB_TOOL_OCR_MODEL_NAME")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_OCR_MODEL_NAME.to_string())
+        + "_onnx";
+
+    if let Some(root) = workspace_root() {
+        let dev_model_dir = root
+            .join("src-tauri")
+            .join("bundle-resources")
+            .join("ocr-models")
+            .join(&onnx_model_name);
+        if dev_model_dir.is_dir() {
+            return Some(dev_model_dir);
+        }
+    }
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled_model_dir = resource_dir.join("ocr-models").join(&onnx_model_name);
+        if bundled_model_dir.is_dir() {
+            return Some(bundled_model_dir);
+        }
+    }
+
+    None
+}
+
+fn configure_backend_command(
+    command: &mut Command,
+    log_path: &Path,
+    ocr_model_dir: Option<&Path>,
+) {
     command.env("EPUB_TOOL_LOG_PATH", log_path);
+    if let Some(ocr_model_dir) = ocr_model_dir {
+        command.env("EPUB_TOOL_OCR_ONNX_MODEL_DIR", ocr_model_dir);
+    }
     command.env("PYTHONUTF8", "1");
     command.env("PYTHONIOENCODING", "utf-8");
     #[cfg(target_os = "windows")]

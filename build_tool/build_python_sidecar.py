@@ -14,18 +14,42 @@ WORK_ROOT = REPO_ROOT / "build" / "python-sidecar"
 CONFIG_DIR = WORK_ROOT / "cache"
 SIDECAR_STEM = "epub-tool-python"
 SIDE_CAR_NAME = f"{SIDECAR_STEM}.exe" if sys.platform == "win32" else SIDECAR_STEM
-REQUIRED_MODULES = [
+BASE_REQUIRED_MODULES = [
     "bs4",
     "emoji",
     "fontTools",
     "tinycss2",
     "tqdm",
     "PIL",
+    "yaml",
+    "chardet",
+    "bidi",
+    "cv2",
+    "pypdfium2",
+    "pyclipper",
+    "shapely",
+    "imagesize",
     "utils.reformat_epub",
     "utils.decrypt_epub",
     "utils.encrypt_epub",
     "utils.encrypt_font",
+    "utils.decrypt_font",
     "utils.transfer_img",
+]
+ONNX_REQUIRED_MODULES = [
+    "onnxruntime",
+]
+REQUIRED_MODULES = [
+    *BASE_REQUIRED_MODULES,
+    *ONNX_REQUIRED_MODULES,
+]
+PYINSTALLER_ONNX_ARGS = [
+    "--hidden-import",
+    "onnxruntime",
+    "--collect-binaries",
+    "onnxruntime",
+    "--copy-metadata",
+    "onnxruntime",
 ]
 
 if str(REPO_ROOT) not in sys.path:
@@ -69,6 +93,25 @@ def sidecar_exists() -> bool:
     return sidecar_output_path().is_file()
 
 
+def iter_sidecar_inputs():
+    for package_dir in (REPO_ROOT / "python_backend", REPO_ROOT / "utils"):
+        yield from package_dir.rglob("*.py")
+    yield from REPO_ROOT.glob("requirements*.txt")
+    yield Path(__file__).resolve()
+
+
+def sidecar_is_current() -> bool:
+    target_path = sidecar_output_path()
+    if not target_path.is_file():
+        return False
+
+    target_mtime = target_path.stat().st_mtime
+    for source_path in iter_sidecar_inputs():
+        if source_path.is_file() and source_path.stat().st_mtime > target_mtime:
+            return False
+    return True
+
+
 def build_sidecar() -> Path:
     ensure_pyinstaller()
     ensure_runtime_dependencies()
@@ -105,11 +148,28 @@ def build_sidecar() -> Path:
         "python_backend",
         "--collect-submodules",
         "utils",
+        *PYINSTALLER_ONNX_ARGS,
+        "--collect-submodules",
+        "bidi",
+        "--copy-metadata",
+        "python-bidi",
+        "--copy-metadata",
+        "pypdfium2",
+        "--copy-metadata",
+        "opencv-contrib-python",
+        "--copy-metadata",
+        "pyclipper",
+        "--copy-metadata",
+        "shapely",
+        "--copy-metadata",
+        "imagesize",
         str(ENTRYPOINT),
     ]
 
     env = os.environ.copy()
     env["PYINSTALLER_CONFIG_DIR"] = str(CONFIG_DIR)
+    env["MPLCONFIGDIR"] = str(CONFIG_DIR / "matplotlib")
+    Path(env["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
 
     subprocess.run(command, cwd=REPO_ROOT, check=True, env=env)
 
@@ -124,7 +184,7 @@ def build_sidecar() -> Path:
 
 def main() -> int:
     ensure_only = "--ensure" in sys.argv[1:]
-    if ensure_only and sidecar_exists():
+    if ensure_only and sidecar_is_current():
         print(f"Python sidecar reused: {sidecar_output_path()}")
         return 0
 

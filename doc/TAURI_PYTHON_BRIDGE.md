@@ -30,8 +30,14 @@ Vue 组件
 - 同时写 `log.txt` 和 stdout 事件
 - 保持旧脚本逻辑不被重写
 
+## Sidecar 构建策略
+
+- 当前 PyInstaller 只收集 base 运行依赖和 `onnxruntime`。
+- `paddle`、`paddleocr`、`paddlex` 不进入冻结产物；Paddle 依赖只用于维护者刷新已提交 ONNX 模型的转换阶段。
+- OCR 模型资源默认固定为 `ocr-models/PP-OCRv6_small_rec_onnx/`，Rust 启动后端时通过 `EPUB_TOOL_OCR_ONNX_MODEL_DIR` 注入；`EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 可用于本地高准确率档验证。
+
 ## 当前限制
 
 - sidecar 需要在构建机额外安装 `pyinstaller`
-- 当前只完成了 sidecar 构建骨架与运行时优先级，尚未做正式安装包实机验证
+- ONNX 模型转换仅用于维护已提交模型，需要在 `conda epub_tool` 环境中额外安装 `requirements-ocr-conversion.txt`
 - 还未做任务取消

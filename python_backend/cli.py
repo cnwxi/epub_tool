@@ -76,7 +76,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--request-file", help="包含 TaskRequest JSON 的文件")
     run_parser.add_argument(
         "--task-type",
-        choices=["reformat", "decrypt", "encrypt", "font_encrypt", "transfer_img"],
+        choices=[
+            "reformat",
+            "decrypt",
+            "encrypt",
+            "font_encrypt",
+            "font_decrypt",
+            "transfer_img",
+        ],
     )
     run_parser.add_argument("--task-id")
     run_parser.add_argument("--input-file", action="append")

@@ -32,6 +32,15 @@ src-tauri/gen/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 src-tauri/bundle-resources/
+!src-tauri/bundle-resources/
+src-tauri/bundle-resources/*
+!src-tauri/bundle-resources/binaries/
+src-tauri/bundle-resources/binaries/*
+!src-tauri/bundle-resources/binaries/.gitkeep
+!src-tauri/bundle-resources/ocr-models/
+src-tauri/bundle-resources/ocr-models/*
+!src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/
+!src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*
 *.tsbuildinfo
 
 # 日志与本地结果
@@ -57,3 +66,6 @@ test
 .black
 .codex/app-state.json
 
+# gpt something
+.codex
+.claude

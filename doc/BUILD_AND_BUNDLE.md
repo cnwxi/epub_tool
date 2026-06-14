@@ -11,7 +11,9 @@
 ## 本地开发
 
 ```bash
-python -m pip install -r requirements.txt
+conda create -n epub_tool python=3.12 -y
+conda activate epub_tool
+conda run -n epub_tool python -m pip install -r requirements.txt
 npm install
 npm --prefix frontend install
 npm run tauri:dev
@@ -20,13 +22,41 @@ npm run tauri:dev
 ## 本地打包
 
 ```bash
-python -m pip install -r requirements.txt pyinstaller
-python build_tool/build_python_sidecar.py
-npm run tauri:build
+conda run -n epub_tool python -m pip install -r requirements.txt pyinstaller
+conda run -n epub_tool npm run build:bundle-assets
+conda run -n epub_tool npm run tauri:build
 ```
 
 打包时，桌面应用会优先调用内置的 `src-tauri/binaries/epub-tool-python(.exe)`；只有本地开发环境中 sidecar 不存在时，才会回退到系统 Python。
-正式 bundle 前会自动生成一份独立的 `src-tauri/bundle-resources/` 资源目录，只复制当前平台的 sidecar，避免把 `.gitkeep`、日志文件等无关文件打进安装包。
+`build_tool/build_python_sidecar.py` 只构建 ONNX Runtime 版 sidecar，不再收集 `paddle`、`paddleocr`、`paddlex`，也不保留 Paddle 回退模式。Paddle 相关依赖只存在于维护者刷新 ONNX 模型阶段，不参与默认构建。
+依赖入口按角色拆分：`requirements-base.txt` 是 EPUB 处理基础依赖，`requirements-onnx.txt` 是冻结运行时 OCR 依赖，`requirements-ocr-conversion.txt` 只供官方 Paddle 模型转 ONNX 使用。默认 `requirements.txt` 只聚合 base + ONNX。
+
+正式 bundle 前会自动生成一份独立的 `src-tauri/bundle-resources/` 资源目录：
+
+- `bundle-resources/binaries/` 只放当前平台的 sidecar
+- `bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/` 放默认 ONNX 识别模型
+
+默认模型为 `PP-OCRv6_small_rec`，Paddle 源模型目录约 20 MiB，转换后的
+`PP-OCRv6_small_rec_onnx/` 目录也约 20 MiB。该模型的 ONNX 输出仍为单路
+`CTCLabelDecode` logits，可复用当前 CTC 解码器。
+默认构建只校验已提交的 ONNX 模型，不下载 Paddle 源模型，也不执行 Paddle2ONNX 转换。GitHub Actions 在三端构建时同样只执行 `build_tool/verify_ocr_onnx_models.py` 校验模型资源。
+
+如需本地刷新默认 ONNX 模型，才需要安装维护期转换依赖并执行：
+
+```bash
+conda run -n epub_tool python -m pip install -r requirements-ocr-conversion.txt
+conda run -n epub_tool npm run maintenance:fetch-ocr-model
+conda run -n epub_tool npm run maintenance:convert-ocr-onnx
+```
+
+如需本地生成高准确率档，可执行：
+
+```bash
+EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec conda run -n epub_tool npm run maintenance:fetch-ocr-model
+EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec conda run -n epub_tool npm run maintenance:convert-ocr-onnx
+```
+
+`PP-OCRv6_medium_rec` 不作为默认 bundle 资源，避免默认安装包重新回到 70 MiB 以上模型体积。
 
 ## CI 构建矩阵
 
@@ -40,6 +70,8 @@ workflow 支持两种运行方式：
 
 - 仅构建并上传 bundle artifact
 - 构建并发布 GitHub Release
+
+CI 只安装 `requirements.txt` 与 `pyinstaller`，随后执行 ONNX 模型校验和 `python -m unittest discover -s tests`。它不会安装 `requirements-ocr-conversion.txt`，也不会下载或转换 Paddle 源模型。
 
 ## 版本号与 Release
 
@@ -64,7 +96,8 @@ workflow 支持两种运行方式：
 
 ## 维护注意事项
 
-- 发布前先确认 `python build_tool/build_python_sidecar.py` 能正常生成 sidecar
-- 发布前可执行 `python build_tool/prepare_bundle_resources.py` 检查 bundle 资源目录是否只包含当前平台 sidecar
+- 发布前先确认 `npm run build:python-sidecar` 能正常生成 ONNX-only sidecar
+- 发布前可执行 `npm run build:verify-ocr-onnx-models` 检查已提交 ONNX 模型是否齐全且兼容 CTC 解码
+- 发布前可执行 `npm run build:prepare-bundle-resources` 检查 bundle sidecar 资源是否齐全
 - 发布前至少在目标平台上验证一次安装包启动、任务执行与输出目录打开
 - 如需升级版本，只修改 `src-tauri/Cargo.toml`

@@ -32,6 +32,7 @@ TASK_SUFFIX = {
     "decrypt": "_decrypt.epub",
     "encrypt": "_encrypt.epub",
     "font_encrypt": "_font_encrypt.epub",
+    "font_decrypt": "_font_decrypt.epub",
     "transfer_img": "_transfer.epub",
 }
 TASK_LABELS = {
@@ -39,6 +40,7 @@ TASK_LABELS = {
     "decrypt": "文件解密",
     "encrypt": "文件加密",
     "font_encrypt": "字体加密",
+    "font_decrypt": "字体解密",
     "transfer_img": "图片转换",
 }
 MODULE_PATHS = {
@@ -46,6 +48,7 @@ MODULE_PATHS = {
     "decrypt": "utils.decrypt_epub",
     "encrypt": "utils.encrypt_epub",
     "font_encrypt": "utils.encrypt_font",
+    "font_decrypt": "utils.decrypt_font",
     "transfer_img": "utils.transfer_img",
 }
 FUNCTION_NAMES = {
@@ -53,6 +56,7 @@ FUNCTION_NAMES = {
     "decrypt": "run",
     "encrypt": "run",
     "font_encrypt": "run_epub_font_encrypt",
+    "font_decrypt": "run_epub_font_decrypt",
     "transfer_img": "run_epub_img_transfer",
 }
 _LOADED_MODULES: dict[str, Any] = {}
@@ -194,17 +198,16 @@ def execute_task(
         raise ValueError(f"不支持的任务类型: {task_type}")
     func: Callable[..., Any] = getattr(module, func_name)
 
-    if task_type == "font_encrypt":
+    if task_type in ("font_encrypt", "font_decrypt"):
         target_map = normalize_target_map(options.get("target_font_families_by_file"))
         default_targets = options.get("target_font_families") or []
         targets = target_map.get(os.path.normpath(input_file), default_targets)
         if not targets:
             return "skip"
-        return func(
-            input_file,
-            output_dir,
-            target_font_families=targets,
-        )
+        kwargs = {"target_font_families": targets}
+        if task_type == "font_decrypt":
+            kwargs["ocr_options"] = options
+        return func(input_file, output_dir, **kwargs)
 
     return func(input_file, output_dir)
 

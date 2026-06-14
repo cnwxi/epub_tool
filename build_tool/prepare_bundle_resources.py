@@ -9,6 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_DIR = REPO_ROOT / "src-tauri" / "binaries"
 STAGE_DIR = REPO_ROOT / "src-tauri" / "bundle-resources" / "binaries"
 SIDECAR_NAME = "epub-tool-python.exe" if sys.platform == "win32" else "epub-tool-python"
+PLACEHOLDER_NAME = ".gitkeep"
 
 
 def prepare_bundle_resources() -> Path:
@@ -22,6 +23,7 @@ def prepare_bundle_resources() -> Path:
 
     target_path = STAGE_DIR / SIDECAR_NAME
     shutil.copy2(source_path, target_path)
+    (STAGE_DIR / PLACEHOLDER_NAME).touch()
 
     if sys.platform != "win32":
         target_path.chmod(target_path.stat().st_mode | 0o755)

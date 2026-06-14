@@ -5,15 +5,18 @@
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "build:python-sidecar": "python build_tool/build_python_sidecar.py",
+    "build:verify-ocr-onnx-models": "python build_tool/verify_ocr_onnx_models.py",
     "dev:python-sidecar": "python build_tool/build_python_sidecar.py --ensure",
     "build:prepare-bundle-resources": "python build_tool/prepare_bundle_resources.py",
-    "dev:bundle-assets": "npm run dev:python-sidecar && npm run build:prepare-bundle-resources",
+    "dev:bundle-assets": "npm run build:verify-ocr-onnx-models && npm run dev:python-sidecar && npm run build:prepare-bundle-resources",
     "dev:frontend": "npm --prefix frontend run dev -- --host",
     "dev:desktop": "npm run dev:bundle-assets && npm run dev:frontend",
-    "build:bundle-assets": "npm run build && npm run build:python-sidecar && npm run build:prepare-bundle-resources",
+    "build:bundle-assets": "npm run build && npm run build:verify-ocr-onnx-models && npm run build:python-sidecar && npm run build:prepare-bundle-resources",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "python build_tool/build_tauri.py"
+    "tauri:build": "python build_tool/build_tauri.py",
+    "maintenance:fetch-ocr-model": "python build_tool/prepare_ocr_models.py",
+    "maintenance:convert-ocr-onnx": "python build_tool/prepare_ocr_onnx_models.py"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.5"
