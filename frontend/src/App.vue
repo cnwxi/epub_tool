@@ -73,8 +73,26 @@ const defaultSettings: AppSettings = {
   autoCheckUpdates: true,
   keepHistoryCount: 10,
 };
-const ocrCharPolicies: OcrCharPolicy[] = ["strict", "compatible"];
+const ocrCharPolicyOptions: Array<{
+  value: OcrCharPolicy;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "strict",
+    label: "严格模式（默认）",
+    description: "适合本工具生成的字体混淆",
+  },
+  {
+    value: "compatible",
+    label: "兼容外部混淆",
+    description: "放宽目标字体命中的字符筛选",
+  },
+];
+const ocrCharPolicies = ocrCharPolicyOptions.map((option) => option.value);
 const FRONTEND_MIN_OCR_CONFIDENCE = 0.4;
+const FRONTEND_MAX_OCR_CONFIDENCE = 1;
+const FRONTEND_OCR_CONFIDENCE_STEP = 0.05;
 const defaultFontDecryptSettings: FontDecryptSettings = {
   ocrCharPolicy: "strict",
   minOcrConfidence: 0.8,
@@ -238,7 +256,7 @@ const normalizeMinOcrConfidence = (value: unknown): number => {
   if (!Number.isFinite(numeric)) {
     return defaultFontDecryptSettings.minOcrConfidence;
   }
-  return Math.max(FRONTEND_MIN_OCR_CONFIDENCE, Math.min(1, numeric));
+  return Math.max(FRONTEND_MIN_OCR_CONFIDENCE, Math.min(FRONTEND_MAX_OCR_CONFIDENCE, numeric));
 };
 
 const normalizeFontDecryptSettings = (value: unknown): FontDecryptSettings => {
@@ -327,6 +345,32 @@ const fontDecryptSettings = usePersistentState<FontDecryptSettings>(
   defaultFontDecryptSettings,
   normalizeFontDecryptSettings,
 );
+const ocrPolicyMenuOpen = ref(false);
+const ocrPolicyMenuRef = ref<HTMLElement | null>(null);
+const selectedOcrCharPolicyOption = computed(
+  () =>
+    ocrCharPolicyOptions.find(
+      (option) => option.value === fontDecryptSettings.value.ocrCharPolicy,
+    ) ?? ocrCharPolicyOptions[0],
+);
+const formatOcrConfidenceValue = (value: number) =>
+  value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+const formattedMinOcrConfidence = computed(() =>
+  formatOcrConfidenceValue(
+    normalizeMinOcrConfidence(fontDecryptSettings.value.minOcrConfidence),
+  ),
+);
+const minOcrConfidenceSliderStyle = computed(() => {
+  const normalized = normalizeMinOcrConfidence(fontDecryptSettings.value.minOcrConfidence);
+  const percent =
+    ((normalized - FRONTEND_MIN_OCR_CONFIDENCE) /
+      (FRONTEND_MAX_OCR_CONFIDENCE - FRONTEND_MIN_OCR_CONFIDENCE)) *
+    100;
+
+  return {
+    "--ocr-confidence-percent": `${percent}%`,
+  };
+});
 const taskHistory = usePersistentState<TaskHistoryEntry[]>(
   "epub-tool.task-history",
   [],
@@ -1569,6 +1613,35 @@ const normalizeFontDecryptSettingsInPlace = () => {
   fontDecryptSettings.value = normalizeFontDecryptSettings(fontDecryptSettings.value);
 };
 
+const closeOcrPolicyMenu = () => {
+  ocrPolicyMenuOpen.value = false;
+};
+
+const toggleOcrPolicyMenu = () => {
+  ocrPolicyMenuOpen.value = !ocrPolicyMenuOpen.value;
+};
+
+const selectOcrPolicy = (value: OcrCharPolicy) => {
+  fontDecryptSettings.value = normalizeFontDecryptSettings({
+    ...fontDecryptSettings.value,
+    ocrCharPolicy: value,
+  });
+  closeOcrPolicyMenu();
+};
+
+const handleOcrPolicyOutsidePointerDown = (event: PointerEvent) => {
+  if (!ocrPolicyMenuOpen.value) {
+    return;
+  }
+
+  const target = event.target;
+  if (target instanceof Node && ocrPolicyMenuRef.value?.contains(target)) {
+    return;
+  }
+
+  closeOcrPolicyMenu();
+};
+
 const formatTaskType = (taskType: TaskType): string => {
   switch (taskType) {
     case "reformat":
@@ -1967,6 +2040,7 @@ let removeCustomScrollbarResizeListener: (() => void) | null = null;
 onMounted(async () => {
   if (typeof window !== "undefined") {
     clientPlatform.value = detectClientPlatform();
+    document.addEventListener("pointerdown", handleOcrPolicyOutsidePointerDown);
     motionMediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     prefersReducedMotion.value = motionMediaQuery.matches;
     const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
@@ -2102,6 +2176,9 @@ onBeforeUnmount(() => {
   removeMotionPreferenceListener?.();
   removeMasonryResizeListener?.();
   removeCustomScrollbarResizeListener?.();
+  if (typeof document !== "undefined") {
+    document.removeEventListener("pointerdown", handleOcrPolicyOutsidePointerDown);
+  }
   sideNavShellRef.value?.removeEventListener("scroll", updateSideNavScrollbar);
   workspaceRef.value?.removeEventListener("scroll", updateWorkspaceScrollbar);
   customScrollbarResizeObserver?.disconnect();
@@ -2232,7 +2309,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                   </article>
 
                   <section v-else-if="card.key === 'font-panel'"
-                    class="panel font-panel glass-medium content-animated-block">
+                    class="panel font-panel glass-medium content-animated-block"
+                    :class="{ 'font-panel-menu-open': ocrPolicyMenuOpen }">
                     <div class="panel-head">
                       <div>
                         <p class="eyebrow">字体范围</p>
@@ -2254,19 +2332,48 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                         <h4>高级选项</h4>
                       </div>
                       <div class="font-setting-grid">
-                        <label class="font-setting-field">
-                          <span>OCR 字符范围</span>
-                          <select v-model="fontDecryptSettings.ocrCharPolicy"
-                            @change="normalizeFontDecryptSettingsInPlace">
-                            <option value="strict">严格模式（默认）</option>
-                            <option value="compatible">兼容外部混淆</option>
-                          </select>
-                        </label>
-                        <label class="font-setting-field">
-                          <span>最低 OCR 置信度</span>
-                          <input v-model.number="fontDecryptSettings.minOcrConfidence" max="1" min="0.4"
-                            step="0.05" type="number" @blur="normalizeFontDecryptSettingsInPlace"
-                            @change="normalizeFontDecryptSettingsInPlace" />
+                        <div class="font-setting-field">
+                          <span id="ocr-policy-label">OCR 字符范围</span>
+                          <div ref="ocrPolicyMenuRef" class="font-select"
+                            :class="{ open: ocrPolicyMenuOpen }">
+                            <button aria-haspopup="listbox" :aria-expanded="ocrPolicyMenuOpen"
+                              aria-labelledby="ocr-policy-label" class="font-select-trigger" type="button"
+                              @click="toggleOcrPolicyMenu" @keydown.down.prevent="ocrPolicyMenuOpen = true"
+                              @keydown.escape.stop.prevent="closeOcrPolicyMenu">
+                              <span>{{ selectedOcrCharPolicyOption.label }}</span>
+                              <span class="font-select-chevron" aria-hidden="true"></span>
+                            </button>
+                            <div v-if="ocrPolicyMenuOpen" aria-labelledby="ocr-policy-label"
+                              class="font-select-menu" role="listbox">
+                              <button v-for="option in ocrCharPolicyOptions" :key="option.value"
+                                :aria-selected="option.value === fontDecryptSettings.ocrCharPolicy"
+                                class="font-select-option"
+                                :class="{ selected: option.value === fontDecryptSettings.ocrCharPolicy }"
+                                role="option" type="button" @click="selectOcrPolicy(option.value)">
+                                <span class="font-select-option-copy">
+                                  <strong>{{ option.label }}</strong>
+                                  <small>{{ option.description }}</small>
+                                </span>
+                                <span class="font-select-option-mark" aria-hidden="true"></span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <label class="font-setting-field font-slider-field">
+                          <span class="font-slider-head">
+                            <span>OCR置信度阈值</span>
+                            <strong>{{ formattedMinOcrConfidence }}</strong>
+                          </span>
+                          <span class="font-slider-control" :style="minOcrConfidenceSliderStyle">
+                            <span class="font-slider-track" aria-hidden="true">
+                              <span class="font-slider-fill"></span>
+                            </span>
+                            <input v-model.number="fontDecryptSettings.minOcrConfidence"
+                              aria-label="OCR置信度阈值" :aria-valuetext="formattedMinOcrConfidence"
+                              :max="FRONTEND_MAX_OCR_CONFIDENCE" :min="FRONTEND_MIN_OCR_CONFIDENCE"
+                              :step="FRONTEND_OCR_CONFIDENCE_STEP" class="font-confidence-slider"
+                              type="range" @change="normalizeFontDecryptSettingsInPlace" />
+                          </span>
                         </label>
                       </div>
                     </div>

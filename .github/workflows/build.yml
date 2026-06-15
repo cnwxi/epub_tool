@@ -384,6 +384,8 @@ jobs:
           cat > release-body.md <<'MARKDOWN'
           ## 安装
 
+          推荐使用 small 版，速度更快，精度差异 1~2%。
+
           ### macOS
 
           ```bash
