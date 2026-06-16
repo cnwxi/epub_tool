@@ -386,13 +386,27 @@ class FontEncrypt:
                     mapping[alias] = font
         return mapping
 
-    def pick_font_file_by_candidates(self, candidates):
+    def resolve_font_candidate(self, candidates):
         for candidate in candidates:
             normalized = self.normalize_font_name(candidate)
-            if self.target_font_families and normalized not in self.target_font_families:
-                continue
             if normalized in self.font_to_font_family_mapping:
-                return self.font_to_font_family_mapping[normalized]
+                return self.font_to_font_family_mapping[normalized], normalized
+        return None, None
+
+    def is_target_font_file(self, font_file, matched_family=None):
+        if not self.target_font_families:
+            return True
+        if matched_family and matched_family in self.target_font_families:
+            return True
+        return any(
+            family_name in self.target_font_families and mapped_file == font_file
+            for family_name, mapped_file in self.font_to_font_family_mapping.items()
+        )
+
+    def pick_font_file_by_candidates(self, candidates):
+        font_file, matched_family = self.resolve_font_candidate(candidates)
+        if font_file and self.is_target_font_file(font_file, matched_family):
+            return font_file
         return None
 
     def calculate_selector_specificity(self, selector):
@@ -413,8 +427,16 @@ class FontEncrypt:
         )
         return id_count, class_count, type_count
 
-    def record_css_selector_font_rule(self, selector, font_file, mapping, order):
-        mapping[selector] = font_file
+    def record_css_selector_font_rule(
+        self,
+        selector,
+        font_file,
+        mapping,
+        order,
+        matched_family=None,
+    ):
+        if self.is_target_font_file(font_file, matched_family):
+            mapping[selector] = font_file
         self.css_selector_font_rules.append(
             {
                 "selector": selector,
@@ -441,7 +463,7 @@ class FontEncrypt:
                     candidates.extend(
                         self.extract_font_candidates_from_declaration(declaration)
                     )
-            font_file = self.pick_font_file_by_candidates(candidates)
+            font_file, matched_family = self.resolve_font_candidate(candidates)
             if not font_file:
                 continue
             self._css_selector_rule_order += 1
@@ -454,6 +476,7 @@ class FontEncrypt:
                         font_file,
                         mapping,
                         rule_order,
+                        matched_family=matched_family,
                     )
 
     def create_target_epub(self):
@@ -597,7 +620,8 @@ class FontEncrypt:
                 and declaration.lower_name in ("font-family", "font")
             ):
                 candidates.extend(self.extract_font_candidates_from_declaration(declaration))
-        return self.pick_font_file_by_candidates(candidates)
+        font_file, _ = self.resolve_font_candidate(candidates)
+        return font_file
 
     def build_css_font_rule_index(self, soup):
         index = {}
@@ -651,7 +675,7 @@ class FontEncrypt:
                 css_font_rule_index = self.build_css_font_rule_index(soup)
                 for tag in soup.find_all(True):
                     font_file = self.get_effective_font_file(tag, css_font_rule_index)
-                    if not font_file:
+                    if not font_file or not self.is_target_font_file(font_file):
                         continue
                     text = "".join(
                         text_node.strip()
@@ -926,7 +950,7 @@ class FontEncrypt:
 
             for tag in soup.find_all(True):
                 font_file = self.get_effective_font_file(tag, css_font_rule_index)
-                if not font_file:
+                if not font_file or not self.is_target_font_file(font_file):
                     continue
                 replace_table = self.font_to_char_mapping.get(font_file, {})
                 if not replace_table:

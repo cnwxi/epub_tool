@@ -70,6 +70,18 @@ def build_cascade_test_epub(epub_path):
         epub.writestr("OEBPS/Fonts/fs2.ttf", b"fs2-font")
 
 
+def build_nested_font_test_epub(epub_path):
+    with zipfile.ZipFile(epub_path, "w") as epub:
+        epub.writestr(
+            "OEBPS/Text/chapter.xhtml",
+            """<html><head></head><body>
+<p class="base">甲<span class="fs2">乙</span>丙</p>
+</body></html>""",
+        )
+        epub.writestr("OEBPS/Fonts/base.ttf", b"base-font")
+        epub.writestr("OEBPS/Fonts/fs2.ttf", b"fs2-font")
+
+
 class FontDecryptReferenceCleanupTest(unittest.TestCase):
     def test_find_char_mapping_uses_effective_font_without_selector_duplicates(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -103,6 +115,46 @@ class FontDecryptReferenceCleanupTest(unittest.TestCase):
 
             self.assertEqual(task.font_to_char_mapping[fs2_font], "甲乙")
             self.assertEqual(task.font_to_char_mapping[base_font], "丙丁")
+
+    def test_find_char_mapping_skips_nested_non_target_font_override(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            epub_path = os.path.join(temp_dir, "book.epub")
+            build_nested_font_test_epub(epub_path)
+
+            task = FontDecrypt(
+                epub_path,
+                output_path=temp_dir,
+                target_font_families=["base"],
+            )
+            base_font = "OEBPS/Fonts/base.ttf"
+            fs2_font = "OEBPS/Fonts/fs2.ttf"
+            task.font_to_font_family_mapping = {
+                "base": base_font,
+                "fs2": fs2_font,
+            }
+            task.css_selector_to_font_mapping = {
+                ".base": base_font,
+            }
+            task.css_selector_font_rules = [
+                {
+                    "selector": ".base",
+                    "font_file": base_font,
+                    "specificity": task.calculate_selector_specificity(".base"),
+                    "order": 1,
+                },
+                {
+                    "selector": ".fs2",
+                    "font_file": fs2_font,
+                    "specificity": task.calculate_selector_specificity(".fs2"),
+                    "order": 2,
+                },
+            ]
+
+            task.find_char_mapping()
+            task.close_file()
+
+            self.assertEqual(task.font_to_char_mapping[base_font], "甲丙")
+            self.assertNotIn(fs2_font, task.font_to_char_mapping)
 
     def test_write_epub_removes_references_for_skipped_target_fonts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
