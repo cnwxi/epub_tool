@@ -42,6 +42,25 @@ FONT_OBFUSCATION_LAYOUT_CODEPOINTS = tuple(
     and unicodedata.east_asian_width(chr(codepoint))
     in FONT_OBFUSCATION_EAST_ASIAN_WIDTHS
 )
+FONT_RULE_BLOCKER = object()
+GENERIC_FONT_FAMILIES = frozenset(
+    {
+        "serif",
+        "sans-serif",
+        "monospace",
+        "cursive",
+        "fantasy",
+        "system-ui",
+        "emoji",
+        "math",
+        "fangsong",
+        "ui-serif",
+        "ui-sans-serif",
+        "ui-monospace",
+        "ui-rounded",
+    }
+)
+FONT_FAMILY_NON_BLOCKING_KEYWORDS = frozenset({"inherit", "initial", "unset", "normal"})
 
 
 def is_ascii_latin_alnum(char):
@@ -312,7 +331,7 @@ class FontEncrypt:
             return ""
         return posixpath.normpath(posixpath.join(posixpath.dirname(base_path), href))
 
-    def extract_font_candidates_from_declaration(self, declaration):
+    def extract_font_candidates_from_declaration(self, declaration, include_generic=False):
         if declaration.type != "declaration":
             return []
 
@@ -339,26 +358,15 @@ class FontEncrypt:
                 for part in parts[1:]:
                     candidates.append(part.strip("'\""))
 
-        generic = {
-            "serif",
-            "sans-serif",
-            "monospace",
-            "cursive",
-            "fantasy",
-            "system-ui",
-            "emoji",
-            "math",
-            "fangsong",
-            "inherit",
-            "initial",
-            "unset",
-            "normal",
-        }
         dedup = []
         seen = set()
         for item in candidates:
             normalized = self.normalize_font_name(item)
-            if not normalized or normalized in generic or normalized in seen:
+            if not normalized or normalized in seen:
+                continue
+            if normalized in FONT_FAMILY_NON_BLOCKING_KEYWORDS:
+                continue
+            if not include_generic and normalized in GENERIC_FONT_FAMILIES:
                 continue
             seen.add(normalized)
             dedup.append(item)
@@ -394,6 +402,8 @@ class FontEncrypt:
         return None, None
 
     def is_target_font_file(self, font_file, matched_family=None):
+        if not font_file or font_file is FONT_RULE_BLOCKER:
+            return False
         if not self.target_font_families:
             return True
         if matched_family and matched_family in self.target_font_families:
@@ -434,13 +444,17 @@ class FontEncrypt:
         mapping,
         order,
         matched_family=None,
+        is_blocker=False,
     ):
-        if self.is_target_font_file(font_file, matched_family):
+        if not is_blocker and self.is_target_font_file(font_file, matched_family):
             mapping[selector] = font_file
         self.css_selector_font_rules.append(
             {
                 "selector": selector,
                 "font_file": font_file,
+                "family": matched_family,
+                "resolved": bool(font_file),
+                "is_blocker": is_blocker,
                 "specificity": self.calculate_selector_specificity(selector),
                 "order": order,
             }
@@ -461,10 +475,13 @@ class FontEncrypt:
                     continue
                 if declaration.lower_name in ("font-family", "font"):
                     candidates.extend(
-                        self.extract_font_candidates_from_declaration(declaration)
+                        self.extract_font_candidates_from_declaration(
+                            declaration,
+                            include_generic=True,
+                        )
                     )
             font_file, matched_family = self.resolve_font_candidate(candidates)
-            if not font_file:
+            if not font_file and not candidates:
                 continue
             self._css_selector_rule_order += 1
             rule_order = self._css_selector_rule_order
@@ -477,6 +494,7 @@ class FontEncrypt:
                         mapping,
                         rule_order,
                         matched_family=matched_family,
+                        is_blocker=font_file is None,
                     )
 
     def create_target_epub(self):
@@ -619,9 +637,18 @@ class FontEncrypt:
                 declaration.type == "declaration"
                 and declaration.lower_name in ("font-family", "font")
             ):
-                candidates.extend(self.extract_font_candidates_from_declaration(declaration))
+                candidates.extend(
+                    self.extract_font_candidates_from_declaration(
+                        declaration,
+                        include_generic=True,
+                    )
+                )
         font_file, _ = self.resolve_font_candidate(candidates)
-        return font_file
+        if font_file:
+            return font_file
+        if candidates:
+            return FONT_RULE_BLOCKER
+        return None
 
     def build_css_font_rule_index(self, soup):
         index = {}
@@ -650,6 +677,7 @@ class FontEncrypt:
                 if current is None or precedence > current["precedence"]:
                     index[id(element)] = {
                         "font_file": rule["font_file"],
+                        "is_blocker": rule.get("is_blocker", False),
                         "precedence": precedence,
                     }
         return index
@@ -662,6 +690,8 @@ class FontEncrypt:
                 return inline_font_file
             rule_record = css_font_rule_index.get(id(current))
             if rule_record:
+                if rule_record.get("is_blocker"):
+                    return FONT_RULE_BLOCKER
                 return rule_record["font_file"]
             current = current.parent
         return None

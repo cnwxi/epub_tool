@@ -82,6 +82,24 @@ def build_nested_font_test_epub(epub_path):
         epub.writestr("OEBPS/Fonts/fs2.ttf", b"fs2-font")
 
 
+def build_unresolved_override_test_epub(epub_path, override_family):
+    with zipfile.ZipFile(epub_path, "w") as epub:
+        epub.writestr(
+            "OEBPS/Styles/style.css",
+            f"""@font-face {{ font-family: "TargetFont"; src: url("../Fonts/target.ttf"); }}
+.target {{ font-family: "TargetFont"; }}
+.sys {{ font-family: {override_family}; }}
+""",
+        )
+        epub.writestr(
+            "OEBPS/Text/chapter.xhtml",
+            """<html><head><link rel="stylesheet" href="../Styles/style.css"/></head><body>
+<p class="target">外<span class="sys">内</span></p>
+</body></html>""",
+        )
+        epub.writestr("OEBPS/Fonts/target.ttf", b"target-font")
+
+
 class FontDecryptReferenceCleanupTest(unittest.TestCase):
     def test_find_char_mapping_uses_effective_font_without_selector_duplicates(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -155,6 +173,30 @@ class FontDecryptReferenceCleanupTest(unittest.TestCase):
 
             self.assertEqual(task.font_to_char_mapping[base_font], "甲丙")
             self.assertNotIn(fs2_font, task.font_to_char_mapping)
+
+    def test_find_char_mapping_skips_generic_and_unresolved_font_overrides(self):
+        cases = [
+            "serif",
+            '"SomeSystemFont"',
+        ]
+        for override_family in cases:
+            with self.subTest(override_family=override_family):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    epub_path = os.path.join(temp_dir, "book.epub")
+                    build_unresolved_override_test_epub(epub_path, override_family)
+
+                    task = FontDecrypt(
+                        epub_path,
+                        output_path=temp_dir,
+                        target_font_families=["TargetFont"],
+                    )
+                    task.get_mapping()
+                    task.close_file()
+
+                    self.assertEqual(
+                        task.font_to_char_mapping["OEBPS/Fonts/target.ttf"],
+                        "外",
+                    )
 
     def test_write_epub_removes_references_for_skipped_target_fonts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
