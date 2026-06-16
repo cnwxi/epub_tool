@@ -180,7 +180,7 @@ conda run -n epub_tool npm run tauri:build
 后重新准备模型并转换为 ONNX。GitHub Release 会同时提供 `_small` 和 `_medium` 两类安装包；
 本地构建与 Homebrew 安装默认仍使用 small 版。
 
-OCR 默认最低置信度为 `0.8`。桌面 UI 支持将阈值下调至 `0.4`，并会随任务请求显式传入。
+OCR 默认最低置信度为 `0.8`。桌面 UI 支持将阈值下调至 `0`，并会随任务请求显式传入。
 默认字符筛选策略为 `strict`，适合处理本工具生成的字体混淆 EPUB，
 可识别同宽码位池混淆后的半角/全角拉丁字母和数字。处理外部混淆工具生成的文件时，
 可将 `ocr_char_policy` 设为 `compatible`。该模式保留 `strict` 的识别范围，

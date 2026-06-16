@@ -3,6 +3,8 @@ import tempfile
 import unittest
 import zipfile
 
+from bs4 import BeautifulSoup
+
 from utils.decrypt_font import FontDecrypt
 
 
@@ -55,7 +57,53 @@ def build_reference_test_epub(epub_path):
         epub.writestr("OEBPS/Fonts/obf.ttf", b"dummy-font")
 
 
+def build_cascade_test_epub(epub_path):
+    with zipfile.ZipFile(epub_path, "w") as epub:
+        epub.writestr(
+            "OEBPS/Text/chapter.xhtml",
+            """<html><head></head><body>
+<p class="fs2">甲乙</p>
+<p>丙丁</p>
+</body></html>""",
+        )
+        epub.writestr("OEBPS/Fonts/base.ttf", b"base-font")
+        epub.writestr("OEBPS/Fonts/fs2.ttf", b"fs2-font")
+
+
 class FontDecryptReferenceCleanupTest(unittest.TestCase):
+    def test_find_char_mapping_uses_effective_font_without_selector_duplicates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            epub_path = os.path.join(temp_dir, "book.epub")
+            build_cascade_test_epub(epub_path)
+
+            task = FontDecrypt(epub_path, output_path=temp_dir)
+            base_font = "OEBPS/Fonts/base.ttf"
+            fs2_font = "OEBPS/Fonts/fs2.ttf"
+            task.css_selector_to_font_mapping = {
+                ".fs2": fs2_font,
+                "p": base_font,
+            }
+            task.css_selector_font_rules = [
+                {
+                    "selector": "p",
+                    "font_file": base_font,
+                    "specificity": task.calculate_selector_specificity("p"),
+                    "order": 1,
+                },
+                {
+                    "selector": ".fs2",
+                    "font_file": fs2_font,
+                    "specificity": task.calculate_selector_specificity(".fs2"),
+                    "order": 2,
+                },
+            ]
+
+            task.find_char_mapping()
+            task.close_file()
+
+            self.assertEqual(task.font_to_char_mapping[fs2_font], "甲乙")
+            self.assertEqual(task.font_to_char_mapping[base_font], "丙丁")
+
     def test_write_epub_removes_references_for_skipped_target_fonts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             epub_path = os.path.join(temp_dir, "book.epub")
@@ -137,12 +185,13 @@ class FontDecryptReferenceCleanupTest(unittest.TestCase):
                 font_path: {
                     "가": {
                         "codepoint": "U+AC00",
+                        "original_char": "가",
                         "status_code": "OCR_LOW_CONF",
                         "font_path": font_path,
                         "reason": "OCR 置信度过低",
                         "placeholder": "[U+AC00 OCR_LOW_CONF]",
                         "image_path": image_path,
-                        "image_alt": "U+AC00 OCR_LOW_CONF",
+                        "image_alt": "U+AC00 가 OCR_LOW_CONF",
                     },
                 },
             }
@@ -162,9 +211,22 @@ class FontDecryptReferenceCleanupTest(unittest.TestCase):
                 self.assertIn('class="ocr-failure-glyph"', html)
                 self.assertIn("a13f9c2b_U-AC00_OCR_LOW_CONF.png", html)
                 self.assertIn('data-codepoint="U+AC00"', html)
+                self.assertIn('data-original-char="가"', html)
                 self.assertIn("OCR_LOW_CONF", html)
                 self.assertIn("好", html)
                 self.assertIn(".ocr-failure{font-size:1em;", html)
+                self.assertNotIn("[<img", html)
+                self.assertNotIn(" OCR_LOW_CONF]</span>", html)
+
+                failure_span = BeautifulSoup(html, "html.parser").find(
+                    "span",
+                    class_="ocr-failure",
+                )
+                self.assertIsNotNone(failure_span)
+                self.assertEqual(failure_span.get_text(), "")
+                failure_image = failure_span.find("img")
+                self.assertIsNotNone(failure_image)
+                self.assertEqual(failure_image["alt"], "U+AC00 가 OCR_LOW_CONF")
 
                 opf = epub.read("OEBPS/content.opf").decode("utf-8")
                 self.assertIn(

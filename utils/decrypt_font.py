@@ -438,6 +438,8 @@ class FontDecrypt:
         self.ori_files = []
         self.font_to_font_family_mapping = {}
         self.css_selector_to_font_mapping = {}
+        self.css_selector_font_rules = []
+        self._css_selector_rule_order = 0
         self.font_to_char_mapping = {}
         self.font_to_replace_mapping = {}
         self.target_font_families = (
@@ -453,6 +455,7 @@ class FontDecrypt:
         self.ocr_options = ocr_options or {}
         self.font_to_ocr_failure_mapping = {}
         self.ocr_failure_image_bytes = {}
+        self.font_cmap_cache = {}
         self.target_epub = None
         self.opf_path = None
         self._init_opf_path()
@@ -653,6 +656,35 @@ class FontDecrypt:
                 return self.font_to_font_family_mapping[normalized]
         return None
 
+    def calculate_selector_specificity(self, selector):
+        cleaned = re.sub(r"(['\"]).*?\1", "", selector or "")
+        id_count = len(re.findall(r"#[\w-]+", cleaned))
+        class_count = len(re.findall(r"\.[\w-]+", cleaned))
+        class_count += len(re.findall(r"\[[^\]]+\]", cleaned))
+        class_count += len(re.findall(r":(?!:)[\w-]+(?:\([^)]*\))?", cleaned))
+        type_text = re.sub(
+            r"#[\w-]+|\.[\w-]+|\[[^\]]+\]|:{1,2}[\w-]+(?:\([^)]*\))?",
+            " ",
+            cleaned,
+        )
+        type_count = sum(
+            1
+            for token in re.split(r"[\s>+~]+", type_text)
+            if token and token != "*" and re.match(r"^[a-zA-Z][\w-]*$", token)
+        )
+        return id_count, class_count, type_count
+
+    def record_css_selector_font_rule(self, selector, font_file, mapping, order):
+        mapping[selector] = font_file
+        self.css_selector_font_rules.append(
+            {
+                "selector": selector,
+                "font_file": font_file,
+                "specificity": self.calculate_selector_specificity(selector),
+                "order": order,
+            }
+        )
+
     def parse_css_selector_mapping(self, css_text, mapping):
         rules = parse_stylesheet(css_text)
         for rule in rules:
@@ -673,10 +705,17 @@ class FontDecrypt:
             font_file = self.pick_font_file_by_candidates(candidates)
             if not font_file:
                 continue
+            self._css_selector_rule_order += 1
+            rule_order = self._css_selector_rule_order
             for one_selector in selector.split(","):
                 one_selector = one_selector.strip()
                 if one_selector:
-                    mapping[one_selector] = font_file
+                    self.record_css_selector_font_rule(
+                        one_selector,
+                        font_file,
+                        mapping,
+                        rule_order,
+                    )
 
     def find_local_fonts_mapping(self):
         mapping = self.build_font_name_to_file_mapping()
@@ -718,6 +757,8 @@ class FontDecrypt:
 
     def find_selector_to_font_mapping(self):
         mapping = {}
+        self.css_selector_font_rules = []
+        self._css_selector_rule_order = 0
         for css in self.css:
             try:
                 content = self.epub.read(css).decode("utf-8")
@@ -759,6 +800,70 @@ class FontDecrypt:
                 continue
             yield child
 
+    def add_text_to_font_mapping(self, mapping, font_file, text):
+        if not font_file or not text:
+            return
+        if font_file not in mapping:
+            mapping[font_file] = self.remove_duplicates(text)
+            return
+        mapping[font_file] = self.remove_duplicates("".join([mapping[font_file], text]))
+
+    def pick_inline_font_file(self, tag):
+        if not tag or not tag.has_attr("style"):
+            return None
+        declarations = parse_declaration_list(tag.get("style", ""))
+        candidates = []
+        for declaration in declarations:
+            if (
+                declaration.type == "declaration"
+                and declaration.lower_name in ("font-family", "font")
+            ):
+                candidates.extend(self.extract_font_candidates_from_declaration(declaration))
+        return self.pick_font_file_by_candidates(candidates)
+
+    def build_css_font_rule_index(self, soup):
+        index = {}
+        rules = getattr(self, "css_selector_font_rules", [])
+        if not rules:
+            rules = [
+                {
+                    "selector": selector,
+                    "font_file": font_file,
+                    "specificity": self.calculate_selector_specificity(selector),
+                    "order": order,
+                }
+                for order, (selector, font_file) in enumerate(
+                    getattr(self, "css_selector_to_font_mapping", {}).items(),
+                    1,
+                )
+            ]
+        for rule in rules:
+            try:
+                elements = soup.select(rule["selector"])
+            except Exception:
+                continue
+            precedence = (rule["specificity"], rule["order"])
+            for element in elements:
+                current = index.get(id(element))
+                if current is None or precedence > current["precedence"]:
+                    index[id(element)] = {
+                        "font_file": rule["font_file"],
+                        "precedence": precedence,
+                    }
+        return index
+
+    def get_effective_font_file(self, tag, css_font_rule_index):
+        current = tag
+        while current is not None and getattr(current, "name", None):
+            inline_font_file = self.pick_inline_font_file(current)
+            if inline_font_file:
+                return inline_font_file
+            rule_record = css_font_rule_index.get(id(current))
+            if rule_record:
+                return rule_record["font_file"]
+            current = current.parent
+        return None
+
     def find_char_mapping(self):
         mapping = {}
         for one_html in self.htmls:
@@ -767,50 +872,16 @@ class FontDecrypt:
             except Exception:
                 continue
             soup = BeautifulSoup(content, "html.parser")
-            for css_selector, font_file in self.css_selector_to_font_mapping.items():
-                try:
-                    elements = soup.select(css_selector)
-                except Exception:
-                    continue
-
-                text_contents = []
-                for element in elements:
-                    text_contents.extend(
-                        text_node.strip()
-                        for text_node in self.iter_direct_text_nodes(element)
-                    )
-                combined_sentence = "".join(text_contents)
-                if font_file not in mapping:
-                    mapping[font_file] = self.remove_duplicates(combined_sentence)
-                else:
-                    mapping[font_file] = self.remove_duplicates(
-                        "".join([mapping[font_file], combined_sentence])
-                    )
-
-            for tag in soup.find_all(style=True):
-                declarations = parse_declaration_list(tag.get("style", ""))
-                candidates = []
-                for declaration in declarations:
-                    if (
-                        declaration.type == "declaration"
-                        and declaration.lower_name in ("font-family", "font")
-                    ):
-                        candidates.extend(
-                            self.extract_font_candidates_from_declaration(declaration)
-                        )
-                font_file = self.pick_font_file_by_candidates(candidates)
+            css_font_rule_index = self.build_css_font_rule_index(soup)
+            for tag in soup.find_all(True):
+                font_file = self.get_effective_font_file(tag, css_font_rule_index)
                 if not font_file:
                     continue
                 text = "".join(
                     text_node.strip()
                     for text_node in self.iter_direct_text_nodes(tag)
                 )
-                if font_file not in mapping:
-                    mapping[font_file] = self.remove_duplicates(text)
-                else:
-                    mapping[font_file] = self.remove_duplicates(
-                        "".join([mapping[font_file], text])
-                    )
+                self.add_text_to_font_mapping(mapping, font_file, text)
         self.font_to_char_mapping = mapping
 
     def get_mapping(self):
@@ -884,12 +955,46 @@ class FontDecrypt:
             return self.is_compatible_ocr_candidate_char(char)
         return False
 
+    def load_font_cmap(self, font_path):
+        if not hasattr(self, "font_cmap_cache"):
+            self.font_cmap_cache = {}
+        if font_path in self.font_cmap_cache:
+            return self.font_cmap_cache[font_path]
+        try:
+            font = TTFont(BytesIO(self.epub.read(font_path)))
+            cmap = font.getBestCmap() or {}
+        except Exception:
+            cmap = None
+        self.font_cmap_cache[font_path] = cmap
+        return cmap
+
+    def filter_text_by_font_cmap(self, font_path, text):
+        if not text or not hasattr(self, "epub"):
+            return text
+        cmap = self.load_font_cmap(font_path)
+        if cmap is None:
+            return text
+        supported_chars = []
+        missing_chars = []
+        for char in text:
+            if ord(char) in cmap:
+                supported_chars.append(char)
+            else:
+                missing_chars.append(char)
+        if missing_chars:
+            logger.write(
+                f"字体文件{font_path}缺少待 OCR 字符，已跳过: "
+                f"{self.remove_duplicates(''.join(missing_chars))}"
+            )
+        return "".join(supported_chars)
+
     def clean_text(self):
         for key in list(self.font_to_char_mapping.keys()):
             text = self.font_to_char_mapping[key]
-            self.font_to_char_mapping[key] = self.remove_duplicates(
+            ocr_text = self.remove_duplicates(
                 "".join(char for char in text if self.should_ocr_char(char))
             )
+            self.font_to_char_mapping[key] = self.filter_text_by_font_cmap(key, ocr_text)
         logger.write(f"清理后的待OCR字符: {self.font_to_char_mapping}")
 
     def get_ocr_backend(self):
@@ -955,7 +1060,7 @@ class FontDecrypt:
         )
         return {
             "image_path": image_path,
-            "image_alt": f"{self.format_ocr_codepoint(char)} {status_code}",
+            "image_alt": f"{self.format_ocr_codepoint(char)} {char} {status_code}",
         }
 
     def record_ocr_failure(
@@ -972,6 +1077,7 @@ class FontDecrypt:
         placeholder = self.build_ocr_failed_placeholder(char, status_code)
         failure_record = {
             "codepoint": self.format_ocr_codepoint(char),
+            "original_char": char,
             "status_code": status_code,
             "font_path": font_path,
             "reason": reason,
@@ -1144,6 +1250,7 @@ class FontDecrypt:
             attrs={
                 "class": "ocr-failure",
                 "data-codepoint": failure_record.get("codepoint", ""),
+                "data-original-char": failure_record.get("original_char", ""),
                 "data-status": failure_record.get("status_code", ""),
             },
         )
@@ -1152,7 +1259,6 @@ class FontDecrypt:
         if failure_record.get("reason"):
             span["data-reason"] = failure_record["reason"]
 
-        span.append("[")
         image_path = failure_record.get("image_path")
         if image_path:
             image = soup.new_tag(
@@ -1165,9 +1271,6 @@ class FontDecrypt:
                 },
             )
             span.append(image)
-            span.append(" ")
-        span.append(failure_record.get("status_code", OCR_FAILED))
-        span.append("]")
         return span
 
     def replace_text_node(self, soup, html_path, text_node, replace_table, failure_table=None):
@@ -1523,41 +1626,10 @@ class FontDecrypt:
             protected_content, placeholder_map = self.protect_escaped_angle_entities(content)
             soup = BeautifulSoup(protected_content, "html.parser")
             has_ocr_failure_markup = False
+            css_font_rule_index = self.build_css_font_rule_index(soup)
 
-            for css_selector, font_file in self.css_selector_to_font_mapping.items():
-                replace_table = self.font_to_replace_mapping.get(font_file, {})
-                if not replace_table:
-                    continue
-                failure_table = self.font_to_ocr_failure_mapping.get(font_file, {})
-                try:
-                    selector_tags = soup.select(css_selector)
-                except Exception:
-                    continue
-                for tag in selector_tags:
-                    for text_node in list(self.iter_direct_text_nodes(tag)):
-                        has_ocr_failure_markup = (
-                            self.replace_text_node(
-                                soup,
-                                one_html,
-                                text_node,
-                                replace_table,
-                                failure_table,
-                            )
-                            or has_ocr_failure_markup
-                        )
-
-            for tag in soup.find_all(style=True):
-                declarations = parse_declaration_list(tag.get("style", ""))
-                candidates = []
-                for declaration in declarations:
-                    if (
-                        declaration.type == "declaration"
-                        and declaration.lower_name in ("font-family", "font")
-                    ):
-                        candidates.extend(
-                            self.extract_font_candidates_from_declaration(declaration)
-                        )
-                font_file = self.pick_font_file_by_candidates(candidates)
+            for tag in soup.find_all(True):
+                font_file = self.get_effective_font_file(tag, css_font_rule_index)
                 if not font_file:
                     continue
                 replace_table = self.font_to_replace_mapping.get(font_file, {})

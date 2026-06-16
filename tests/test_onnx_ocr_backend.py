@@ -182,6 +182,18 @@ class FontDecryptOcrTextCleanupTest(unittest.TestCase):
         self.assertEqual(font_decrypt.get_ocr_char_policy(), OCR_CHAR_POLICY_COMPATIBLE)
         self.assertTrue(font_decrypt.should_ocr_char("❶"))
 
+    def test_clean_text_skips_chars_missing_from_current_font_cmap(self):
+        font_decrypt = self.create_font_decrypt()
+        font_decrypt.epub = object()
+        font_decrypt.font_to_char_mapping = {
+            "font.ttf": "你缺",
+        }
+        font_decrypt.load_font_cmap = lambda font_path: {ord("你"): "uni4F60"}
+
+        font_decrypt.clean_text()
+
+        self.assertEqual(font_decrypt.font_to_char_mapping["font.ttf"], "你")
+
     def test_private_use_period_alias_normalizes_to_chinese_full_stop(self):
         font_decrypt = self.create_font_decrypt()
 
@@ -263,11 +275,14 @@ class FontDecryptOcrTextCleanupTest(unittest.TestCase):
                     font_decrypt.font_to_replace_mapping["font.ttf"]["\ue000"],
                     expected,
                 )
+                failure_record = font_decrypt.font_to_ocr_failure_mapping["font.ttf"][
+                    "\ue000"
+                ]
+                self.assertEqual(failure_record["status_code"], status_code)
+                self.assertEqual(failure_record["original_char"], "\ue000")
                 self.assertEqual(
-                    font_decrypt.font_to_ocr_failure_mapping["font.ttf"]["\ue000"][
-                        "status_code"
-                    ],
-                    status_code,
+                    failure_record["image_alt"],
+                    "U+E000 \ue000 " + status_code,
                 )
 
     def test_ocr_failed_placeholder_has_default_status_code(self):

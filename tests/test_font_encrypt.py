@@ -92,7 +92,55 @@ def build_test_font_bytes():
     font_builder.save(font_stream)
     return font_stream.getvalue()
 
+
+def build_cascade_test_epub(epub_path):
+    with zipfile.ZipFile(epub_path, "w") as epub:
+        epub.writestr(
+            "OEBPS/Text/chapter.xhtml",
+            """<html><head></head><body>
+<p class="fs2">甲乙</p>
+<p>丙丁</p>
+</body></html>""",
+        )
+        epub.writestr("OEBPS/Fonts/base.ttf", b"base-font")
+        epub.writestr("OEBPS/Fonts/fs2.ttf", b"fs2-font")
+
+
 class FontEncryptObfuscationPolicyTest(unittest.TestCase):
+    def test_find_char_mapping_uses_effective_font_without_selector_duplicates(self):
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            epub_path = temp_path / "book.epub"
+            build_cascade_test_epub(epub_path)
+
+            font_encrypt = FontEncrypt(str(epub_path), str(temp_path))
+            base_font = "OEBPS/Fonts/base.ttf"
+            fs2_font = "OEBPS/Fonts/fs2.ttf"
+            font_encrypt.css_selector_to_font_mapping = {
+                ".fs2": fs2_font,
+                "p": base_font,
+            }
+            font_encrypt.css_selector_font_rules = [
+                {
+                    "selector": "p",
+                    "font_file": base_font,
+                    "specificity": font_encrypt.calculate_selector_specificity("p"),
+                    "order": 1,
+                },
+                {
+                    "selector": ".fs2",
+                    "font_file": fs2_font,
+                    "specificity": font_encrypt.calculate_selector_specificity(".fs2"),
+                    "order": 2,
+                },
+            ]
+
+            font_encrypt.find_char_mapping()
+            font_encrypt.close_file()
+
+            self.assertEqual(font_encrypt.font_to_char_mapping[fs2_font], "甲乙")
+            self.assertEqual(font_encrypt.font_to_char_mapping[base_font], "丙丁")
+
     def test_should_obfuscate_text_and_alnum_but_skip_symbols(self):
         font_encrypt = FontEncrypt.__new__(FontEncrypt)
 

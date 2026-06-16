@@ -90,7 +90,7 @@ const ocrCharPolicyOptions: Array<{
   },
 ];
 const ocrCharPolicies = ocrCharPolicyOptions.map((option) => option.value);
-const FRONTEND_MIN_OCR_CONFIDENCE = 0.4;
+const FRONTEND_MIN_OCR_CONFIDENCE = 0;
 const FRONTEND_MAX_OCR_CONFIDENCE = 1;
 const FRONTEND_OCR_CONFIDENCE_STEP = 0.05;
 const defaultFontDecryptSettings: FontDecryptSettings = {
