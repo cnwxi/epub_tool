@@ -710,6 +710,21 @@ async fn run_epub_task(
             .stderr
             .take()
             .ok_or_else(|| "无法读取 Python stderr".to_string())?;
+        let stderr_task_id = request.task_id.clone();
+        let stderr_event_channel = on_event.clone();
+        let stderr_thread = std::thread::spawn(move || {
+            stream_utf8ish_lines(stderr, |line| {
+                let _ = stderr_event_channel.send(json!({
+                    "event": "task.stderr",
+                    "task_id": stderr_task_id.clone(),
+                    "status": "error",
+                    "progress": 0,
+                    "message": line,
+                    "level": "error"
+                }));
+                Ok(())
+            })
+        });
 
         let mut final_result = json!({
             "ok": false,
@@ -733,23 +748,13 @@ async fn run_epub_task(
         })
         .map_err(|error| format!("读取 Python stdout 失败: {error}"))?;
 
-        stream_utf8ish_lines(stderr, |line| {
-            on_event
-                .send(json!({
-                    "event": "task.stderr",
-                    "task_id": request.task_id,
-                    "status": "error",
-                    "progress": 0,
-                    "message": line,
-                    "level": "error"
-                }))
-                .map_err(|error| format!("推送 stderr 失败: {error}"))
-        })
-        .map_err(|error| format!("读取 Python stderr 失败: {error}"))?;
-
         let status = child
             .wait()
             .map_err(|error| format!("等待 Python 任务结束失败: {error}"))?;
+        stderr_thread
+            .join()
+            .map_err(|_| "读取 Python stderr 的线程异常退出".to_string())?
+            .map_err(|error| format!("读取 Python stderr 失败: {error}"))?;
 
         if status.success() {
             Ok(final_result)

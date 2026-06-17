@@ -2,6 +2,7 @@ import zipfile
 import re
 import os
 import codecs
+import posixpath
 from PIL import Image
 from io import BytesIO
 
@@ -173,8 +174,120 @@ class ImageTransfer:
                 return
         raise RuntimeError("无法发现opf文件")
 
+    def _split_reference_suffix(self, value):
+        value = value or ""
+        suffix_start = len(value)
+        for marker in ("#", "?"):
+            marker_index = value.find(marker)
+            if marker_index != -1:
+                suffix_start = min(suffix_start, marker_index)
+        return value[:suffix_start], value[suffix_start:]
+
+    def resolve_book_path(self, base_path, href):
+        path_part, _ = self._split_reference_suffix((href or "").strip().strip("'\""))
+        if not path_part or "://" in path_part or path_part.startswith("data:"):
+            return ""
+        return posixpath.normpath(posixpath.join(posixpath.dirname(base_path), path_part))
+
+    def build_replacement_reference(self, base_path, href):
+        path_part, suffix = self._split_reference_suffix(href)
+        source_path = self.resolve_book_path(base_path, path_part)
+        replacement = self.img_dict.get(source_path)
+        if not replacement:
+            return None
+        new_href = posixpath.relpath(replacement["path"], posixpath.dirname(base_path))
+        return new_href + suffix
+
+    def build_replacement_id(self, href, used_ids=None):
+        path_part, _ = self._split_reference_suffix(href)
+        preferred_id = posixpath.basename(path_part)
+        if not used_ids or preferred_id not in used_ids:
+            return preferred_id
+        stem, ext = os.path.splitext(preferred_id)
+        index = 2
+        while True:
+            candidate = f"{stem}_{index}{ext}"
+            if candidate not in used_ids:
+                return candidate
+            index += 1
+
     def _rewrite_opf_by_regex_fallback(self, opf_text: str) -> str:
         logger.write("opf_malformed_fallback_used: transfer_img")
+        manifest_id_replacements = {}
+        used_manifest_ids = set()
+        item_pattern = r"<item\b([^>]*?)\/?>"
+
+        for item_match in re.finditer(item_pattern, opf_text, flags=re.IGNORECASE | re.DOTALL):
+            attrs = item_match.group(1)
+            id_match = re.search(r'id\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE)
+            media_match = re.search(
+                r'media-type\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE
+            )
+            if (
+                id_match
+                and (
+                    not media_match
+                    or media_match.group(2).lower() != "image/webp"
+                )
+            ):
+                used_manifest_ids.add(id_match.group(2))
+
+        def re_item_webp(match):
+            attrs = match.group(1)
+            media_match = re.search(
+                r'media-type\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE
+            )
+            href_match = re.search(r'href\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE)
+            if not media_match or not href_match:
+                return match.group(0)
+            if media_match.group(2).lower() != "image/webp":
+                return match.group(0)
+            href = href_match.group(2)
+            id_match = re.search(r'id\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE)
+            source_path = self.resolve_book_path(self.opf, href)
+            replacement = self.img_dict.get(source_path)
+            new_href = self.build_replacement_reference(self.opf, href)
+            if not replacement or not new_href:
+                if id_match:
+                    used_manifest_ids.add(id_match.group(2))
+                return match.group(0)
+            replace_media_type = replacement["media_type"]
+            new_id = self.build_replacement_id(new_href, used_manifest_ids)
+            used_manifest_ids.add(new_id)
+            attrs2 = re.sub(
+                r'(href\s*=\s*(["\']))(.*?)(\2)',
+                r"\g<1>" + new_href + r"\4",
+                attrs,
+                count=1,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            attrs2 = re.sub(
+                r'(media-type\s*=\s*(["\']))(.*?)(\2)',
+                r"\g<1>" + replace_media_type + r"\4",
+                attrs2,
+                count=1,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if id_match:
+                manifest_id_replacements[id_match.group(2)] = new_id
+                attrs2 = re.sub(
+                    r'(id\s*=\s*(["\']))(.*?)(\2)',
+                    r"\g<1>" + new_id + r"\4",
+                    attrs2,
+                    count=1,
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+            logger.write(f'{self.opf} 降级替换：<item href="{href}" ...> -> href="{new_href}"')
+            if match.group(0).endswith("/>"):
+                return f"<item{attrs2}/>"
+            return f"<item{attrs2}>"
+
+        opf_text = re.sub(
+            item_pattern,
+            re_item_webp,
+            opf_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
 
         def re_meta_cover(match):
             attrs = match.group(1)
@@ -182,13 +295,11 @@ class ImageTransfer:
             if not c_match:
                 return match.group(0)
             content = c_match.group(2)
-            if not content.endswith(".webp"):
+            new_content = manifest_id_replacements.get(content)
+            if new_content is None:
+                new_content = self.build_replacement_reference(self.opf, content)
+            if not new_content:
                 return match.group(0)
-            cover_basename = os.path.basename(content)
-            if cover_basename not in self.img_dict:
-                return match.group(0)
-            replace_name = self.img_dict[cover_basename][0]
-            new_content = content.replace(cover_basename, replace_name)
             attrs2 = re.sub(
                 r'(content=(["\']))(.*?)(\2)',
                 r"\g<1>" + new_content + r"\4",
@@ -207,57 +318,6 @@ class ImageTransfer:
             opf_text,
             flags=re.IGNORECASE | re.DOTALL,
         )
-
-        def re_item_webp(match):
-            attrs = match.group(1)
-            media_match = re.search(
-                r'media-type\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE
-            )
-            href_match = re.search(r'href\s*=\s*(["\'])(.*?)\1', attrs, flags=re.IGNORECASE)
-            if not media_match or not href_match:
-                return match.group(0)
-            if media_match.group(2).lower() != "image/webp":
-                return match.group(0)
-            href = href_match.group(2)
-            href_basename = os.path.basename(href)
-            if href_basename not in self.img_dict:
-                return match.group(0)
-            replace_name, replace_media_type = self.img_dict[href_basename]
-            new_href = href.replace(href_basename, replace_name)
-            attrs2 = re.sub(
-                r'(href\s*=\s*(["\']))(.*?)(\2)',
-                r"\g<1>" + new_href + r"\4",
-                attrs,
-                count=1,
-                flags=re.IGNORECASE | re.DOTALL,
-            )
-            attrs2 = re.sub(
-                r'(media-type\s*=\s*(["\']))(.*?)(\2)',
-                r"\g<1>" + replace_media_type + r"\4",
-                attrs2,
-                count=1,
-                flags=re.IGNORECASE | re.DOTALL,
-            )
-            id_match = re.search(r'id\s*=\s*(["\'])(.*?)\1', attrs2, flags=re.IGNORECASE)
-            if id_match:
-                attrs2 = re.sub(
-                    r'(id\s*=\s*(["\']))(.*?)(\2)',
-                    r"\g<1>" + replace_name + r"\4",
-                    attrs2,
-                    count=1,
-                    flags=re.IGNORECASE | re.DOTALL,
-                )
-            logger.write(f'{self.opf} 降级替换：<item href="{href}" ...> -> href="{new_href}"')
-            if match.group(0).endswith("/>"):
-                return f"<item{attrs2}/>"
-            return f"<item{attrs2}>"
-
-        opf_text = re.sub(
-            r"<item\b([^>]*?)\/?>",
-            re_item_webp,
-            opf_text,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
         return opf_text
 
     def read_files(self):
@@ -273,22 +333,26 @@ class ImageTransfer:
                     image.mode == "P" and "transparency" in image.info
                 ):
                     new_name = img_basename.replace(".webp", ".png")
-                    self.img_dict[img_basename] = [new_name, "image/png"]
+                    replace_media_type = "image/png"
                     # 写入新epub
                     buffer = BytesIO()
                     image = image.quantize(colors=256, method=2)
                     image.save(buffer, format="PNG", optimize=True)
-                    img_path = img_path.replace(img_basename, new_name)
+                    new_img_path = img_path.replace(img_basename, new_name)
                 else:
                     new_name = img_basename.replace(".webp", ".jpg")
-                    self.img_dict[img_basename] = [new_name, "image/jpeg"]
+                    replace_media_type = "image/jpeg"
                     buffer = BytesIO()
                     image.save(buffer, format="JPEG")
-                    img_path = img_path.replace(img_basename, new_name)
+                    new_img_path = img_path.replace(img_basename, new_name)
 
                     # 写入新epub
+                self.img_dict[img_path] = {
+                    "path": new_img_path,
+                    "media_type": replace_media_type,
+                }
                 self.target_epub.writestr(
-                    img_path, buffer.getvalue(), zipfile.ZIP_DEFLATED
+                    new_img_path, buffer.getvalue(), zipfile.ZIP_DEFLATED
                 )
 
             except Exception as e:
@@ -312,34 +376,45 @@ class ImageTransfer:
             self.target_epub.writestr(self.opf, modified_opf, zipfile.ZIP_DEFLATED)
             root = None
         if root is not None:
-            for meta in root.findall('.//opf:meta[@name="cover"]', ns):
-                content = meta.get("content")
-                if content and content.endswith(".webp"):
-                    logger.write(f"meta 替换cover：{content}")
-                    cover_basename = os.path.basename(content)
-                    if os.path.basename(content) in self.img_dict:
-                        replace_name = self.img_dict[cover_basename][0]
-                        new_content = content.replace(cover_basename, replace_name)
-                        meta.set("content", new_content)
-                        logger.write(
-                            f'{self.opf} 替换：<meta name="cover" content="{content}" /> -> <meta name="cover" content="{new_content}"'
-                        )
+            manifest_id_replacements = {}
+            items = root.findall(".//opf:item", ns)
+            used_manifest_ids = {
+                item.get("id")
+                for item in items
+                if item.get("id") and item.get("media-type") != "image/webp"
+            }
             # 遍历所有 <item> 标签
-            for item in root.findall(".//opf:item", ns):
+            for item in items:
                 media_type = item.get("media-type")
                 if media_type == "image/webp":
                     id = item.get("id")
                     href = item.get("href")
-                    href_basename = os.path.basename(href)
-                    if href_basename in self.img_dict:
-                        replace_name, replace_media_type = self.img_dict[href_basename]
-                        item.set("id", replace_name)
-                        item.set(
-                            "href", item.get("href").replace(href_basename, replace_name)
-                        )
-                        item.set("media-type", replace_media_type)
+                    source_path = self.resolve_book_path(self.opf, href)
+                    replacement = self.img_dict.get(source_path)
+                    new_href = self.build_replacement_reference(self.opf, href)
+                    if replacement and new_href:
+                        new_id = self.build_replacement_id(new_href, used_manifest_ids)
+                        used_manifest_ids.add(new_id)
+                        if id:
+                            manifest_id_replacements[id] = new_id
+                        item.set("id", new_id)
+                        item.set("href", new_href)
+                        item.set("media-type", replacement["media_type"])
+                    elif id:
+                        used_manifest_ids.add(id)
                     logger.write(
                         f'{self.opf} 替换：<item id="{id}" href="{href}" media-type="{media_type}"/> -> <item id="{item.get("id")}" href="{item.get("href")}" media-type="{item.get("media-type")}"/>'
+                    )
+            for meta in root.findall('.//opf:meta[@name="cover"]', ns):
+                content = meta.get("content")
+                new_content = manifest_id_replacements.get(content)
+                if new_content is None:
+                    new_content = self.build_replacement_reference(self.opf, content)
+                if new_content:
+                    logger.write(f"meta 替换cover：{content}")
+                    meta.set("content", new_content)
+                    logger.write(
+                        f'{self.opf} 替换：<meta name="cover" content="{content}" /> -> <meta name="cover" content="{new_content}"'
                     )
             modified_opf = ElementTree.tostring(
                 root, encoding="utf-8", xml_declaration=True
@@ -351,22 +426,21 @@ class ImageTransfer:
             html_content = self.epub.open(html_path).read().decode("utf-8")
 
             def replace_match(match):
-                original_src = match.group(2) + ".webp"
-                img_basename = os.path.basename(original_src)
-                if img_basename in self.img_dict:
-                    new_name = self.img_dict[img_basename][0]  # 获取新文件名
-                    new_src = original_src.replace(img_basename, new_name)
-                    logger.write(f"{html_path} 替换: {original_src} -> {new_src}")
-                    return match.group(0).replace(img_basename, new_name)
-                else:
+                original_src = match.group("value")
+                new_src = self.build_replacement_reference(html_path, original_src)
+                if not new_src:
                     return match.group(0)
+                logger.write(f"{html_path} 替换: {original_src} -> {new_src}")
+                return f'{match.group("prefix")}{new_src}{match.group("quote")}'
 
             # 使用正则表达式匹配 <img src="...webp">
-            pattern = r'<img\b[^>]*?\bsrc\s*=\s*(["\'])(.*?)\.webp\1'
-            pattern2 = r'<image\b[^>]*?\bxlink:href\s*=\s*(["\'])(.*?)\.webp\1'  # 处理SVG中的image标签
-            updated_content = re.sub(pattern, lambda m: replace_match(m), html_content)
+            pattern = r'(?P<prefix><img\b[^>]*?\bsrc\s*=\s*(?P<quote>["\']))(?P<value>.*?\.webp(?:[?#][^"\']*)?)(?P=quote)'
+            pattern2 = r'(?P<prefix><image\b[^>]*?\bxlink:href\s*=\s*(?P<quote>["\']))(?P<value>.*?\.webp(?:[?#][^"\']*)?)(?P=quote)'  # 处理SVG中的image标签
             updated_content = re.sub(
-                pattern2, lambda m: replace_match(m), updated_content
+                pattern, lambda m: replace_match(m), html_content, flags=re.IGNORECASE
+            )
+            updated_content = re.sub(
+                pattern2, lambda m: replace_match(m), updated_content, flags=re.IGNORECASE
             )
             self.target_epub.writestr(
                 html_path, updated_content.encode("utf-8"), zipfile.ZIP_DEFLATED
@@ -377,17 +451,14 @@ class ImageTransfer:
 
             def replace_match(match):
                 quote = match.group(1) or ""  # 可能是 '', "'", 或 '"'
-                path_with_webp = match.group(2) + ".webp"  # 比如 "../Images/cover.webp"
-                img_basename = os.path.basename(path_with_webp)
-                if img_basename in self.img_dict:
-                    new_name = self.img_dict[img_basename][0]
-                    new_path = path_with_webp.replace(img_basename, new_name)
-                    logger.write(f"{css_path}替换 : {path_with_webp} -> {new_path}")
-                    return f"url({quote}{new_path}{quote})"
-                else:
+                path_with_webp = match.group(2)  # 比如 "../Images/cover.webp?rev=1"
+                new_path = self.build_replacement_reference(css_path, path_with_webp)
+                if not new_path:
                     return match.group(0)  # 不匹配就原样返回
+                logger.write(f"{css_path}替换 : {path_with_webp} -> {new_path}")
+                return f"url({quote}{new_path}{quote})"
 
-            pattern = r'url\(\s*([\'"]?)\s*(.*?)\.webp\s*(?:\?\S*)?\s*\1\s*\)'
+            pattern = r'url\(\s*([\'"]?)\s*([^\'")]*?\.webp(?:[?#][^\'")\s]*)?)\s*\1\s*\)'
             updated_css = re.sub(
                 pattern, replace_match, css_content, flags=re.IGNORECASE
             )

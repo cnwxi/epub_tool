@@ -1,4 +1,6 @@
 beautifulsoup4
+brotli
+cssselect2
 emoji
 fonttools
 tinycss2

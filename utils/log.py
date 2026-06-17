@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 
 
@@ -9,9 +8,7 @@ class logwriter:
         if env_path:
             self.path = os.path.abspath(env_path)
         else:
-            self.path = os.path.join(
-                os.path.dirname(os.path.abspath(sys.argv[0])), "log.txt"
-            )
+            self.path = os.path.join(os.getcwd(), "log.txt")
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with open(self.path, "w", encoding="utf-8") as f:
             current_time = time.strftime(
