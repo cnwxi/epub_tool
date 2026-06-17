@@ -15,15 +15,18 @@ class LogWriterPathTest(unittest.TestCase):
 
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
-                sys.argv[0] = "/usr/local/bin/pytest"
-                os.chdir(temp_dir)
+                try:
+                    sys.argv[0] = "/usr/local/bin/pytest"
+                    os.chdir(temp_dir)
 
-                writer = logwriter()
-                writer.write("hello")
+                    writer = logwriter()
+                    writer.write("hello")
 
-                expected_path = Path(temp_dir) / "log.txt"
-                self.assertEqual(Path(writer.path).resolve(), expected_path.resolve())
-                self.assertIn("hello", expected_path.read_text(encoding="utf-8"))
+                    expected_path = Path(temp_dir) / "log.txt"
+                    self.assertEqual(Path(writer.path).resolve(), expected_path.resolve())
+                    self.assertIn("hello", expected_path.read_text(encoding="utf-8"))
+                finally:
+                    os.chdir(original_cwd)
         finally:
             os.chdir(original_cwd)
             sys.argv[:] = original_argv
