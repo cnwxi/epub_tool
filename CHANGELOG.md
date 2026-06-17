@@ -1,5 +1,9 @@
 # 更新日志
 
+### 2026.06.17<br>
+版本号更新为 `26.6.17`。<br>
+优化字体解密 OCR 失败占位字形显示：提高内联失败图片样式优先级，补充 `line-height:1`、`max-height:none!important` 与 `display:inline-block!important`，并调整图片高度和 baseline 对齐，减少失败字形在正文中偏小的问题。<br>
+
 ### 2026.06.16<br>
 版本号更新为 `26.6.16`。<br>
 增强 EPUB 内嵌字体扫描与 `@font-face` 映射：`.woff2` 字体文件现已参与字体 family 识别、目标字体选择和正文字符归属。<br>

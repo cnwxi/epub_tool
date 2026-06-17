@@ -1539,7 +1539,17 @@ class FontDecryptReferenceCleanupTest(unittest.TestCase):
                 self.assertIn('data-original-char="가"', html)
                 self.assertIn("OCR_LOW_CONF", html)
                 self.assertIn("好", html)
-                self.assertIn(".ocr-failure{font-size:1em;", html)
+                self.assertIn(
+                    ".ocr-failure{font-size:1em;white-space:nowrap;line-height:1;}",
+                    html,
+                )
+                self.assertIn(".ocr-failure img.ocr-failure-glyph{", html)
+                self.assertIn("height:1.18em!important;", html)
+                self.assertIn("width:auto!important;", html)
+                self.assertIn("max-width:none!important;", html)
+                self.assertIn("max-height:none!important;", html)
+                self.assertIn("vertical-align:-0.22em!important;", html)
+                self.assertIn("display:inline-block!important;", html)
                 self.assertNotIn("[<img", html)
                 self.assertNotIn(" OCR_LOW_CONF]</span>", html)
 

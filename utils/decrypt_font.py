@@ -60,8 +60,15 @@ OCR_EXCEPTION = "OCR_EXCEPTION"
 OCR_FAILURE_IMAGE_DIR = "Images/ocr-failures"
 OCR_FAILURE_STYLE_CLASS = "epub-tool-ocr-failure-style"
 OCR_FAILURE_STYLE_CSS = (
-    ".ocr-failure{font-size:1em;white-space:nowrap;}"
-    ".ocr-failure-glyph{height:1em;width:auto;vertical-align:-0.15em;}"
+    ".ocr-failure{font-size:1em;white-space:nowrap;line-height:1;}"
+    ".ocr-failure img.ocr-failure-glyph{"
+    "height:1.18em!important;"
+    "width:auto!important;"
+    "max-width:none!important;"
+    "max-height:none!important;"
+    "vertical-align:-0.22em!important;"
+    "display:inline-block!important;"
+    "}"
 )
 FONT_RULE_BLOCKER = object()
 FONT_RULE_INHERIT = object()
