@@ -3,6 +3,9 @@
 ### 2026.07.01<br>
 版本号更新为 `26.7.1`。<br>
 为本工具处理后生成的 EPUB 增加 OPF 元数据标记：输出文件的 `content.opf` 会写入 `<meta name="generator" content="Epub Tool" />`，便于识别由本工具生成或处理过的 EPUB。<br>
+暂时注释 GitHub Actions 中的 medium OCR 发布矩阵，仅发布 small OCR 安装包，降低发布资产数量与体积；medium 模型仍保留本地维护和验证入口。<br>
+扩展 GitHub Actions small 版构建矩阵：Linux、Windows、macOS 均覆盖 x64 与 arm64 两种架构。<br>
+更新 Homebrew Tap 自动更新逻辑：Cask 同时写入 Intel 与 Apple Silicon 的 small 版 DMG URL 和 sha256，安装时按 Mac 架构自动匹配。<br>
 
 ### 2026.06.17<br>
 版本号更新为 `26.6.17`。<br>

@@ -177,8 +177,8 @@ conda run -n epub_tool npm run tauri:build
 该模型会在构建时直接打包进桌面安装包，运行时无需下载，也不会加载 Paddle Python 运行时。
 
 如需本地验证高准确率模型，可设置 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec`
-后重新准备模型并转换为 ONNX。GitHub Release 会同时提供 `_small` 和 `_medium` 两类安装包；
-本地构建与 Homebrew 安装默认仍使用 small 版。
+后重新准备模型并转换为 ONNX。GitHub Release 当前只发布 `_small` 安装包；
+本地构建与 Homebrew 安装也默认使用 small 版，Homebrew 会自动匹配 Intel / Apple Silicon 架构。
 
 OCR 默认最低置信度为 `0.8`。桌面 UI 支持将阈值下调至 `0`，并会随任务请求显式传入。
 默认字符筛选策略为 `strict`，适合处理本工具生成的字体混淆 EPUB，

@@ -74,10 +74,22 @@ jobs:
             arch: x64
             runner: ubuntu-22.04
             artifact_name: linux-x64-bundle
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            artifact_name: linux-arm64-bundle
           - platform: windows
             arch: x64
             runner: windows-2022
             artifact_name: windows-x64-bundle
+          - platform: windows
+            arch: arm64
+            runner: windows-11-arm
+            artifact_name: windows-arm64-bundle
+          - platform: macos
+            arch: x64
+            runner: macos-15-intel
+            artifact_name: macos-x64-bundle
           - platform: macos
             arch: arm64
             runner: macos-14
@@ -85,8 +97,9 @@ jobs:
         ocr:
           - variant: small
             model_name: PP-OCRv6_small_rec
-          - variant: medium
-            model_name: PP-OCRv6_medium_rec
+          # medium 版发布产物暂时关闭；保留模型配置与本地维护脚本，避免发布资产体积翻倍。
+          # - variant: medium
+          #   model_name: PP-OCRv6_medium_rec
 
     steps:
       - name: Checkout
@@ -182,12 +195,13 @@ jobs:
         shell: bash
         env:
           APP_VERSION: ${{ needs.prepare.outputs.app_version }}
+          ARCH: ${{ matrix.target.arch }}
         run: |
           set -euo pipefail
 
           app_path="src-tauri/target/release/bundle/macos/Epub Tool NewUI.app"
           dmg_dir="src-tauri/target/release/bundle/dmg"
-          dmg_path="$dmg_dir/Epub Tool NewUI_${APP_VERSION}_aarch64.dmg"
+          dmg_path="$dmg_dir/Epub Tool NewUI_${APP_VERSION}_${ARCH}.dmg"
 
           if [ ! -d "$app_path" ]; then
             echo "Tauri 未生成 .app，无法创建 DMG。" >&2
@@ -384,7 +398,7 @@ jobs:
           cat > release-body.md <<'MARKDOWN'
           ## 安装
 
-          推荐使用 small 版，速度更快，精度差异 1~2%。
+          当前发布包内置 small OCR 模型，速度更快，安装包体积更小。
 
           ### macOS
 
@@ -393,12 +407,11 @@ jobs:
           brew install --cask epub-tool-newui
           ```
 
-          Homebrew 默认安装 small 版。也可下载下方 `macos_arm64_small.dmg`；
-          如需高准确率 OCR 模型，下载 `macos_arm64_medium.dmg`。
+          Homebrew 默认安装 small 版，并会自动匹配 Intel / Apple Silicon 架构。也可下载下方 `macos_x64_small.dmg` 或 `macos_arm64_small.dmg`。
 
           ### Linux
 
-          下载下方 `linux_x64_small.AppImage` 或 `linux_x64_medium.AppImage`，添加执行权限后运行：
+          下载下方 `linux_x64_small.AppImage` 或 `linux_arm64_small.AppImage`，添加执行权限后运行：
 
           ```bash
           chmod +x Epub.Tool.NewUI_*.AppImage
@@ -409,7 +422,7 @@ jobs:
 
           ### Windows
 
-          下载下方 `windows_x64_small_setup.exe` / `windows_x64_medium_setup.exe` 或对应 `.msi`，双击安装。
+          下载下方 `windows_x64_small_setup.exe` / `windows_arm64_small_setup.exe` 或对应 `.msi`，双击安装。
 
           ---
 
@@ -440,7 +453,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Find macOS dmg asset
+      - name: Find macOS dmg assets
         id: asset
         env:
           GH_TOKEN: ${{ github.token }}
@@ -448,25 +461,28 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ needs.prepare.outputs.release_version }}"
-          dmg_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .name' | head -n 1)
-          dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .url' | head -n 1)
-          if [ -z "$dmg_url" ]; then
-            dmg_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-              --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .name' | head -n 1)
-            dmg_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-              --jq '.assets[] | select(.name | test("macos.*\\.dmg$")) | .url' | head -n 1)
-          fi
 
-          if [ -z "$dmg_url" ]; then
-            echo "未找到 macOS dmg 资产，跳过 Homebrew Tap 更新"
+          arm_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .name' | head -n 1)
+          arm_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .url' | head -n 1)
+          intel_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | select(.name | test("macos_x64_small\\.dmg$")) | .name' | head -n 1)
+          intel_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | select(.name | test("macos_x64_small\\.dmg$")) | .url' | head -n 1)
+
+          if [ -z "$arm_url" ] || [ -z "$intel_url" ]; then
+            echo "未找到完整 macOS small dmg 资产，跳过 Homebrew Tap 更新"
+            echo "  arm64: ${arm_name:-missing}"
+            echo "  x64:   ${intel_name:-missing}"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "name=$dmg_name" >> "$GITHUB_OUTPUT"
-          echo "url=$dmg_url" >> "$GITHUB_OUTPUT"
+          echo "arm_name=$arm_name" >> "$GITHUB_OUTPUT"
+          echo "arm_url=$arm_url" >> "$GITHUB_OUTPUT"
+          echo "intel_name=$intel_name" >> "$GITHUB_OUTPUT"
+          echo "intel_url=$intel_url" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Compute sha256
@@ -475,12 +491,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          url="${{ steps.asset.outputs.url }}"
-          echo "正在下载: $url"
-          curl -fsSL "$url" -o /tmp/epub-tool.dmg
-          sha=$(shasum -a 256 /tmp/epub-tool.dmg | awk '{print $1}')
-          echo "sha256=$sha"
-          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          arm_url="${{ steps.asset.outputs.arm_url }}"
+          intel_url="${{ steps.asset.outputs.intel_url }}"
+
+          echo "正在下载 arm64: $arm_url"
+          curl -fsSL "$arm_url" -o /tmp/epub-tool-arm64.dmg
+          sha_arm=$(shasum -a 256 /tmp/epub-tool-arm64.dmg | awk '{print $1}')
+
+          echo "正在下载 x64: $intel_url"
+          curl -fsSL "$intel_url" -o /tmp/epub-tool-x64.dmg
+          sha_intel=$(shasum -a 256 /tmp/epub-tool-x64.dmg | awk '{print $1}')
+
+          echo "sha256_arm=$sha_arm"
+          echo "sha256_intel=$sha_intel"
+          echo "sha256_arm=$sha_arm" >> "$GITHUB_OUTPUT"
+          echo "sha256_intel=$sha_intel" >> "$GITHUB_OUTPUT"
 
       - name: Checkout tap repo
         if: steps.asset.outputs.skip != 'true'
@@ -495,21 +520,54 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ needs.prepare.outputs.asset_version }}"
-          SHA="${{ steps.sha.outputs.sha256 }}"
-          ASSET_NAME="${{ steps.asset.outputs.name }}"
+          SHA_ARM="${{ steps.sha.outputs.sha256_arm }}"
+          SHA_INTEL="${{ steps.sha.outputs.sha256_intel }}"
           FORMULA="tap-repo/Casks/epub-tool-newui.rb"
           VERSION_PLACEHOLDER='#{version}'
-          ASSET_NAME_TEMPLATE="${ASSET_NAME//$VERSION/$VERSION_PLACEHOLDER}"
-          URL="https://github.com/cnwxi/epub_tool/releases/download/v${VERSION_PLACEHOLDER}/${ASSET_NAME_TEMPLATE}"
+          ARCH_PLACEHOLDER='#{arch}'
+          URL="https://github.com/cnwxi/epub_tool/releases/download/v${VERSION_PLACEHOLDER}/Epub.Tool.NewUI_${VERSION_PLACEHOLDER}_macos_${ARCH_PLACEHOLDER}_small.dmg"
 
           echo "更新公式:"
-          echo "  version: $VERSION"
-          echo "  sha256:  $SHA"
-          echo "  url:     $URL"
+          echo "  version:      $VERSION"
+          echo "  sha256 arm:   $SHA_ARM"
+          echo "  sha256 intel: $SHA_INTEL"
+          echo "  url:          $URL"
 
-          sed -i "s/version \".*\"/version \"$VERSION\"/" "$FORMULA"
-          sed -i "s/sha256 \".*\"/sha256 \"$SHA\"/" "$FORMULA"
-          sed -i "s|^  url \".*\"|  url \"$URL\"|" "$FORMULA"
+          export VERSION SHA_ARM SHA_INTEL URL
+          python - "$FORMULA" <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          formula = Path(sys.argv[1])
+          text = formula.read_text()
+          version = os.environ["VERSION"]
+          sha_arm = os.environ["SHA_ARM"]
+          sha_intel = os.environ["SHA_INTEL"]
+          url = os.environ["URL"]
+
+          arch_line = '  arch arm: "arm64", intel: "x64"'
+          sha_block = f'  sha256 arm: "{sha_arm}",\n         intel: "{sha_intel}"'
+          url_line = f'  url "{url}"'
+
+          text = re.sub(r'(?m)^  version ".*"$', f'  version "{version}"', text, count=1)
+          if re.search(r'(?m)^  arch ', text):
+              text = re.sub(r'(?m)^  arch .*$', arch_line, text, count=1)
+          else:
+              text = re.sub(r'(?m)^(  version ".*"\n)', r'\1' + arch_line + '\n', text, count=1)
+          text = re.sub(r'(?ms)^  sha256 .+?(?=\n  url )', sha_block, text, count=1)
+          text = re.sub(r'(?m)^  url ".*"$', url_line, text, count=1)
+
+          missing = [
+              needle
+              for needle in (arch_line, sha_block, url_line)
+              if needle not in text
+          ]
+          if missing:
+              raise SystemExit(f"公式更新失败，缺少片段: {missing}")
+          formula.write_text(text)
+          PY
 
           echo "--- 更新后的公式 ---"
           cat "$FORMULA"
