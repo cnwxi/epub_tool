@@ -65,7 +65,7 @@ _LOADED_MODULES: dict[str, Any] = {}
 
 class JsonLineEmitter:
     def emit(self, event: TaskEvent) -> None:
-        sys.stdout.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
+        sys.stdout.write(json.dumps(event.to_dict(), ensure_ascii=True) + "\n")
         sys.stdout.flush()
 
 

@@ -1,7 +1,9 @@
 import os
+import sys
 import tempfile
 import unittest
 import zipfile
+from io import BytesIO, TextIOWrapper
 from pathlib import Path
 
 from python_backend import task_runner
@@ -11,7 +13,8 @@ from python_backend.epub_metadata import (
     add_tool_meta_to_opf,
     mark_epub_generated_by_tool,
 )
-from python_backend.protocol import TaskRequest
+from python_backend.protocol import TaskEvent, TaskRequest
+from python_backend.task_runner import JsonLineEmitter
 
 
 def build_minimal_epub(epub_path, opf_text):
@@ -135,6 +138,29 @@ class EpubMetadataTest(unittest.TestCase):
                 f'<meta name="{TOOL_META_NAME}" content="{TOOL_META_CONTENT}" />',
                 read_opf(output_path),
             )
+
+    def test_json_line_emitter_handles_non_utf8_stdout(self):
+        original_stdout = sys.stdout
+        buffer = BytesIO()
+        cp1252_stdout = TextIOWrapper(buffer, encoding="cp1252")
+        sys.stdout = cp1252_stdout
+        try:
+            JsonLineEmitter().emit(
+                TaskEvent(
+                    event="task.started",
+                    task_id="test-task",
+                    status="started",
+                    progress=0,
+                    message="开始执行 格式化",
+                )
+            )
+            cp1252_stdout.flush()
+        finally:
+            sys.stdout = original_stdout
+            cp1252_stdout.detach()
+
+        payload = buffer.getvalue().decode("cp1252")
+        self.assertIn(r"\u5f00\u59cb\u6267\u884c", payload)
 
 
 if __name__ == "__main__":

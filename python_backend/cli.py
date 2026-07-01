@@ -63,7 +63,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_list_fonts(args: argparse.Namespace) -> int:
     payload = list_font_targets(args.input_file)
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
     return 0
 
 
