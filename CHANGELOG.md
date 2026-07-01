@@ -1,5 +1,9 @@
 # 更新日志
 
+### 2026.07.01<br>
+版本号更新为 `26.7.1`。<br>
+为本工具处理后生成的 EPUB 增加 OPF 元数据标记：输出文件的 `content.opf` 会写入 `<meta name="generator" content="Epub Tool" />`，便于识别由本工具生成或处理过的 EPUB。<br>
+
 ### 2026.06.17<br>
 版本号更新为 `26.6.17`。<br>
 优化字体解密 OCR 失败占位字形显示：提高内联失败图片样式优先级，补充 `line-height:1`、`max-height:none!important` 与 `display:inline-block!important`，并调整图片高度和 baseline 对齐，减少失败字形在正文中偏小的问题。<br>

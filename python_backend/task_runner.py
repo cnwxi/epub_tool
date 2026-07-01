@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from python_backend.epub_metadata import mark_epub_generated_by_tool
 from python_backend.protocol import TaskEvent, TaskRequest, TaskResult
 
 
@@ -285,12 +286,14 @@ def run_task(request: TaskRequest) -> TaskResult:
                 context["progress"] = build_progress(index, total_files)
 
                 if ret == 0:
-                    success_count += 1
                     actual_output = resolve_generated_output_path(
                         normalized_input,
                         request.task_type,
                         request.output_dir,
                     )
+                    if actual_output:
+                        mark_epub_generated_by_tool(actual_output)
+                    success_count += 1
                     if actual_output and actual_output not in outputs:
                         outputs.append(actual_output)
                     emitter.emit(
