@@ -1,7 +1,12 @@
 # 更新日志
 
+### 2026.07.10
+版本号更新为 `26.7.10`。<br>
+优化多看 slim 图片处理：解密与加密流程均改为只根据图片 `href` 文件名识别 `~slim`、`_slim`、`-slim` 或 `slim` 后缀，不再因 manifest `id` 包含 slim 而误判；同名 slim 图片会与原图使用统一基础 id / 文件名，并规范化输出为 `~slim`。<br>
+修复资源链接携带 fragment 时的重命名问题：`decrypt`、`encrypt` 与 `reformat` 流程现在会先拆分字面 `#`，仅对路径部分解码、匹配和重命名，最后原样拼回 fragment，避免图片、CSS、字体、音视频、脚本、TOC 与 OPF guide/reference 中的 `#fragment` 丢失。<br>
+修复 `%23`(#) 文件名被误判为 fragment 的问题，保留外部 URL、纯 fragment 和 CSS `url(#id)` 这类本地片段引用不被重写。<br>
+
 ### 2026.07.09<br>
-版本号更新为 `26.7.9`。<br>
 修复输出 EPUB 的 OPF 元数据标记写入逻辑：工具生成标记现在会写入既有 `<metadata>` 节点，避免额外生成空标题的第二个 `<metadata>`，导致部分阅读软件无法正常显示书籍名。<br>
 
 ### 2026.07.01<br>

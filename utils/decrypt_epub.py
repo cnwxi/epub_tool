@@ -10,7 +10,6 @@ import codecs
 from os import path
 from urllib.parse import unquote
 from xml.etree import ElementTree
-import copy
 import os
 from difflib import SequenceMatcher
 from hashlib import md5 as hashlibmd5
@@ -21,6 +20,38 @@ except:
     from log import logwriter
 
 logger = logwriter()
+
+
+def _split_file_reference(reference):
+    """拆分字面 fragment，只解码用于文件处理的路径部分。"""
+    raw_path, separator, fragment = reference.strip().partition("#")
+    suffix = separator + fragment if separator else ""
+    return unquote(raw_path), suffix
+
+
+def _split_slim_href(href):
+    """按 href 文件名识别并移除多看的 slim 后缀。"""
+    href_dir, href_basename = path.split(href)
+    href_stem, href_extension = path.splitext(href_basename)
+    is_slim = href_stem.lower().endswith("slim")
+    if is_slim:
+        href_stem = re.sub(r"(?i)[~_-]?slim$", "", href_stem)
+    base_href = path.join(href_dir, href_stem + href_extension)
+    return base_href, href_extension, is_slim
+
+
+def _append_slim_to_id(item_id):
+    """在 ID 的扩展名前插入统一的 ~slim 后缀。"""
+    id_stem, id_extension = path.splitext(item_id)
+    return f"{id_stem}~slim{id_extension}"
+
+
+def _strip_slim_suffix_from_id(item_id):
+    """移除 ID 末尾已有的多看 slim 后缀，用于孤立 slim 图片兜底命名。"""
+    id_stem, id_extension = path.splitext(item_id)
+    if id_stem.lower().endswith("slim"):
+        id_stem = re.sub(r"(?i)[~_-]?slim$", "", id_stem)
+    return id_stem + id_extension
 
 
 class EpubTool:
@@ -410,50 +441,53 @@ class EpubTool:
         # opf item分类
         opf_dir = path.dirname(self.opfpath)
 
+        # 多看 slim 图片只按 href 文件名配对，不能依赖原始 ID 是否包含 slim。
+        image_id_by_href = {}
+        for item_id, item_href, item_mime, _ in self.manifest_list:
+            base_href, _, is_slim = _split_slim_href(item_href)
+            if item_mime and "image/" in item_mime and not is_slim:
+                image_id_by_href[base_href.lower()] = item_id
+
+        self.manifest_id_renames = {}
+        used_manifest_ids = {item[0] for item in self.manifest_list}
+
+        def allocate_slim_id(base_id, old_id):
+            candidate = _append_slim_to_id(base_id)
+            if candidate == old_id or candidate not in used_manifest_ids:
+                return candidate
+
+            id_stem, id_extension = path.splitext(base_id)
+            sequence = 2
+            while True:
+                candidate = f"{id_stem}_{sequence}~slim{id_extension}"
+                if candidate == old_id or candidate not in used_manifest_ids:
+                    return candidate
+                sequence += 1
+
         # 生成新的href
         ############################################################
-        def creatNewHerf(_id, _href):
-            file_parts = _href.rsplit(".", 1)
-            if len(_id.split(".")) == 1:
-                _id_name = copy.deepcopy(_id)
-                if _id.rsplit(".", 1)[-1].lower().endswith("slim"):
-                    image_silm = "~slim"
-                    # 如果_id_name中有slim，去掉
-                    _id_name = (
-                        _id_name.lower()
-                        .rstrip("~slim")
-                        .rstrip("-slim")
-                        .rstrip("_slim")
-                        .rstrip("slim")
-                    )
-                else:
-                    image_silm = ""
-                new_href = f"{_id_name}{image_silm}.{file_parts[-1].lower()}"
-            else:
-                _id_name, _id_extension = _id.rsplit(".", 1)
-                if _id_extension.lower() != file_parts[-1].lower():
-                    _id_extension = file_parts[-1]
-                # 如果id或者href中有slim，则为多看处理~slim
-                if _href.rsplit(".", 1)[-1].lower().endswith("slim") or _id_name.rsplit(
-                    ".", 1
-                )[-1].lower().endswith("slim"):
-                    image_silm = "~slim"
-                    # 如果id中有slim，去掉
-                    _id_name = (
-                        _id_name.lower()
-                        .rstrip("~slim")
-                        .rstrip("-slim")
-                        .rstrip("_slim")
-                        .rstrip("slim")
-                    )
-                else:
-                    image_silm = ""
-                # 判断_id_name是否合法
-                if re.search(r'[\\/:*?"<>|]', _id_name):
-                    logger.write(f"ID: {_id} 中包含非法字符")
-                    _id_name = hashlibmd5(_id_name.encode()).hexdigest()
-                    logger.write(f"ID: {_id} 替换为 {_id_name}")
-                new_href = f"{_id_name}{image_silm}.{_id_extension.lower()}"
+        def creatNewHerf(_id, _href, _mime):
+            base_href, href_extension, is_slim = _split_slim_href(_href)
+            output_id = _id
+            if _mime and "image/" in _mime and is_slim:
+                base_id = image_id_by_href.get(base_href.lower())
+                if base_id is None:
+                    base_id = _strip_slim_suffix_from_id(_id)
+                output_id = allocate_slim_id(base_id, _id)
+                self.manifest_id_renames[_id] = output_id
+                used_manifest_ids.discard(_id)
+                used_manifest_ids.add(output_id)
+
+            id_name, _ = path.splitext(output_id)
+            if re.search(r'[\\/:*?"<>|]', id_name):
+                logger.write(f"ID: {output_id} 中包含非法字符")
+                id_name = hashlibmd5(id_name.encode()).hexdigest()
+                logger.write(f"ID: {output_id} 替换为 {id_name}")
+
+            image_slim = "~slim" if _mime and "image/" in _mime and is_slim else ""
+            if image_slim and id_name.lower().endswith("slim"):
+                id_name = re.sub(r"(?i)[~_-]?slim$", "", id_name)
+            new_href = f"{id_name}{image_slim}{href_extension.lower()}"
             logger.write(f"decrypt href: {_id}:{_href} -> {new_href}")
             return new_href
 
@@ -464,28 +498,98 @@ class EpubTool:
             if re.search(r'[\\/:*?"<>|]', href.rsplit("/")[-1]):
                 self.encrypted = True
             if mime == "application/xhtml+xml":
-                new_href = creatNewHerf(id, href)
+                new_href = creatNewHerf(id, href, mime)
                 self.text_list.append((id, href, properties, new_href))
                 self.toc_rn[href] = new_href
             elif mime == "text/css":
-                self.css_list.append((id, href, properties, creatNewHerf(id, href)))
+                self.css_list.append(
+                    (id, href, properties, creatNewHerf(id, href, mime))
+                )
             elif "image/" in mime:
-                self.image_list.append((id, href, properties, creatNewHerf(id, href)))
+                self.image_list.append(
+                    (id, href, properties, creatNewHerf(id, href, mime))
+                )
             elif "font/" in mime or href.lower().endswith((".ttf", ".otf", ".woff")):
-                self.font_list.append((id, href, properties, creatNewHerf(id, href)))
+                self.font_list.append(
+                    (id, href, properties, creatNewHerf(id, href, mime))
+                )
             elif "audio/" in mime:
-                self.audio_list.append((id, href, properties, creatNewHerf(id, href)))
+                self.audio_list.append(
+                    (id, href, properties, creatNewHerf(id, href, mime))
+                )
             elif "video/" in mime:
-                self.video_list.append((id, href, properties, creatNewHerf(id, href)))
+                self.video_list.append(
+                    (id, href, properties, creatNewHerf(id, href, mime))
+                )
             elif self.tocid != "" and id == self.tocid:
                 opf_dir = path.dirname(self.opfpath)
                 self.tocpath = opf_dir + "/" + href if opf_dir else href
             else:
                 self.other_list.append(
-                    (id, href, mime, properties, creatNewHerf(id, href))
+                    (id, href, mime, properties, creatNewHerf(id, href, mime))
                 )
 
         self._check_manifest_and_spine()
+
+    def _replace_manifest_id_references(self, opf):
+        """同步替换 OPF 中指向已重命名 manifest ID 的引用。"""
+        if not self.manifest_id_renames:
+            return opf
+
+        idref_pattern = re.compile(
+            r'(\b(?:idref|fallback|fallback-style|media-overlay|handler|toc)\s*=\s*)(["\'])(.*?)\2',
+            flags=re.IGNORECASE,
+        )
+
+        def replace_idref(match):
+            value = self.manifest_id_renames.get(match.group(3), match.group(3))
+            return f"{match.group(1)}{match.group(2)}{value}{match.group(2)}"
+
+        opf = idref_pattern.sub(replace_idref, opf)
+
+        refines_pattern = re.compile(
+            r'(\brefines\s*=\s*)(["\'])#(.*?)\2',
+            flags=re.IGNORECASE,
+        )
+
+        def replace_refines(match):
+            value = self.manifest_id_renames.get(match.group(3), match.group(3))
+            return f"{match.group(1)}{match.group(2)}#{value}{match.group(2)}"
+
+        opf = refines_pattern.sub(replace_refines, opf)
+
+        def replace_cover_meta(match):
+            tag = match.group()
+            if not re.search(
+                r'\bname\s*=\s*(["\'])cover\1',
+                tag,
+                flags=re.IGNORECASE,
+            ):
+                return tag
+
+            def replace_content(content_match):
+                value = self.manifest_id_renames.get(
+                    content_match.group(3), content_match.group(3)
+                )
+                return (
+                    f"{content_match.group(1)}{content_match.group(2)}"
+                    f"{value}{content_match.group(2)}"
+                )
+
+            return re.sub(
+                r'(\bcontent\s*=\s*)(["\'])(.*?)\2',
+                replace_content,
+                tag,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+
+        return re.sub(
+            r"<meta\b[^>]*>",
+            replace_cover_meta,
+            opf,
+            flags=re.IGNORECASE,
+        )
 
     def _parse_metadata(self):
         self.metadata = {}
@@ -815,13 +919,7 @@ class EpubTool:
             # 修改a[href]
 
             def re_href(match):
-                href = match.group(3)
-                href = unquote(href).strip()
-                if "#" in href:
-                    href, target_id = href.split("#")
-                    target_id = "#" + target_id
-                else:
-                    target_id = ""
+                href, target_id = _split_file_reference(match.group(3))
 
                 bkpath = get_bookpath(href, xhtml_bkpath)
                 bkpath = check_link(xhtml_bkpath, bkpath, href, self, target_id)
@@ -832,12 +930,19 @@ class EpubTool:
                     (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
                 ):
                     filename = re_path_map["image"][bkpath]
-                    return match.group(1) + "../Images/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Images/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 elif href.lower().endswith(".css"):
                     filename = re_path_map["css"][bkpath]
                     return (
                         '<link href="../Styles/'
                         + filename
+                        + target_id
                         + '" type="text/css" rel="stylesheet"/>'
                     )
                 elif href.lower().endswith((".xhtml", ".html")):
@@ -850,10 +955,9 @@ class EpubTool:
 
             # 修改src
             def re_src(match):
-                href = match.group(3)
-                href = unquote(href).strip()
+                href, target_id = _split_file_reference(match.group(3))
                 bkpath = get_bookpath(href, xhtml_bkpath)
-                bkpath = check_link(xhtml_bkpath, bkpath, href, self)
+                bkpath = check_link(xhtml_bkpath, bkpath, href, self, target_id)
                 if not bkpath:
                     return match.group()
 
@@ -861,39 +965,67 @@ class EpubTool:
                     (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".svg")
                 ):
                     filename = re_path_map["image"][bkpath]
-                    return match.group(1) + "../Images/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Images/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 elif href.lower().endswith(".mp3"):
                     filename = re_path_map["audio"][bkpath]
-                    return match.group(1) + "../Audio/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Audio/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 elif href.lower().endswith(".mp4"):
                     filename = re_path_map["video"][bkpath]
-                    return match.group(1) + "../Video/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Video/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 elif href.lower().endswith(".js"):
                     filename = re_path_map["other"][bkpath]
-                    return match.group(1) + "../Misc/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Misc/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 else:
                     return match.group()
 
             def re_poster(match):
-                href = match.group(3)
-                href = unquote(href).strip()
+                href, target_id = _split_file_reference(match.group(3))
                 bkpath = get_bookpath(href, xhtml_bkpath)
-                bkpath = check_link(xhtml_bkpath, bkpath, href, self)
+                bkpath = check_link(xhtml_bkpath, bkpath, href, self, target_id)
                 if not bkpath:
                     return match.group()
                 if href.lower().endswith(
                     (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".svg")
                 ):
                     filename = re_path_map["image"][bkpath]
-                    return match.group(1) + "../Images/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Images/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 else:
                     return match.group()
 
             def re_media_attr(match):
-                href = match.group(3)
-                href = unquote(href).strip()
+                href, target_id = _split_file_reference(match.group(3))
                 bkpath = get_bookpath(href, xhtml_bkpath)
-                bkpath = check_link(xhtml_bkpath, bkpath, href, self)
+                bkpath = check_link(xhtml_bkpath, bkpath, href, self, target_id)
                 if not bkpath:
                     return match.group()
 
@@ -901,16 +1033,40 @@ class EpubTool:
                     (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".svg")
                 ):
                     filename = re_path_map["image"][bkpath]
-                    return match.group(1) + "../Images/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Images/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 elif href.lower().endswith(".mp3"):
                     filename = re_path_map["audio"][bkpath]
-                    return match.group(1) + "../Audio/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Audio/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 elif href.lower().endswith(".mp4"):
                     filename = re_path_map["video"][bkpath]
-                    return match.group(1) + "../Video/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Video/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 elif href.lower().endswith(".js"):
                     filename = re_path_map["other"][bkpath]
-                    return match.group(1) + "../Misc/" + filename + match.group(4)
+                    return (
+                        match.group(1)
+                        + "../Misc/"
+                        + filename
+                        + target_id
+                        + match.group(4)
+                    )
                 else:
                     return match.group()
 
@@ -932,21 +1088,32 @@ class EpubTool:
 
             # 修改 url
             def re_url(match):
-                url = match.group(2)
-                url = unquote(url).strip()
+                url, target_id = _split_file_reference(match.group(2))
                 bkpath = get_bookpath(url, xhtml_bkpath)
-                bkpath = check_link(xhtml_bkpath, bkpath, url, self)
+                bkpath = check_link(xhtml_bkpath, bkpath, url, self, target_id)
                 if not bkpath:
                     return match.group()
 
                 if url.lower().endswith((".ttf", ".otf")):
                     filename = re_path_map["font"][bkpath]
-                    return match.group(1) + "../Fonts/" + filename + match.group(3)
+                    return (
+                        match.group(1)
+                        + "../Fonts/"
+                        + filename
+                        + target_id
+                        + match.group(3)
+                    )
                 elif url.lower().endswith(
                     (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".svg")
                 ):
                     filename = re_path_map["image"][bkpath]
-                    return match.group(1) + "../Images/" + filename + match.group(3)
+                    return (
+                        match.group(1)
+                        + "../Images/"
+                        + filename
+                        + target_id
+                        + match.group(3)
+                    )
                 else:
                     return match.group()
 
@@ -967,19 +1134,19 @@ class EpubTool:
 
             # 修改 @import
             def re_import(match):
-                href = match.group(2) if match.group(2) else match.group(3)
-                href = unquote(href).strip()
+                raw_href = match.group(2) if match.group(2) else match.group(3)
+                href, target_id = _split_file_reference(raw_href)
                 if not href.lower().endswith(".css"):
                     return match.group()
                 bkpath = get_bookpath(href, css_bkpath)
-                bkpath = check_link(css_bkpath, bkpath, href, self)
+                bkpath = check_link(css_bkpath, bkpath, href, self, target_id)
                 if not bkpath:
                     return match.group()
                 filename = re_path_map.get("css", {}).get(bkpath, path.basename(href))
                 if match.group(2):
-                    return '@import "{}"'.format(filename)
+                    return '@import "{}{}"'.format(filename, target_id)
                 else:
-                    return '@import url("{}")'.format(filename)
+                    return '@import url("{}{}")'.format(filename, target_id)
 
             css = re.sub(
                 r"@import +([\'\"])(.*?)\1|@import +url\([\'\"]?(.*?)[\'\"]?\)",
@@ -989,20 +1156,31 @@ class EpubTool:
 
             # 修改 css的url
             def re_css_url(match):
-                url = match.group(2)
-                url = unquote(url).strip()
+                url, target_id = _split_file_reference(match.group(2))
                 bkpath = get_bookpath(url, css_bkpath)
-                bkpath = check_link(css_bkpath, bkpath, url, self)
+                bkpath = check_link(css_bkpath, bkpath, url, self, target_id)
                 if not bkpath:
                     return match.group()
                 if url.lower().endswith((".ttf", ".otf")):
                     filename = re_path_map["font"][bkpath]
-                    return match.group(1) + "../Fonts/" + filename + match.group(3)
+                    return (
+                        match.group(1)
+                        + "../Fonts/"
+                        + filename
+                        + target_id
+                        + match.group(3)
+                    )
                 elif url.lower().endswith(
                     (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".svg")
                 ):
                     filename = re_path_map["image"][bkpath]
-                    return match.group(1) + "../Images/" + filename + match.group(3)
+                    return (
+                        match.group(1)
+                        + "../Images/"
+                        + filename
+                        + target_id
+                        + match.group(3)
+                    )
                 else:
                     return match.group()
 
@@ -1065,11 +1243,7 @@ class EpubTool:
             toc_dir = path.dirname(self.tocpath)
 
             def re_toc_href(match):
-                href = match.group(2)
-                href = unquote(href).strip()
-                parts = href.split("#", 1)
-                href_base = parts[0]
-                target_id = "#" + parts[1] if len(parts) > 1 else ""
+                href_base, target_id = _split_file_reference(match.group(2))
                 href_base = (
                     self.toc_rn[href_base] if href_base in self.toc_rn else href_base
                 )
@@ -1091,44 +1265,45 @@ class EpubTool:
         for id, href, mime, prop in self.manifest_list:
             bkpath = get_bookpath(href, self.opfpath)
             prop_ = ' properties="' + prop + '"' if prop else ""
+            output_id = self.manifest_id_renames.get(id, id)
             if mime == "application/xhtml+xml":
                 filename = re_path_map["text"][bkpath]
                 manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href="Text/" + filename, mime=mime, prop=prop_
+                    id=output_id, href="Text/" + filename, mime=mime, prop=prop_
                 )
             elif mime == "text/css":
                 filename = re_path_map["css"][bkpath]
                 manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href="Styles/" + filename, mime=mime, prop=prop_
+                    id=output_id, href="Styles/" + filename, mime=mime, prop=prop_
                 )
             elif "image/" in mime:
                 filename = re_path_map["image"][bkpath]
                 manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href="Images/" + filename, mime=mime, prop=prop_
+                    id=output_id, href="Images/" + filename, mime=mime, prop=prop_
                 )
             elif "font/" in mime or href.lower().endswith((".ttf", ".otf", ".woff")):
                 filename = re_path_map["font"][bkpath]
                 manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href="Fonts/" + filename, mime=mime, prop=prop_
+                    id=output_id, href="Fonts/" + filename, mime=mime, prop=prop_
                 )
             elif "audio/" in mime:
                 filename = re_path_map["audio"][bkpath]
                 manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href="Audio/" + filename, mime=mime, prop=prop_
+                    id=output_id, href="Audio/" + filename, mime=mime, prop=prop_
                 )
             elif "video/" in mime:
                 filename = re_path_map["video"][bkpath]
                 manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href="Video/" + filename, mime=mime, prop=prop_
+                    id=output_id, href="Video/" + filename, mime=mime, prop=prop_
                 )
             elif id == self.tocid:
                 manifest_text += '\n    <item id="{id}" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'.format(
-                    id=id
+                    id=output_id
                 )
             else:
                 filename = re_path_map["other"][bkpath]
                 manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=id, href="Misc/" + filename, mime=mime, prop=prop_
+                    id=output_id, href="Misc/" + filename, mime=mime, prop=prop_
                 )
 
         manifest_text += "\n  </manifest>"
@@ -1138,15 +1313,20 @@ class EpubTool:
             self.opf,
             count=1,
         )
+        opf = self._replace_manifest_id_references(opf)
 
         def re_refer(match):
-            href = match.group(3)
-            href = unquote(href).strip()
+            href, target_id = _split_file_reference(match.group(3))
             basename = path.basename(href)
-            filename = unquote(basename)
             if not basename.endswith(".ncx"):
                 try:
-                    return match.group(1) + "Text/" + self.toc_rn[href] + match.group(4)
+                    return (
+                        match.group(1)
+                        + "Text/"
+                        + self.toc_rn[href]
+                        + target_id
+                        + match.group(4)
+                    )
                 except:
                     logger.write(f"写入content.opf时，文件链接出错: {href}")
                     similar_list = []
@@ -1167,7 +1347,13 @@ class EpubTool:
                     logger.write(
                         f"已自动替换为相似度最高文件: {tmp} <-> {self.text_list[sorted_id[0]]}"
                     )
-                    return match.group(1) + "Text/" + self.toc_rn[href] + match.group(4)
+                    return (
+                        match.group(1)
+                        + "Text/"
+                        + self.toc_rn[href]
+                        + target_id
+                        + match.group(4)
+                    )
             else:
                 return match.group()
 
