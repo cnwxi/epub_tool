@@ -125,7 +125,7 @@ def add_meta_to_existing_metadata(opf_text: str) -> str | None:
     pattern = re.compile(
         r"(?is)<(?P<prefix>[A-Za-z_][\w.-]*:)?metadata\b[^>]*>"
         r"(?P<body>.*?)"
-        r"(?P<closing>[ \t]*</(?P=prefix)metadata>)"
+        r"(?P<closing>[ \t]*</(?(prefix)(?P=prefix))metadata>)"
     )
     match = pattern.search(opf_text)
     if not match:

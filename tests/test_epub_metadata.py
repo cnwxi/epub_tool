@@ -55,7 +55,29 @@ class EpubMetadataTest(unittest.TestCase):
             f'<meta name="{TOOL_META_NAME}" content="{TOOL_META_CONTENT}" />',
             opf,
         )
-        self.assertLess(opf.index("<meta"), opf.index("</metadata>"))
+        tool_meta = f'<meta name="{TOOL_META_NAME}" content="{TOOL_META_CONTENT}" />'
+        self.assertLess(opf.index(tool_meta), opf.index("</metadata>"))
+        self.assertEqual(opf.count("<metadata"), 1)
+
+    def test_add_tool_meta_to_metadata_with_namespace_attrs(self):
+        opf, changed = add_tool_meta_to_opf(
+            """<?xml version="1.0" encoding="utf-8"?>
+<package version="2.0" unique-identifier="duokan-book-id" xmlns="http://www.idpf.org/2007/opf">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:title>才女之累：李清照及其接受史</dc:title>
+    <dc:identifier id="duokan-book-id">3897812739</dc:identifier>
+  </metadata>
+  <manifest/>
+  <spine/>
+</package>"""
+        )
+
+        tool_meta = f'<meta name="{TOOL_META_NAME}" content="{TOOL_META_CONTENT}" />'
+        self.assertTrue(changed)
+        self.assertIn(tool_meta, opf)
+        self.assertEqual(opf.count("<metadata"), 1)
+        self.assertLess(opf.index("<dc:title>"), opf.index(tool_meta))
+        self.assertLess(opf.index(tool_meta), opf.index("</metadata>"))
 
     def test_add_tool_meta_creates_metadata_when_missing(self):
         opf, changed = add_tool_meta_to_opf(
