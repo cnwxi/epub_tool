@@ -31,7 +31,7 @@ npm run build:python-sidecar
 npm run tauri:build
 ```
 
-Node 版本：`24.14.1`（见 `.nvmrc`）。Python 依赖见 `requirements.txt`。
+Node 版本：`24.18.0`（见 `.nvmrc`）。Python 依赖见 `requirements.txt`。
 
 ## 架构
 

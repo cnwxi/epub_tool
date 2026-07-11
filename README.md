@@ -21,6 +21,8 @@
 
 一个面向 EPUB 批量处理的桌面工具。当前主入口已经切换到 `Tauri 2 + Vue 3 + TypeScript + Python sidecar`，围绕“批量导入、统一执行、结果回看、日志定位”组织桌面工作流。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
 
+![Epub Tool 桌面端界面预览](./img/epub_tool_newui.png)
+
 支持的处理能力：
 
 - `reformat`：重构 EPUB 目录结构、OPF 清单与资源引用，标准化文件布局
@@ -103,105 +105,11 @@ brew upgrade --cask epub-tool-newui
 - macOS：`~/Library/Logs/com.cnwxi.epubtool.newui/log.txt`
 - Linux：`~/.local/share/com.cnwxi.epubtool.newui/logs/log.txt`
 
-## 本地开发
+## 本地开发与编译
 
-### 环境准备
-
-```bash
-conda create -n epub_tool python=3.12 -y
-conda activate epub_tool
-python -m pip install -r requirements.txt
-npm install
-npm --prefix frontend install
-```
-
-如果使用 `nvm`，先执行：
-
-```bash
-source "$HOME/.nvm/nvm.sh"
-nvm use
-```
-
-### 启动桌面开发环境
-
-```bash
-npm run tauri:dev
-```
-
-这会自动完成以下工作：
-
-1. 预构建或复用 Python sidecar
-2. 启动前端开发服务器
-3. 启动 Tauri 桌面壳层
-
-### 仅启动前端界面
-
-```bash
-npm run dev
-```
-
-这个命令只启动 `frontend/` 下的 Vite 页面，用于样式开发或静态界面调试。没有 Tauri Runtime 时，任务执行、目录扫描、日志定位等桌面能力不会生效。
-
-### 单独调试 Python 处理逻辑
-
-```bash
-conda run -n epub_tool python -m python_backend.cli run --task-type reformat --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type decrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type encrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type font_encrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type font_decrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type transfer_img --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
-```
-
-这些入口适合排障、协议验证和单功能调试，不是默认使用方式。
-
-## 本地打包
-
-```bash
-conda run -n epub_tool python -m pip install -r requirements.txt pyinstaller
-conda run -n epub_tool npm run build:bundle-assets
-conda run -n epub_tool npm run tauri:build
-```
-
-打包流程会自动完成：
-
-1. 构建前端资源
-2. 校验已提交的内置 ONNX OCR 模型
-3. 构建 ONNX-only Python sidecar
-4. 准备 `src-tauri/bundle-resources/`
-5. 执行 Tauri 打包
-
-`font_decrypt` 默认使用随应用内置的 `PP-OCRv6_small_rec_onnx` 模型。模型文件位于
-`src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`，落盘约 20 MiB。
-该模型会在构建时直接打包进桌面安装包，运行时无需下载，也不会加载 Paddle Python 运行时。
-
-如需本地验证高准确率模型，可设置 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec`
-后重新准备模型并转换为 ONNX。GitHub Release 当前只发布 `_small` 安装包；
-本地构建与 Homebrew 安装也默认使用 small 版，Homebrew 会自动匹配 Intel / Apple Silicon 架构。
-
-OCR 默认最低置信度为 `0.8`。桌面 UI 支持将阈值下调至 `0`，并会随任务请求显式传入。
-默认字符筛选策略为 `strict`，适合处理本工具生成的字体混淆 EPUB，
-可识别同宽码位池混淆后的半角/全角拉丁字母和数字。处理外部混淆工具生成的文件时，
-可将 `ocr_char_policy` 设为 `compatible`。该模式保留 `strict` 的识别范围，
-并对用户选中目标字体命中的文本放宽筛选，允许更多非 ASCII 可见字符进入 OCR，
-但仍排除空白、控制字符、真实中文标点、ASCII 标点和普通符号。需要注意，
-识别范围扩大后，目标字体下的真实特殊符号也可能被 OCR 改写。
-
-当 OCR 结果低于阈值、为空、非单字或发生异常时，正文会写入带 `ocr-failure`
-class 的可视化占位，例如 `[字形缩略图 OCR_LOW_CONF]`。对应缩略图会保存到
-`Images/ocr-failures/{font_hash}_U-E000_OCR_LOW_CONF.png`，HTML 属性会保留 `U+XXXX`、
-状态码、字体路径和失败原因，便于人工回查和脚本统计。
-
-输出 EPUB 会跳过目标反混淆字体文件，并同步清理 OPF manifest 与 CSS 中的目标字体引用，避免混淆字体继续影响阅读器显示和后续文本比对。
-
-默认构建不会下载 Paddle 源模型，也不会执行 Paddle2ONNX 转换。只有维护者需要刷新已提交的 ONNX 模型时，才安装转换依赖并运行：
-
-```bash
-conda run -n epub_tool python -m pip install -r requirements-ocr-conversion.txt
-conda run -n epub_tool npm run maintenance:fetch-ocr-model
-conda run -n epub_tool npm run maintenance:convert-ocr-onnx
-```
+详见 [本地开发指南](./doc/LOCAL_DEVELOPMENT.md)。其中包括 macOS、Windows、Linux 的
+系统依赖，Python/Node.js 环境配置、桌面端启动、单独调试、打包依赖准备、Python sidecar
+二进制编译、OCR 模型维护以及 `cargo metadata` 报错排查。
 
 ## 仓库结构
 
@@ -216,6 +124,7 @@ conda run -n epub_tool npm run maintenance:convert-ocr-onnx
 ## 文档索引
 
 - [`doc/README.md`](./doc/README.md)：文档总览
+- [`doc/LOCAL_DEVELOPMENT.md`](./doc/LOCAL_DEVELOPMENT.md)：本地开发环境、启动、打包与排查
 - [`doc/CLI_USAGE.md`](./doc/CLI_USAGE.md)：Python 后端 CLI 用法
 - [`doc/TASK_PROTOCOL.md`](./doc/TASK_PROTOCOL.md)：前后端任务协议
 - [`doc/TAURI_PYTHON_BRIDGE.md`](./doc/TAURI_PYTHON_BRIDGE.md)：Tauri 与 Python 桥接说明
