@@ -3,7 +3,7 @@ import tempfile
 import unittest
 import zipfile
 
-from utils.decrypt_epub import EpubTool, run
+from python_backend.services.decrypt_epub import EpubTool, run
 
 
 BASE_IMAGE_HREF = "Images/%2A%3A.jpg"

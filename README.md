@@ -1,7 +1,7 @@
 # Epub Tool
 
 <p align="center">
-  <img src="./img/icon.ico" alt="Epub Tool Icon" width="120">
+  <img src="./assets/img/icon.ico" alt="Epub Tool Icon" width="120">
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 一个面向 EPUB 批量处理的桌面工具。当前主入口已经切换到 `Tauri 2 + Vue 3 + TypeScript + Python sidecar`，围绕“批量导入、统一执行、结果回看、日志定位”组织桌面工作流。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
 
-![Epub Tool 桌面端界面预览](./img/epub_tool_newui.png)
+![Epub Tool 桌面端界面预览](./assets/img/epub_tool_newui.png)
 
 支持的处理能力：
 
@@ -107,7 +107,7 @@ brew upgrade --cask epub-tool-newui
 
 ## 本地开发与编译
 
-详见 [本地开发指南](./doc/LOCAL_DEVELOPMENT.md)。其中包括 macOS、Windows、Linux 的
+详见 [本地开发指南](./assets/docs/LOCAL_DEVELOPMENT.md)。其中包括 macOS、Windows、Linux 的
 系统依赖，Python/Node.js 环境配置、桌面端启动、单独调试、打包依赖准备、Python sidecar
 二进制编译、OCR 模型维护以及 `cargo metadata` 报错排查。
 
@@ -115,20 +115,22 @@ brew upgrade --cask epub-tool-newui
 
 - `frontend/`：Vue 3 桌面前端
 - `src-tauri/`：Tauri 壳层、命令桥接与打包配置
-- `python_backend/`：统一 CLI、任务协议与运行器
-- `utils/`：底层 EPUB 处理脚本
-- `build_tool/`：sidecar 构建与资源准备脚本
-- `doc/`：构建、协议与桥接说明
-- `test/`：本地测试样本与验证素材
+- `python_backend/`：统一 CLI、任务协议、运行器与 EPUB 处理服务
+- `python_backend/services/`：六类底层 EPUB 处理实现与共享日志工具
+- `scripts/`：sidecar 构建、资源准备与维护脚本
+- `assets/docs/`：构建、协议与桥接说明
+- `assets/img/`：README、前端与应用打包共用图像资源
+- `tests/`：自动化测试
+- `fixtures/`：本地测试样本与验证素材（默认不提交）
 
 ## 文档索引
 
-- [`doc/README.md`](./doc/README.md)：文档总览
-- [`doc/LOCAL_DEVELOPMENT.md`](./doc/LOCAL_DEVELOPMENT.md)：本地开发环境、启动、打包与排查
-- [`doc/CLI_USAGE.md`](./doc/CLI_USAGE.md)：Python 后端 CLI 用法
-- [`doc/TASK_PROTOCOL.md`](./doc/TASK_PROTOCOL.md)：前后端任务协议
-- [`doc/TAURI_PYTHON_BRIDGE.md`](./doc/TAURI_PYTHON_BRIDGE.md)：Tauri 与 Python 桥接说明
-- [`doc/BUILD_AND_BUNDLE.md`](./doc/BUILD_AND_BUNDLE.md)：本地构建、打包与发布说明
+- [`assets/docs/README.md`](./assets/docs/README.md)：文档总览
+- [`assets/docs/LOCAL_DEVELOPMENT.md`](./assets/docs/LOCAL_DEVELOPMENT.md)：本地开发环境、启动、打包与排查
+- [`assets/docs/CLI_USAGE.md`](./assets/docs/CLI_USAGE.md)：Python 后端 CLI 用法
+- [`assets/docs/TASK_PROTOCOL.md`](./assets/docs/TASK_PROTOCOL.md)：前后端任务协议
+- [`assets/docs/TAURI_PYTHON_BRIDGE.md`](./assets/docs/TAURI_PYTHON_BRIDGE.md)：Tauri 与 Python 桥接说明
+- [`assets/docs/BUILD_AND_BUNDLE.md`](./assets/docs/BUILD_AND_BUNDLE.md)：本地构建、打包与发布说明
 
 ## 常见排查
 
@@ -152,7 +154,7 @@ brew upgrade --cask epub-tool-newui
 
 ## 更新日志
 
-- [CHANGELOG.md](./CHANGELOG.md)
+- [更新日志](./assets/docs/CHANGELOG.md)
 
 ## 鸣谢
 

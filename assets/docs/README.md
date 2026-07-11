@@ -1,6 +1,6 @@
 # 文档索引
 
-`doc/` 目录只保留当前仍然需要维护的核心说明：
+`assets/docs/` 目录只保留当前仍然需要维护的核心说明：
 
 - `CLI_USAGE.md`：Python 后端统一 CLI 的使用方法。
 - `TASK_PROTOCOL.md`：前端、Rust 与 Python 之间的任务协议。

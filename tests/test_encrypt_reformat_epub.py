@@ -3,9 +3,9 @@ import tempfile
 import unittest
 import zipfile
 
-from utils.encrypt_epub import EpubTool as EncryptEpubTool
-from utils.encrypt_epub import run as run_encrypt
-from utils.reformat_epub import run as run_reformat
+from python_backend.services.encrypt_epub import EpubTool as EncryptEpubTool
+from python_backend.services.encrypt_epub import run as run_encrypt
+from python_backend.services.reformat_epub import run as run_reformat
 
 
 def build_safe_duokan_slim_epub(

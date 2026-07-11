@@ -11,7 +11,7 @@ from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
-from utils.encrypt_font import (
+from python_backend.services.encrypt_font import (
     FONT_OBFUSCATION_ASCII_ALNUM_CODEPOINTS,
     FONT_OBFUSCATION_FULLWIDTH_ALNUM_CODEPOINTS,
     FONT_OBFUSCATION_LAYOUT_CODEPOINTS,

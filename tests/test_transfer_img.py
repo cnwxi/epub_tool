@@ -6,7 +6,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from utils.transfer_img import run_epub_img_transfer
+from python_backend.services.transfer_img import run_epub_img_transfer
 
 
 def build_webp_bytes(mode):

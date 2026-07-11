@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 try:
-    from build_tool.ocr_model_config import onnx_model_dir, resolve_ocr_model_name
+    from scripts.ocr_model_config import onnx_model_dir, resolve_ocr_model_name
 except ModuleNotFoundError:
     from ocr_model_config import onnx_model_dir, resolve_ocr_model_name
 
@@ -20,14 +20,14 @@ def verify_ocr_onnx_models() -> Path:
             "ONNX OCR 模型资源不完整: "
             + missing_text
             + "。默认构建只校验已提交的 ONNX 模型；请恢复提交的模型文件，"
-            "或按 doc/BUILD_AND_BUNDLE.md 的维护流程重新生成后提交。"
+            "或按 assets/docs/BUILD_AND_BUNDLE.md 的维护流程重新生成后提交。"
         )
 
     try:
         import yaml
         import onnxruntime as ort
     except Exception as exc:
-        raise SystemExit("ONNX OCR 模型校验需要安装 requirements.txt 运行时依赖。") from exc
+        raise SystemExit("ONNX OCR 模型校验需要安装 requirements/requirements.txt 运行时依赖。") from exc
 
     config = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
     postprocess_name = (config.get("PostProcess") or {}).get("name")

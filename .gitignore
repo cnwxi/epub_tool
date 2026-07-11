@@ -50,7 +50,6 @@ log.txt
 *.log
 log_file/
 result.txt
-test/out/
 app-state.json
 
 # 本地样本与临时文件
@@ -58,7 +57,7 @@ app-state.json
 .DS_Store
 .AppleDouble
 .LSOverride
-test
+fixtures/
 
 # 编辑器配置
 .vscode/

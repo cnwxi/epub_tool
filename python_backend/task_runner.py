@@ -45,12 +45,12 @@ TASK_LABELS = {
     "transfer_img": "图片转换",
 }
 MODULE_PATHS = {
-    "reformat": "utils.reformat_epub",
-    "decrypt": "utils.decrypt_epub",
-    "encrypt": "utils.encrypt_epub",
-    "font_encrypt": "utils.encrypt_font",
-    "font_decrypt": "utils.decrypt_font",
-    "transfer_img": "utils.transfer_img",
+    "reformat": "python_backend.services.reformat_epub",
+    "decrypt": "python_backend.services.decrypt_epub",
+    "encrypt": "python_backend.services.encrypt_epub",
+    "font_encrypt": "python_backend.services.encrypt_font",
+    "font_decrypt": "python_backend.services.decrypt_font",
+    "transfer_img": "python_backend.services.transfer_img",
 }
 FUNCTION_NAMES = {
     "reformat": "run",
@@ -126,7 +126,7 @@ def load_modules() -> dict[str, Any]:
             _LOADED_MODULES[task_type] = import_module(module_path)
     except ModuleNotFoundError as exc:
         raise RuntimeError(
-            "Python 依赖未安装完整，请先执行 `python -m pip install -r requirements.txt`。"
+            "Python 依赖未安装完整，请先执行 `python -m pip install -r requirements/requirements.txt`。"
         ) from exc
 
     return _LOADED_MODULES

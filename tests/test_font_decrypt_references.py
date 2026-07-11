@@ -5,7 +5,7 @@ import zipfile
 
 from bs4 import BeautifulSoup
 
-from utils.decrypt_font import FontDecrypt
+from python_backend.services.decrypt_font import FontDecrypt
 
 
 def build_reference_test_epub(epub_path):

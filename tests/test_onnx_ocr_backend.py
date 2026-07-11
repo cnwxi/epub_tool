@@ -1,14 +1,15 @@
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from build_tool import build_python_sidecar
-from build_tool import ocr_model_config
-from utils.decrypt_font import (
+from scripts import build_python_sidecar
+from scripts import ocr_model_config
+from python_backend.services.decrypt_font import (
     DEFAULT_OCR_MODEL_NAME,
     OCR_CHAR_POLICY_COMPATIBLE,
     OCR_CHAR_POLICY_STRICT,
@@ -19,11 +20,26 @@ from utils.decrypt_font import (
     OnnxGlyphOcrBackend,
     create_onnx_session_options,
     format_ocr_progress,
+    iter_onnx_ocr_model_dir_candidates,
     load_text_recognition_config,
 )
 
 
 class OnnxOcrBackendTest(unittest.TestCase):
+    def test_onnx_model_candidates_include_repo_resource_when_cwd_is_elsewhere(self):
+        expected = (
+            Path(__file__).resolve().parent.parent
+            / "src-tauri"
+            / "bundle-resources"
+            / "ocr-models"
+            / f"{DEFAULT_OCR_MODEL_NAME}_onnx"
+        )
+
+        with patch("python_backend.services.decrypt_font.os.getcwd", return_value="/tmp"):
+            candidates = list(iter_onnx_ocr_model_dir_candidates())
+
+        self.assertEqual(candidates[-1], str(expected))
+
     def test_format_ocr_progress_includes_count_and_percent(self):
         self.assertEqual(format_ocr_progress(3, 12), "，进度 3/12 (25.0%)")
         self.assertEqual(format_ocr_progress(0, 0), "")
@@ -268,7 +284,7 @@ class FontDecryptOcrTextCleanupTest(unittest.TestCase):
                 font_decrypt.font_to_replace_mapping = {}
                 font_decrypt.font_to_ocr_failure_mapping = {}
 
-                with patch("utils.decrypt_font.FontGlyphRenderer", FakeRenderer):
+                with patch("python_backend.services.decrypt_font.FontGlyphRenderer", FakeRenderer):
                     font_decrypt.build_ocr_mapping()
 
                 self.assertEqual(

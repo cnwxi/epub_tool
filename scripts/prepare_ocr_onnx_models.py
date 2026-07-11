@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 try:
-    from build_tool.ocr_model_config import (
+    from scripts.ocr_model_config import (
         onnx_model_dir,
         onnx_model_name,
         ocr_model_dir,
@@ -53,7 +53,7 @@ def run_paddle2onnx() -> None:
     if not paddle2onnx:
         raise SystemExit(
             "未找到 paddle2onnx CLI。刷新 OCR 模型时，请在 conda epub_tool 环境安装 "
-            "`requirements-ocr-conversion.txt`。"
+            "`requirements/requirements-ocr-conversion.txt`。"
         )
 
     command = [
@@ -80,7 +80,7 @@ def run_paddle2onnx() -> None:
     except subprocess.CalledProcessError as exc:
         raise SystemExit(
             "Paddle2ONNX 转换失败。请确认当前命令运行在 conda epub_tool 环境，"
-            "且已安装 requirements-ocr-conversion.txt。"
+            "且已安装 requirements/requirements-ocr-conversion.txt。"
         ) from exc
 
 

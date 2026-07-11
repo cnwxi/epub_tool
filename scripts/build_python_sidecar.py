@@ -24,12 +24,12 @@ BASE_REQUIRED_MODULES = [
     "yaml",
     "chardet",
     "bidi",
-    "utils.reformat_epub",
-    "utils.decrypt_epub",
-    "utils.encrypt_epub",
-    "utils.encrypt_font",
-    "utils.decrypt_font",
-    "utils.transfer_img",
+    "python_backend.services.reformat_epub",
+    "python_backend.services.decrypt_epub",
+    "python_backend.services.encrypt_epub",
+    "python_backend.services.encrypt_font",
+    "python_backend.services.decrypt_font",
+    "python_backend.services.transfer_img",
 ]
 ONNX_REQUIRED_MODULES = [
     "onnxruntime",
@@ -76,7 +76,7 @@ def ensure_runtime_dependencies() -> None:
         raise SystemExit(
             "Missing Python dependencies required for the sidecar build: "
             + ", ".join(missing)
-            + ". Run `python -m pip install -r requirements.txt pyinstaller` with the same interpreter."
+            + ". Run `python -m pip install -r requirements/requirements.txt pyinstaller` with the same interpreter."
         )
 
 
@@ -89,9 +89,8 @@ def sidecar_exists() -> bool:
 
 
 def iter_sidecar_inputs():
-    for package_dir in (REPO_ROOT / "python_backend", REPO_ROOT / "utils"):
-        yield from package_dir.rglob("*.py")
-    yield from REPO_ROOT.glob("requirements*.txt")
+    yield from (REPO_ROOT / "python_backend").rglob("*.py")
+    yield from (REPO_ROOT / "requirements").glob("requirements*.txt")
     yield Path(__file__).resolve()
 
 
@@ -141,8 +140,6 @@ def build_sidecar() -> Path:
         str(REPO_ROOT),
         "--collect-submodules",
         "python_backend",
-        "--collect-submodules",
-        "utils",
         *PYINSTALLER_ONNX_ARGS,
         "--collect-submodules",
         "bidi",

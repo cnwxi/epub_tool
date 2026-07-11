@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import brandEasterIconUrl from "../../../img/icon.png";
+import brandEasterIconUrl from "../../../assets/img/icon.png";
 
 import type { SectionKey } from "../types";
 

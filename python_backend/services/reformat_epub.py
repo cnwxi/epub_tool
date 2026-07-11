@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 import os
 
 try:
-    from utils.log import logwriter
+    from python_backend.services.log import logwriter
 except:
     from log import logwriter
 

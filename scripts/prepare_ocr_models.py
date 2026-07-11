@@ -7,7 +7,7 @@ import urllib.request
 from pathlib import Path
 
 try:
-    from build_tool.ocr_model_config import (
+    from scripts.ocr_model_config import (
         ocr_model_dir,
         ocr_model_url,
         resolve_ocr_model_name,

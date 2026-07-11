@@ -42,9 +42,9 @@
       "bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*": "ocr-models/PP-OCRv6_small_rec_onnx/"
     },
     "icon": [
-      "../img/icon.png",
-      "../img/icon.ico",
-      "../img/icon.icns"
+      "../assets/img/icon.png",
+      "../assets/img/icon.ico",
+      "../assets/img/icon.icns"
     ],
     "macOS": {
       "signingIdentity": "-",

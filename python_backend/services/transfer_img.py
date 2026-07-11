@@ -7,7 +7,7 @@ from PIL import Image
 from io import BytesIO
 
 try:
-    from utils.log import logwriter
+    from python_backend.services.log import logwriter
 except:
     from log import logwriter
 
@@ -504,7 +504,7 @@ def run_epub_img_transfer(epub_path, output_path):
 
 
 if __name__ == "__main__":
-    it = ImageTransfer("test/demo.epub", "./test/")
+    it = ImageTransfer("fixtures/demo.epub", "./fixtures/")
     it.read_files()
     it.replace()
     it.close_files()

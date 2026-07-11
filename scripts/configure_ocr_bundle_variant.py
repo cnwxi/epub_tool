@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 try:
-    from build_tool.ocr_model_config import onnx_model_name, resolve_ocr_model_name
+    from scripts.ocr_model_config import onnx_model_name, resolve_ocr_model_name
 except ModuleNotFoundError:
     from ocr_model_config import onnx_model_name, resolve_ocr_model_name
 

@@ -25,7 +25,7 @@ Vue 组件
 
 ## Python 侧职责
 
-- 将旧 `utils/` 包装成统一任务入口
+- 通过 `python_backend/services/` 组织 EPUB 处理实现，并提供统一任务入口
 - 统一计算输出路径
 - 同时写 `log.txt` 和 stdout 事件
 - 保持旧脚本逻辑不被重写
@@ -39,5 +39,5 @@ Vue 组件
 ## 当前限制
 
 - sidecar 需要在构建机额外安装 `pyinstaller`
-- ONNX 模型转换仅用于维护已提交模型，需要在 `conda epub_tool` 环境中额外安装 `requirements-ocr-conversion.txt`
+- ONNX 模型转换仅用于维护已提交模型，需要在 `conda epub_tool` 环境中额外安装 `requirements/requirements-ocr-conversion.txt`
 - 还未做任务取消

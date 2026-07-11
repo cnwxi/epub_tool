@@ -6,7 +6,7 @@
 
 ```bash
 conda create -n epub_tool python=3.12 -y
-conda run -n epub_tool python -m pip install -r requirements.txt
+conda run -n epub_tool python -m pip install -r requirements/requirements.txt
 ```
 
 ## 查看帮助

@@ -2,7 +2,6 @@
 # !/usr/bin/env python
 # 源码: sigil吧ID: 遥遥心航
 # 二改: cnwxi
-# 额外感谢: 故里
 
 import zipfile
 import re, sys
@@ -11,11 +10,10 @@ from os import path
 from urllib.parse import unquote
 from xml.etree import ElementTree
 import os
-from difflib import SequenceMatcher
 from hashlib import md5 as hashlibmd5
 
 try:
-    from utils.log import logwriter
+    from python_backend.services.log import logwriter
 except:
     from log import logwriter
 
@@ -40,29 +38,10 @@ def _split_slim_href(href):
     return base_href, href_extension, is_slim
 
 
-def _append_slim_to_id(item_id):
-    """在 ID 的扩展名前插入统一的 ~slim 后缀。"""
-    id_stem, id_extension = path.splitext(item_id)
-    return f"{id_stem}~slim{id_extension}"
-
-
-def _strip_slim_suffix_from_id(item_id):
-    """移除 ID 末尾已有的多看 slim 后缀，用于孤立 slim 图片兜底命名。"""
-    id_stem, id_extension = path.splitext(item_id)
-    if id_stem.lower().endswith("slim"):
-        id_stem = re.sub(r"(?i)[~_-]?slim$", "", id_stem)
-    return id_stem + id_extension
-
-
 class EpubTool:
 
     def __init__(self, epub_src):
         self.encrypted = False
-        self.encryption_uris = []
-        self.encryption_keynames = set()
-        self.encryption_algorithms = set()
-        self.encrypted_text_or_css = False
-        self.id_to_raw_href = {}
         self.epub = zipfile.ZipFile(epub_src)
         self.tgt_epub = None
         self.file_write_path = None
@@ -75,9 +54,9 @@ class EpubTool:
         self._init_namelist()
         self._init_mime_map()
         self._init_opf()
-        self._detect_encryption()
         self.manifest_list = []  # (id,opf_href,mime,properties)
         self.toc_rn = {}
+        self.all_mixed = {}
         self.id_to_href = {}  # { id : href.lower, ... }
         self.href_to_id = {}  # { href.lower : id, ...}
         self.text_list = []  # (id,opf_href,properties)
@@ -96,7 +75,7 @@ class EpubTool:
         if output_path is not None and os.path.isdir(output_path):
             self.output_path = output_path
         self.file_write_path = path.join(
-            self.output_path, self.epub_name.replace(".epub", "_decrypt.epub")
+            self.output_path, self.epub_name.replace(".epub", "_encrypt.epub")
         )
 
     def _init_namelist(self):
@@ -138,8 +117,9 @@ class EpubTool:
                 continue
             seen.add(enc)
             try:
-                text = data.decode(enc)
-                return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+                return re.sub(
+                    r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", data.decode(enc)
+                )
             except UnicodeDecodeError:
                 continue
         try:
@@ -156,27 +136,16 @@ class EpubTool:
             raise FileNotFoundError(f"zip内缺少XML文件: {zip_path}")
         return self._decode_xml_bytes(data)
 
-    def _xml_parse_error_with_context(self, xml_text: str, label: str, err: Exception):
-        logger.write(f"XML parse error [{label}]: {err}")
-        pos = getattr(err, "position", None)
-        if not pos:
-            return
-        line_no, col_no = pos
-        logger.write(f"位置: line={line_no}, column={col_no}")
-        lines = xml_text.splitlines()
-        start = max(1, line_no - 2)
-        end = min(len(lines), line_no + 2)
-        logger.write(f"{label} 出错上下文:")
-        for idx in range(start, end + 1):
-            logger.write(f"{idx:>6}: {lines[idx - 1]}")
-
     def _sanitize_attr_value(self, value: str) -> str:
         value = re.sub(r"&(?!#\d+;|#x[0-9a-fA-F]+;|[a-zA-Z][\w.-]*;)", "&amp;", value)
         value = value.replace("<", "&lt;").replace(">", "&gt;")
         return value
 
     def _sanitize_xml_attr_text(self, xml_text: str) -> str:
-        pattern = re.compile(r"(<[^>]+?)((?:\s+[^\s=>/]+(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'))?)+)(\s*/?>)", re.DOTALL)
+        pattern = re.compile(
+            r"(<[^>]+?)((?:\s+[^\s=>/]+(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'))?)+)(\s*/?>)",
+            re.DOTALL,
+        )
 
         def repl_tag(match):
             prefix, attrs, suffix = match.groups()
@@ -196,15 +165,27 @@ class EpubTool:
 
         return pattern.sub(repl_tag, xml_text)
 
-    def _parse_xml_safe(self, xml_text: str, label: str, allow_sanitize=True):
+    def _xml_parse_error_with_context(self, xml_text: str, label: str, err: Exception):
+        logger.write(f"XML parse error [{label}]: {err}")
+        pos = getattr(err, "position", None)
+        if not pos:
+            return
+        line_no, col_no = pos
+        logger.write(f"位置: line={line_no}, column={col_no}")
+        lines = xml_text.splitlines()
+        start = max(1, line_no - 2)
+        end = min(len(lines), line_no + 2)
+        logger.write(f"{label} 出错上下文:")
+        for idx in range(start, end + 1):
+            logger.write(f"{idx:>6}: {lines[idx - 1]}")
+
+    def _parse_xml_safe(self, xml_text: str, label: str):
         first_err = None
         try:
             return ElementTree.fromstring(xml_text)
         except ElementTree.ParseError as err:
             first_err = err
             self._xml_parse_error_with_context(xml_text, label, err)
-            if not allow_sanitize:
-                raise
         sanitized = self._sanitize_xml_attr_text(xml_text)
         if sanitized == xml_text:
             raise first_err
@@ -237,14 +218,6 @@ class EpubTool:
         self.id_to_href = {}
         self.href_to_id = {}
         self.spine_list = []
-        self.id_to_raw_href = {}
-
-        cover_match = re.search(
-            r'(?is)<meta\b[^>]*\bname\s*=\s*(["\'])cover\1[^>]*\bcontent\s*=\s*(["\'])(.*?)\2',
-            self.opf,
-        )
-        if cover_match:
-            self.metadata["cover"] = cover_match.group(3)
 
         manifest_match = re.search(r"(?is)<manifest\b[^>]*>(.*?)</manifest>", self.opf)
         if manifest_match:
@@ -258,15 +231,13 @@ class EpubTool:
                     continue
                 href = unquote(href_raw)
                 self.id_to_h_m_p[item_id] = (href, mime, prop)
-                self.id_to_raw_href[item_id] = href_raw
                 self.id_to_href[item_id] = href.lower()
                 self.href_to_id[href.lower()] = item_id
 
-        spine_open = re.search(r"(?is)<spine\b([^>]*)>", self.opf)
         self.tocid = ""
+        spine_open = re.search(r"(?is)<spine\b([^>]*)>", self.opf)
         if spine_open:
-            spine_attrs = self._parse_tag_attrs(spine_open.group(1))
-            self.tocid = spine_attrs.get("toc", "")
+            self.tocid = self._parse_tag_attrs(spine_open.group(1)).get("toc", "")
         spine_match = re.search(r"(?is)<spine\b[^>]*>(.*?)</spine>", self.opf)
         if spine_match:
             for itemref in re.finditer(r"(?is)<itemref\b(.*?)/?>", spine_match.group(1)):
@@ -293,84 +264,6 @@ class EpubTool:
         if self.tocid:
             self.etree_opf["spine"].set("toc", self.tocid)
 
-    def _detect_encryption(self):
-        enc_name = None
-        for name in self.namelist:
-            if name.lower() == "meta-inf/encryption.xml":
-                enc_name = name
-                break
-        if not enc_name:
-            return
-        try:
-            encryption_xml = self._read_xml_text(enc_name)
-            root = self._parse_xml_safe(
-                encryption_xml,
-                label=f"ENCRYPTION:{enc_name}",
-                allow_sanitize=False,
-            )
-        except Exception as e:
-            logger.write(f"解析 encryption.xml 失败: {e}")
-            return
-
-        uris, keynames, algs = self._extract_encryption_info(root)
-
-        self.encryption_uris = uris
-        self.encryption_keynames = keynames
-        self.encryption_algorithms = algs
-        key_hits = any(k == "DuoKan.Inc" for k in keynames)
-        algo_hits = any("aes128-ctr" in a.lower() for a in algs)
-        important = []
-        for uri in uris:
-            u = uri.lower()
-            if (
-                "oebps/text/" in u
-                or "oebps/styles/" in u
-                or "oebps/images/" in u
-                or u.startswith("text/")
-                or u.startswith("styles/")
-                or u.startswith("images/")
-            ):
-                important.append(uri)
-        self.encrypted_text_or_css = any(
-            (
-                "oebps/text/" in u.lower()
-                or "oebps/styles/" in u.lower()
-                or u.lower().startswith("text/")
-                or u.lower().startswith("styles/")
-            )
-            for u in uris
-        )
-        if uris:
-            self.encrypted = True
-            logger.write(f"检测到 encryption.xml 加密资源: {len(uris)} 项")
-            logger.write(f"加密资源示例(最多10条): {uris[:10]}")
-        if key_hits:
-            logger.write("检测到 DuoKan.Inc KeyName")
-        if algo_hits:
-            logger.write("检测到 aes128-ctr 加密算法标识")
-        if uris and important:
-            logger.write(
-                "提醒: 本工具仅做结构规范化/反混淆，不提供 DRM 解密；对加密内容将无法还原明文。"
-            )
-
-    def _extract_encryption_info(self, root):
-        uris = []
-        keynames = set()
-        algs = set()
-        for elem in root.iter():
-            tag = re.sub(r"\{.*?\}", "", elem.tag)
-            if tag == "CipherReference":
-                uri = elem.get("URI") or ""
-                if uri:
-                    uris.append(uri)
-            elif tag == "KeyName" and elem.text:
-                keynames.add(elem.text.strip())
-            elif tag == "EncryptionMethod":
-                alg = elem.get("Algorithm") or ""
-                if alg:
-                    algs.add(alg)
-        return uris, keynames, algs
-
     def _init_opf(self):
         # 通过 container.xml 读取 opf 文件
         try:
@@ -396,8 +289,7 @@ class EpubTool:
     def _parse_opf(self):
         parse_failed = False
         try:
-            package = self._parse_xml_safe(self.opf, label=f"OPF:{self.opfpath}")
-            self.etree_opf = {"package": package}
+            self.etree_opf = {"package": self._parse_xml_safe(self.opf, f"OPF:{self.opfpath}")}
         except Exception as e:
             logger.write(f"OPF 解析失败，启用降级解析: {e}")
             self._fallback_parse_opf_manifest_spine()
@@ -441,66 +333,51 @@ class EpubTool:
         # opf item分类
         opf_dir = path.dirname(self.opfpath)
 
-        # 多看 slim 图片只按 href 文件名配对，不能依赖原始 ID 是否包含 slim。
         image_id_by_href = {}
         for item_id, item_href, item_mime, _ in self.manifest_list:
             base_href, _, is_slim = _split_slim_href(item_href)
             if item_mime and "image/" in item_mime and not is_slim:
                 image_id_by_href[base_href.lower()] = item_id
 
-        self.manifest_id_renames = {}
-        used_manifest_ids = {item[0] for item in self.manifest_list}
-
-        def allocate_slim_id(base_id, old_id):
-            candidate = _append_slim_to_id(base_id)
-            if candidate == old_id or candidate not in used_manifest_ids:
-                return candidate
-
-            id_stem, id_extension = path.splitext(base_id)
-            sequence = 2
-            while True:
-                candidate = f"{id_stem}_{sequence}~slim{id_extension}"
-                if candidate == old_id or candidate not in used_manifest_ids:
-                    return candidate
-                sequence += 1
-
         # 生成新的href
         ############################################################
         def creatNewHerf(_id, _href, _mime):
-            base_href, href_extension, is_slim = _split_slim_href(_href)
-            output_id = _id
+            _id_name = _id.split(".")[0]
+            base_href, _file_extension, is_slim = _split_slim_href(_href)
             if _mime and "image/" in _mime and is_slim:
-                base_id = image_id_by_href.get(base_href.lower())
-                if base_id is None:
-                    base_id = _strip_slim_suffix_from_id(_id)
-                output_id = allocate_slim_id(base_id, _id)
-                self.manifest_id_renames[_id] = output_id
-                used_manifest_ids.discard(_id)
-                used_manifest_ids.add(output_id)
-
-            id_name, _ = path.splitext(output_id)
-            if re.search(r'[\\/:*?"<>|]', id_name):
-                logger.write(f"ID: {output_id} 中包含非法字符")
-                id_name = hashlibmd5(id_name.encode()).hexdigest()
-                logger.write(f"ID: {output_id} 替换为 {id_name}")
-
-            image_slim = "~slim" if _mime and "image/" in _mime and is_slim else ""
-            if image_slim and id_name.lower().endswith("slim"):
-                id_name = re.sub(r"(?i)[~_-]?slim$", "", id_name)
-            new_href = f"{id_name}{image_slim}{href_extension.lower()}"
-            logger.write(f"decrypt href: {_id}:{_href} -> {new_href}")
+                image_slim = "~slim"
+                _id_name = image_id_by_href.get(base_href.lower(), _id).split(".")[0]
+            else:
+                image_slim = ""
+            _href_hash = hashlibmd5(_id_name.encode()).digest()
+            _href_hash = int.from_bytes(_href_hash, byteorder="big")
+            bin_hash = bin(_href_hash)
+            new_href = (
+                bin_hash.replace("-", "*")
+                .replace("0b", "")
+                .replace("1", "*")
+                .replace("0", ":")
+            )
+            # 加_为了防止Windows系统异常
+            new_href = f"_{new_href}{image_slim}{_file_extension.lower()}"
+            if new_href not in self.toc_rn.values():
+                self.toc_rn[_href] = new_href
+                logger.write(f"encrypt href: {_id}:{_href} -> {self.toc_rn[_href]}")
+            else:
+                self.toc_rn[_href] = new_href
+                logger.write(f"encrypt href: {_id}:{_href} -> {new_href} 重复")
             return new_href
 
         ############################################################
+
         for id, href, mime, properties in self.manifest_list:
             bkpath = opf_dir + "/" + href if opf_dir else href
-            # 判断herf是否包含特殊字符
             if re.search(r'[\\/:*?"<>|]', href.rsplit("/")[-1]):
                 self.encrypted = True
             if mime == "application/xhtml+xml":
-                new_href = creatNewHerf(id, href, mime)
-                self.text_list.append((id, href, properties, new_href))
-                self.toc_rn[href] = new_href
+                self.text_list.append(
+                    (id, href, properties, creatNewHerf(id, href, mime))
+                )
             elif mime == "text/css":
                 self.css_list.append(
                     (id, href, properties, creatNewHerf(id, href, mime))
@@ -530,66 +407,6 @@ class EpubTool:
                 )
 
         self._check_manifest_and_spine()
-
-    def _replace_manifest_id_references(self, opf):
-        """同步替换 OPF 中指向已重命名 manifest ID 的引用。"""
-        if not self.manifest_id_renames:
-            return opf
-
-        idref_pattern = re.compile(
-            r'(\b(?:idref|fallback|fallback-style|media-overlay|handler|toc)\s*=\s*)(["\'])(.*?)\2',
-            flags=re.IGNORECASE,
-        )
-
-        def replace_idref(match):
-            value = self.manifest_id_renames.get(match.group(3), match.group(3))
-            return f"{match.group(1)}{match.group(2)}{value}{match.group(2)}"
-
-        opf = idref_pattern.sub(replace_idref, opf)
-
-        refines_pattern = re.compile(
-            r'(\brefines\s*=\s*)(["\'])#(.*?)\2',
-            flags=re.IGNORECASE,
-        )
-
-        def replace_refines(match):
-            value = self.manifest_id_renames.get(match.group(3), match.group(3))
-            return f"{match.group(1)}{match.group(2)}#{value}{match.group(2)}"
-
-        opf = refines_pattern.sub(replace_refines, opf)
-
-        def replace_cover_meta(match):
-            tag = match.group()
-            if not re.search(
-                r'\bname\s*=\s*(["\'])cover\1',
-                tag,
-                flags=re.IGNORECASE,
-            ):
-                return tag
-
-            def replace_content(content_match):
-                value = self.manifest_id_renames.get(
-                    content_match.group(3), content_match.group(3)
-                )
-                return (
-                    f"{content_match.group(1)}{content_match.group(2)}"
-                    f"{value}{content_match.group(2)}"
-                )
-
-            return re.sub(
-                r'(\bcontent\s*=\s*)(["\'])(.*?)\2',
-                replace_content,
-                tag,
-                count=1,
-                flags=re.IGNORECASE,
-            )
-
-        return re.sub(
-            r"<meta\b[^>]*>",
-            replace_cover_meta,
-            opf,
-            flags=re.IGNORECASE,
-        )
 
     def _parse_metadata(self):
         self.metadata = {}
@@ -622,14 +439,12 @@ class EpubTool:
         self.id_to_h_m_p = {}  # { id : (href,mime,properties) , ... }
         self.id_to_href = {}  # { id : href.lower, ... }
         self.href_to_id = {}  # { href.lower : id, ...}
-        self.id_to_raw_href = {}
         if_error = False
         for item in self.etree_opf["manifest"]:
             # 检查opf文件中是否存在错误
             try:
                 id = item.get("id")
-                raw_href = item.get("href")
-                href = unquote(raw_href) if raw_href is not None else None
+                href = unquote(item.get("href"))
             except Exception as e:
                 str_item = (
                     ElementTree.tostring(item, encoding="unicode")
@@ -642,12 +457,8 @@ class EpubTool:
                 continue
             mime = item.get("media-type")
             properties = item.get("properties") if item.get("properties") else ""
-            if not id or href is None:
-                if_error = True
-                continue
 
             self.id_to_h_m_p[id] = (href, mime, properties)
-            self.id_to_raw_href[id] = raw_href if raw_href is not None else href
             self.id_to_href[id] = href.lower()
             self.href_to_id[href.lower()] = id
         if if_error:
@@ -769,18 +580,13 @@ class EpubTool:
         output_path = self.output_path
         logger.write(f"输出路径: {output_path}")
         return zipfile.ZipFile(
-            path.join(output_path, self.epub_name.replace(".epub", "_decrypt.epub")),
+            path.join(output_path, self.epub_name.replace(".epub", "_encrypt.epub")),
             "w",
             zipfile.ZIP_STORED,
         )
 
     # 重构
     def restructure(self):
-        if self.encrypted and self.encrypted_text_or_css:
-            logger.write(
-                "检测到 encryption.xml 标记了 Text/Styles 资源，继续尝试反混淆重构。"
-            )
-            logger.write("如果内容确实被加密，后续读取资源时会失败并中止处理。")
         self.tgt_epub = self.create_tgt_epub()
         # mimetype
         mimetype = self.epub.read("mimetype")
@@ -900,12 +706,7 @@ class EpubTool:
 
         # xhtml文件
         for xhtml_bkpath, new_name in re_path_map["text"].items():
-            try:
-                text = self.epub.read(xhtml_bkpath).decode("utf-8")
-            except UnicodeDecodeError as e:
-                raise RuntimeError(
-                    f"XHTML资源无法按UTF-8读取，可能仍处于加密状态: {xhtml_bkpath}"
-                ) from e
+            text = self.epub.read(xhtml_bkpath).decode("utf-8")
             if not text.startswith("<?xml"):
                 text = '<?xml version="1.0" encoding="utf-8"?>\n' + text
             if not re.match(r"(?s).*<!DOCTYPE html", text):
@@ -1086,7 +887,7 @@ class EpubTool:
                 text,
             )
 
-            # 修改 url
+            # 修改 text
             def re_url(match):
                 url, target_id = _split_file_reference(match.group(2))
                 bkpath = get_bookpath(url, xhtml_bkpath)
@@ -1127,10 +928,8 @@ class EpubTool:
         for css_bkpath, new_name in re_path_map["css"].items():
             try:
                 css = self.epub.read(css_bkpath).decode("utf-8")
-            except UnicodeDecodeError as e:
-                raise RuntimeError(
-                    f"CSS资源无法按UTF-8读取，可能仍处于加密状态: {css_bkpath}"
-                ) from e
+            except:
+                continue
 
             # 修改 @import
             def re_import(match):
@@ -1265,46 +1064,29 @@ class EpubTool:
         for id, href, mime, prop in self.manifest_list:
             bkpath = get_bookpath(href, self.opfpath)
             prop_ = ' properties="' + prop + '"' if prop else ""
-            output_id = self.manifest_id_renames.get(id, id)
             if mime == "application/xhtml+xml":
                 filename = re_path_map["text"][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=output_id, href="Text/" + filename, mime=mime, prop=prop_
-                )
+                manifest_text += f'\n    <item id="{id}" href="Text/{filename}" media-type="{mime}"{prop_}/>'
             elif mime == "text/css":
                 filename = re_path_map["css"][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=output_id, href="Styles/" + filename, mime=mime, prop=prop_
-                )
+                manifest_text += f'\n    <item id="{id}" href="Styles/{filename}" media-type="{mime}"{prop_}/>'
             elif "image/" in mime:
                 filename = re_path_map["image"][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=output_id, href="Images/" + filename, mime=mime, prop=prop_
-                )
+                manifest_text += f'\n    <item id="{id}" href="Images/{filename}" media-type="{mime}"{prop_}/>'
             elif "font/" in mime or href.lower().endswith((".ttf", ".otf", ".woff")):
                 filename = re_path_map["font"][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=output_id, href="Fonts/" + filename, mime=mime, prop=prop_
-                )
+                manifest_text += f'\n    <item id="{id}" href="Fonts/{filename}" media-type="{mime}"{prop_}/>'
             elif "audio/" in mime:
                 filename = re_path_map["audio"][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=output_id, href="Audio/" + filename, mime=mime, prop=prop_
-                )
+                manifest_text += f'\n    <item id="{id}" href="Audio/{filename}" media-type="{mime}"{prop_}/>'
             elif "video/" in mime:
                 filename = re_path_map["video"][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=output_id, href="Video/" + filename, mime=mime, prop=prop_
-                )
+                manifest_text += f'\n    <item id="{id}" href="Video/{filename}" media-type="{mime}"{prop_}/>'
             elif id == self.tocid:
-                manifest_text += '\n    <item id="{id}" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'.format(
-                    id=output_id
-                )
+                manifest_text += f'\n    <item id="{id}" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'
             else:
                 filename = re_path_map["other"][bkpath]
-                manifest_text += '\n    <item id="{id}" href="{href}" media-type="{mime}"{prop}/>'.format(
-                    id=output_id, href="Misc/" + filename, mime=mime, prop=prop_
-                )
+                manifest_text += f'\n    <item id="{id}" href="Misc/{filename}" media-type="{mime}"{prop_}/>'
 
         manifest_text += "\n  </manifest>"
         opf = re.sub(
@@ -1313,47 +1095,24 @@ class EpubTool:
             self.opf,
             count=1,
         )
-        opf = self._replace_manifest_id_references(opf)
 
         def re_refer(match):
             href, target_id = _split_file_reference(match.group(3))
             basename = path.basename(href)
             if not basename.endswith(".ncx"):
-                try:
-                    return (
-                        match.group(1)
-                        + "Text/"
-                        + self.toc_rn[href]
-                        + target_id
-                        + match.group(4)
-                    )
-                except:
-                    logger.write(f"写入content.opf时，文件链接出错: {href}")
-                    similar_list = []
-                    for i in self.text_list:
-                        similar = SequenceMatcher(
-                            None,
-                            i[0].rsplit("/", 1)[-1].split(".")[0],
-                            href.rsplit("/", 1)[-1].split(".")[0],
-                        ).quick_ratio()
-                        similar_list.append(similar)
-                    sorted_id = sorted(
-                        range(len(similar_list)),
-                        key=lambda k: similar_list[k],
-                        reverse=True,
-                    )
-                    tmp = href
-                    href = self.text_list[sorted_id[0]][1]
-                    logger.write(
-                        f"已自动替换为相似度最高文件: {tmp} <-> {self.text_list[sorted_id[0]]}"
-                    )
-                    return (
-                        match.group(1)
-                        + "Text/"
-                        + self.toc_rn[href]
-                        + target_id
-                        + match.group(4)
-                    )
+                if href.startswith("/"):
+                    href = href[1:]
+                elif href.startswith("./"):
+                    href = href[2:]
+                elif href.startswith("../"):
+                    href = href[3:]
+                return (
+                    match.group(1)
+                    + "Text/"
+                    + self.toc_rn[href]
+                    + target_id
+                    + match.group(4)
+                )
             else:
                 return match.group()
 
@@ -1437,20 +1196,18 @@ def epub_sources():
 def run(epub_src, output_path=None):
     epub = None
     try:
-        logger.write(f"\n正在尝试解密EPUB: {epub_src}")
-        if epub_src.lower().endswith("_decrypt.epub"):
-            logger.write("警告: 该文件已解密，无需再次处理！")
+        logger.write(f"\n正在尝试加密EPUB: {epub_src}")
+        if epub_src.lower().endswith("_encrypt.epub"):
+            logger.write("警告: 该文件已加密，无需再次处理！")
             return "skip"
         epub = EpubTool(epub_src)
         epub.set_output_path(output_path)
-        if not epub.encrypted:
-            logger.write("警告: 该文件未加密，无需处理！")
+        if epub.encrypted == True:
+            logger.write("警告: 该文件已加密，无需再次处理！")
             epub.close_files()
             epub.fail_del_target()
             return "skip"
-        ret = epub.restructure()  # 重构
-        if ret == "skip":
-            return "skip"
+        epub.restructure()  # 重构
         el = epub.errorLink_log.copy()
         del_keys = []
         for file_path, log in epub.errorLink_log.items():
@@ -1474,15 +1231,16 @@ def run(epub_src, output_path=None):
                         f"问题: 发现spine节点内部存在无效引用ID {error_value} !!!"
                     )
                     logger.write(
-                        "措施: 请自行检查spine内的itemref节点并手动修改，确保引用的ID存在于manifest的item项。\n（大小写不一致也会导致引用无效。）"
+                        "措施: 请自行检查spine内的itemref节点并手动修改，确保引用的ID存在于manifest的item项。\n大小写不一致也会导致引用无效。）"
                     )
                 elif error_type == "xhtml_not_in_spine":
                     logger.write(
                         f"问题: 发现ID为 {error_value} 的文件manifest中登记为application/xhtml+xml类型，但不被spine节点的项所引用"
                     )
                     logger.write(
-                        "措施: 自行检查该文件是否需要被spine引用。部分阅读器中，如果存在xhtml文件不被spine引用，可能导致epub无法打开。"
+                        f"措施: 自行检查该文件是否需要被spine引用。部分阅读器中，如果存在xhtml文件不被spine引用，可能导致epub无法打开。"
                     )
+
                 elif error_type == "opf_malformed_fallback_used":
                     logger.write("问题: OPF 存在畸形XML，已启用正则降级解析。")
                     logger.write("措施: 建议手工修复 OPF 后再重试，以避免遗漏元数据。")
@@ -1494,7 +1252,7 @@ def run(epub_src, output_path=None):
                 for href, correct_path in log:
                     if correct_path is not None:
                         logger.write(
-                            f"链接: {href}\n问题: 与实际文件名大小写不一致！\n措施: 程序已自动纠正链接为: {correct_path}。"
+                            f"链接: {href}\n问题: 与实际文件名大小写不一致！\n措施: 程序已自动纠正链接。"
                         )
                     else:
                         logger.write(f"链接: {href}\n问题: 未能找到对应文件！！！")
@@ -1510,7 +1268,7 @@ def run(epub_src, output_path=None):
 
 
 def main():
-    epub_src = input("【使用说明】请把EPUB文件拖曳到本窗口上（输入'e'退出）: ")
+    epub_src = input("【使用说明】请把EPUB文件拖曳到本窗口上（输入'e'退出）")
     epub_src = epub_src.strip("'").strip('"').strip()
     if epub_src.lower() == "e":
         print("程序已退出")
@@ -1538,7 +1296,7 @@ if __name__ == "__main__":
         + "5、 自动检查并提醒manifest节点中xhtml类型文件不被spine节点引用的情况。\n"
         + "6、 自动检测并纠正实际文件名与对应的引用链接大小写不一致的问题。\n"
         + "7、 自动检测并提醒找不到对应文件的链接。\n"
-        + "8、 反名称混淆，使sigil可以打开修改。"
+        + "8、 加入名称混淆，使sigil无法打开修改。"
     )
     while True:
         main()

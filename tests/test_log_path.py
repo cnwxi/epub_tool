@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from utils.log import logwriter
+from python_backend.services.log import logwriter
 
 
 class LogWriterPathTest(unittest.TestCase):
