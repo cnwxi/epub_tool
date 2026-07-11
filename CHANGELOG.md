@@ -1,5 +1,11 @@
 # 更新日志
 
+### 2026.07.11
+版本号更新为 `26.7.11`。<br>
+完善本地开发与编译文档：新增跨 macOS、Windows、Linux 的环境配置、依赖准备、Python sidecar 二进制编译、桌面打包及 `cargo metadata` 报错排查说明。<br>
+更新开发环境 Node.js 版本至 `24.18.0`，并补充 macOS 的原生与 Homebrew 安装方式。<br>
+README 新增桌面端界面预览，清理未使用的图片资源。<br>
+
 ### 2026.07.10
 版本号更新为 `26.7.10`。<br>
 优化多看 slim 图片处理：解密与加密流程均改为只根据图片 `href` 文件名识别 `~slim`、`_slim`、`-slim` 或 `slim` 后缀，不再因 manifest `id` 包含 slim 而误判；同名 slim 图片会与原图使用统一基础 id / 文件名，并规范化输出为 `~slim`。<br>
