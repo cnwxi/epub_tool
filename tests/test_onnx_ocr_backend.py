@@ -384,6 +384,15 @@ class BuildPythonSidecarOcrBackendTest(unittest.TestCase):
         self.assertNotIn("shapely", args)
         self.assertNotIn("imagesize", args)
 
+    def test_sidecar_uses_onedir_layout_to_avoid_onefile_extract_delay(self):
+        self.assertEqual(build_python_sidecar.PYINSTALLER_MODE, "--onedir")
+        self.assertEqual(
+            build_python_sidecar.sidecar_output_path(),
+            build_python_sidecar.DIST_DIR
+            / build_python_sidecar.SIDECAR_STEM
+            / build_python_sidecar.SIDE_CAR_NAME,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -77,3 +77,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
 - 应用版本号在 Vite 构建时从 `src-tauri/Cargo.toml` 读取，注入为 `__APP_VERSION__`。
 - `app-state.json` 已被 gitignore；损坏时自动备份并重置为默认状态。
 - 输出文件命名规则为 `{原文件名}_{后缀}.epub`，如 `book_reformat.epub`、`book_encrypt.epub`。
+
+
+## Codex执行规范
+- 开辟新分支不要使用codex/前缀

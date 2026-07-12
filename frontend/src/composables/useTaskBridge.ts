@@ -1,6 +1,13 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
-import type { TaskEvent, TaskRequest, TaskResult } from "../types";
+import type {
+  FontTargetProgressEvent,
+  FontTargetResult,
+  PythonWorkerStatus,
+  TaskEvent,
+  TaskRequest,
+  TaskResult,
+} from "../types";
 
 const isTauriRuntime = (): boolean =>
   typeof window !== "undefined" &&
@@ -25,14 +32,20 @@ export function useTaskBridge() {
     });
   };
 
-  const listFontTargets = async (filePath: string): Promise<string[]> => {
+  const listFontTargetsBatch = async (
+    filePaths: string[],
+    onEvent: (event: FontTargetProgressEvent) => void,
+  ): Promise<FontTargetResult[]> => {
     if (!isTauriRuntime()) {
       return [];
     }
-    const result = await invoke<{ font_families: string[] }>("list_font_targets", {
-      filePath,
+    const channel = new Channel<FontTargetProgressEvent>((event) => {
+      onEvent(event);
     });
-    return result.font_families ?? [];
+    return invoke<FontTargetResult[]>("list_font_targets_batch", {
+      filePaths,
+      onEvent: channel,
+    });
   };
 
   const collectEpubFiles = async (directoryPath: string): Promise<string[]> => {
@@ -56,6 +69,29 @@ export function useTaskBridge() {
       return "";
     }
     return invoke<string>("get_persisted_store_path");
+  };
+
+  const getPythonWorkerStatus = async (): Promise<PythonWorkerStatus | null> => {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+    return invoke<PythonWorkerStatus>("get_python_worker_status");
+  };
+
+  const setPythonWorkerAutoRestartLimit = async (
+    limit: number,
+  ): Promise<PythonWorkerStatus | null> => {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+    return invoke<PythonWorkerStatus>("set_python_worker_auto_restart_limit", { limit });
+  };
+
+  const restartPythonWorker = async (): Promise<PythonWorkerStatus | null> => {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+    return invoke<PythonWorkerStatus>("restart_python_worker");
   };
 
   const loadPersistedState = async <T>(
@@ -96,12 +132,15 @@ export function useTaskBridge() {
     collectEpubFiles,
     getLogPath,
     getPersistedStorePath,
+    getPythonWorkerStatus,
     isTauriRuntime,
-    listFontTargets,
+    listFontTargetsBatch,
     loadPersistedState,
     openPath,
     resolveInputSources,
     runTask,
     savePersistedState,
+    setPythonWorkerAutoRestartLimit,
+    restartPythonWorker,
   };
 }

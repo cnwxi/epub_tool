@@ -8,21 +8,24 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_DIR = REPO_ROOT / "src-tauri" / "binaries"
 STAGE_DIR = REPO_ROOT / "src-tauri" / "bundle-resources" / "binaries"
-SIDECAR_NAME = "epub-tool-python.exe" if sys.platform == "win32" else "epub-tool-python"
+SIDECAR_STEM = "epub-tool-python"
+SIDECAR_NAME = f"{SIDECAR_STEM}.exe" if sys.platform == "win32" else SIDECAR_STEM
 PLACEHOLDER_NAME = ".gitkeep"
 
 
 def prepare_bundle_resources() -> Path:
-    source_path = SOURCE_DIR / SIDECAR_NAME
+    source_dir = SOURCE_DIR / SIDECAR_STEM
+    source_path = source_dir / SIDECAR_NAME
     if not source_path.is_file():
-        raise SystemExit(f"Sidecar file not found: {source_path}")
+        raise SystemExit(f"Sidecar executable not found: {source_path}")
 
     if STAGE_DIR.exists():
         shutil.rmtree(STAGE_DIR)
     STAGE_DIR.mkdir(parents=True, exist_ok=True)
 
-    target_path = STAGE_DIR / SIDECAR_NAME
-    shutil.copy2(source_path, target_path)
+    target_dir = STAGE_DIR / SIDECAR_STEM
+    shutil.copytree(source_dir, target_dir, copy_function=shutil.copy2)
+    target_path = target_dir / SIDECAR_NAME
     (STAGE_DIR / PLACEHOLDER_NAME).touch()
 
     if sys.platform != "win32":

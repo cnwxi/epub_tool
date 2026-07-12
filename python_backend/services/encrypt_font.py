@@ -123,17 +123,24 @@ def list_epub_font_encrypt_targets(epub_path):
         raise Exception("EPUB文件不存在")
 
     with zipfile.ZipFile(epub_path) as epub:
-        css_files = [item for item in epub.namelist() if item.lower().endswith(".css")]
+        names = epub.namelist()
+        css_files = [item for item in names if item.lower().endswith(".css")]
         font_file_names = {
             os.path.basename(item).lower()
-            for item in epub.namelist()
+            for item in names
             if item.lower().endswith(EPUB_FONT_FILE_EXTENSIONS)
         }
+        if not css_files or not font_file_names:
+            return {"font_families": []}
+
         font_families = set()
 
         for css in css_files:
             try:
-                content = epub.read(css).decode("utf-8")
+                content_bytes = epub.read(css)
+                if b"@font-face" not in content_bytes.lower():
+                    continue
+                content = content_bytes.decode("utf-8")
                 rules = parse_stylesheet(content)
             except Exception:
                 continue

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 import brandEasterIconUrl from "../../../assets/img/icon.png";
 
-import type { SectionKey } from "../types";
+import type { PythonWorkerStatus, SectionKey } from "../types";
 
 const props = defineProps<{
   active: SectionKey;
@@ -10,6 +10,8 @@ const props = defineProps<{
   brandEasterActive: boolean;
   handleBrandEasterClick: () => void;
   triggerBrandEasterAnimation: () => void;
+  pythonWorkerStatus: PythonWorkerStatus;
+  pythonWorkerStatusLabel: string;
 }>();
 
 const emit = defineEmits<{
@@ -63,14 +65,22 @@ watch(
         @keydown.enter.prevent="props.triggerBrandEasterAnimation"
         @keydown.space.prevent="props.triggerBrandEasterAnimation">
         <div class="brand-content">
-          <p class="eyebrow brand-eyebrow">NEW UI · ET</p>
           <h1 class="brand-title" aria-label="Epub Tool, E-Book Thor">
             <span class="brand-title-main">Epub Tool</span>
             <span class="brand-title-alias">E-Book Thor</span>
           </h1>
-          <p class="brand-copy">
-            批量处理 EPUB 文件。
-          </p>
+          <button
+            class="nav-worker-status brand-worker-status"
+            :class="`state-${props.pythonWorkerStatus.state}`"
+            type="button"
+            :title="`${props.pythonWorkerStatusLabel}：${props.pythonWorkerStatus.message}`"
+            @click.stop="emit('select', 'settings')"
+          >
+            <span class="nav-worker-dot" aria-hidden="true"></span>
+            <span class="nav-worker-copy">
+              <strong>{{ props.pythonWorkerStatusLabel }}</strong>
+            </span>
+          </button>
         </div>
         <div class="brand-easter-stage" aria-hidden="true">
           <div class="brand-easter-emblem">
@@ -126,5 +136,6 @@ watch(
         </button>
       </nav>
     </section>
+
   </aside>
 </template>

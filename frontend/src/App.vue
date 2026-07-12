@@ -12,7 +12,9 @@ import type {
   AppSettings,
   FontDecryptSettings,
   FontLoadStatus,
+  FontTargetResult,
   OcrCharPolicy,
+  PythonWorkerStatus,
   QueuedFile,
   SectionKey,
   TaskAggregateStats,
@@ -72,6 +74,14 @@ const defaultSettings: AppSettings = {
   autoOpenLogFile: false,
   autoCheckUpdates: true,
   keepHistoryCount: 10,
+  pythonWorkerAutoRestartLimit: 2,
+};
+const normalizePythonWorkerAutoRestartLimit = (value: unknown): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return defaultSettings.pythonWorkerAutoRestartLimit;
+  }
+  return Math.max(0, Math.min(5, Math.round(numeric)));
 };
 const ocrCharPolicyOptions: Array<{
   value: OcrCharPolicy;
@@ -136,11 +146,14 @@ const {
   collectEpubFiles,
   getLogPath,
   getPersistedStorePath,
+  getPythonWorkerStatus,
   isTauriRuntime,
-  listFontTargets,
+  listFontTargetsBatch,
   openPath,
   resolveInputSources,
+  restartPythonWorker,
   runTask,
+  setPythonWorkerAutoRestartLimit,
 } = useTaskBridge();
 
 const hideBrandEasterAnimation = () => {
@@ -243,6 +256,9 @@ const normalizeSettings = (value: unknown): AppSettings => {
       typeof raw.keepHistoryCount === "number"
         ? raw.keepHistoryCount
         : defaultSettings.keepHistoryCount,
+    pythonWorkerAutoRestartLimit: normalizePythonWorkerAutoRestartLimit(
+      raw.pythonWorkerAutoRestartLimit,
+    ),
   };
 };
 
@@ -395,6 +411,17 @@ const progress = ref(0);
 const taskRunning = ref(false);
 const runningTaskType = ref<TaskType | null>(null);
 const taskStatus = ref("待命");
+const pythonWorkerStatus = ref<PythonWorkerStatus>({
+  state: "starting",
+  message: "正在启动处理引擎…",
+  lastError: null,
+  pid: null,
+  recoveryAttempts: 0,
+  autoRestartLimit: defaultSettings.pythonWorkerAutoRestartLimit,
+});
+const pythonWorkerRestarting = ref(false);
+let pythonWorkerStatusTimer = 0;
+let pythonWorkerStatusRefreshInFlight = false;
 const fontLoading = ref(false);
 const taskProgressCurrent = ref(0);
 const taskProgressTotal = ref(0);
@@ -855,6 +882,10 @@ const settingsStatusItems = computed(() => [
     value: `v${currentVersion.value}`,
   },
   {
+    label: "处理引擎",
+    value: pythonWorkerStatusLabel.value,
+  },
+  {
     label: "更新状态",
     value: updateStatusLabel.value,
   },
@@ -1072,6 +1103,92 @@ const visibleProgressMessage = computed(() => {
 
   return "";
 });
+
+const pythonWorkerStatusLabel = computed(() => {
+  switch (pythonWorkerStatus.value.state) {
+    case "ready":
+      return "处理引擎就绪";
+    case "busy":
+      return "处理引擎执行中";
+    case "recovering":
+      return "处理引擎恢复中";
+    case "unavailable":
+      return "处理引擎不可用";
+    case "stopped":
+      return "处理引擎未启动";
+    default:
+      return "处理引擎启动中";
+  }
+});
+
+const refreshPythonWorkerStatus = async () => {
+  if (pythonWorkerStatusRefreshInFlight) {
+    return;
+  }
+  pythonWorkerStatusRefreshInFlight = true;
+  try {
+    const status = await getPythonWorkerStatus();
+    if (status) {
+      pythonWorkerStatus.value = status;
+    }
+  } catch (error) {
+    pythonWorkerStatus.value = {
+      ...pythonWorkerStatus.value,
+      state: "unavailable",
+      message: "无法获取处理引擎状态",
+      lastError: toErrorMessage(error, "无法获取处理引擎状态。"),
+    };
+  } finally {
+    pythonWorkerStatusRefreshInFlight = false;
+  }
+};
+
+const syncPythonWorkerAutoRestartLimit = async () => {
+  try {
+    const status = await setPythonWorkerAutoRestartLimit(
+      settings.value.pythonWorkerAutoRestartLimit,
+    );
+    if (status) {
+      pythonWorkerStatus.value = status;
+    }
+  } catch {
+    await refreshPythonWorkerStatus();
+  }
+};
+
+const normalizePythonWorkerAutoRestartLimitInPlace = () => {
+  settings.value.pythonWorkerAutoRestartLimit = normalizePythonWorkerAutoRestartLimit(
+    settings.value.pythonWorkerAutoRestartLimit,
+  );
+};
+
+const restartCurrentPythonWorker = async () => {
+  if (pythonWorkerRestarting.value) {
+    return;
+  }
+  if (
+    (taskRunning.value || fontLoading.value) &&
+    typeof window !== "undefined" &&
+    !window.confirm("终止当前处理请求并重启处理引擎？当前任务不会自动重跑。")
+  ) {
+    return;
+  }
+  pythonWorkerRestarting.value = true;
+  try {
+    const status = await restartPythonWorker();
+    if (status) {
+      pythonWorkerStatus.value = status;
+    }
+  } catch (error) {
+    await refreshPythonWorkerStatus();
+    pythonWorkerStatus.value = {
+      ...pythonWorkerStatus.value,
+      lastError: toErrorMessage(error, "处理引擎重启失败。"),
+    };
+  } finally {
+    pythonWorkerRestarting.value = false;
+  }
+};
 
 const ensureSelectedFile = (preferredPath?: string) => {
   if (preferredPath && files.value.some((item) => item.path === preferredPath)) {
@@ -1504,41 +1621,85 @@ const loadFontFamilies = async (options?: {
   let emptyCount = 0;
   let errorCount = 0;
   let completedCount = 0;
+  const pendingByPath = new Map(pendingTargets.map((item) => [item.path, item]));
+  const previousStatusByPath = new Map(
+    pendingTargets.map((item) => [item.path, item.fontLoadStatus]),
+  );
+  const completedPaths = new Set<string>();
+
+  const applyResult = (result: FontTargetResult) => {
+    if (requestId !== fontLoadRequestId || completedPaths.has(result.input_file)) {
+      return;
+    }
+
+    const item = pendingByPath.get(result.input_file);
+    if (!item) {
+      return;
+    }
+
+    completedPaths.add(result.input_file);
+    const previousStatus = previousStatusByPath.get(item.path) ?? "idle";
+    if (result.ok) {
+      const families = result.font_families ?? [];
+      syncFontFamilies(item, families, previousStatus);
+      item.fontLoadStatus = "loaded";
+      refreshedCount += 1;
+      if (families.length === 0) {
+        emptyCount += 1;
+      }
+    } else {
+      item.fontFamilies = [];
+      item.selectedFontFamilies = [];
+      item.fontLoadStatus = "error";
+      item.fontLoadError = result.error || "读取字体列表失败，请重试。";
+      errorCount += 1;
+    }
+
+    completedCount += 1;
+    fontProgressCurrent.value = completedCount;
+  };
 
   try {
     for (const item of pendingTargets) {
-      if (requestId !== fontLoadRequestId) {
-        return;
-      }
-      fontProgressFileName.value = item.name;
-
-      const previousStatus = item.fontLoadStatus;
       item.fontLoadStatus = "loading";
       item.fontLoadError = "";
+    }
+    fontProgressFileName.value = pendingTargets[0]?.name ?? "";
 
-      try {
-        const families = await listFontTargets(item.path);
+    const results = await listFontTargetsBatch(
+      pendingTargets.map((item) => item.path),
+      (event) => {
         if (requestId !== fontLoadRequestId) {
           return;
         }
-        syncFontFamilies(item, families, previousStatus);
-        item.fontLoadStatus = "loaded";
-        refreshedCount += 1;
-        if (families.length === 0) {
-          emptyCount += 1;
+        const item = pendingByPath.get(event.result.input_file);
+        fontProgressFileName.value = item?.name ?? fontProgressFileName.value;
+        applyResult(event.result);
+      },
+    );
+
+    if (requestId !== fontLoadRequestId) {
+      return;
+    }
+    // 事件回调已实时处理了大部分结果，这里只兜底未收到的
+    for (const result of results) {
+      applyResult(result);
+    }
+  } catch (error) {
+    if (requestId === fontLoadRequestId) {
+      const message = toErrorMessage(error, "读取字体列表失败，请重试。");
+      for (const item of pendingTargets) {
+        if (completedPaths.has(item.path)) {
+          continue;
         }
-      } catch (error) {
-        if (requestId !== fontLoadRequestId) {
-          return;
-        }
+        completedPaths.add(item.path);
         item.fontFamilies = [];
         item.selectedFontFamilies = [];
         item.fontLoadStatus = "error";
-        item.fontLoadError = toErrorMessage(error, "读取字体列表失败，请重试。");
+        item.fontLoadError = message;
         errorCount += 1;
+        completedCount += 1;
       }
-
-      completedCount += 1;
       fontProgressCurrent.value = completedCount;
     }
   } finally {
@@ -1808,6 +1969,7 @@ const runSelectedTask = async () => {
   }
   const taskType = activeTask.value;
   if (isFontTargetTask(taskType)) {
+    taskStatus.value = "正在读取字体列表…";
     await loadFontFamilies();
   }
 
@@ -1917,6 +2079,13 @@ watch(activeSection, async (section) => {
 watch(activeTask, async () => {
   await measureMasonryBoard();
 }, { flush: "post" });
+
+watch(
+  () => settings.value.pythonWorkerAutoRestartLimit,
+  () => {
+    void syncPythonWorkerAutoRestartLimit();
+  },
+);
 
 watch(() => masonryBoardRef.value, async () => {
   await measureMasonryBoard();
@@ -2116,6 +2285,13 @@ onMounted(async () => {
   }
   aboutAnimatedStats.value = { ...aboutStats.value };
   if (isTauriRuntime()) {
+    await syncPythonWorkerAutoRestartLimit();
+    await refreshPythonWorkerStatus();
+    if (typeof window !== "undefined") {
+      pythonWorkerStatusTimer = window.setInterval(() => {
+        void refreshPythonWorkerStatus();
+      }, 1000);
+    }
     try {
       currentVersion.value = normalizeVersion(await getVersion());
       syncPersistedUpdateStateWithCurrentVersion();
@@ -2166,6 +2342,10 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (pythonWorkerStatusTimer && typeof window !== "undefined") {
+    window.clearInterval(pythonWorkerStatusTimer);
+    pythonWorkerStatusTimer = 0;
+  }
   if (aboutAnimationFrame && typeof window !== "undefined") {
     window.cancelAnimationFrame(aboutAnimationFrame);
   }
@@ -2206,6 +2386,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             :brand-easter-active="brandEasterActive"
             :handle-brand-easter-click="handleBrandEasterClick"
             :trigger-brand-easter-animation="triggerBrandEasterAnimation"
+            :python-worker-status="pythonWorkerStatus"
+            :python-worker-status-label="pythonWorkerStatusLabel"
             @select="activeSection = $event"
           />
         </div>
@@ -2561,6 +2743,49 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                   </strong>
                 </article>
               </div>
+            </section>
+
+            <section class="settings-block section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">处理引擎</p>
+                  <h3>Python Worker</h3>
+                  <p class="muted">常驻处理引擎会复用已加载模块与 OCR 模型；重启不会自动重放中断任务。</p>
+                </div>
+                <div class="panel-actions">
+                  <button class="ghost-btn settings-action-btn" :disabled="pythonWorkerRestarting"
+                    type="button" @click="restartCurrentPythonWorker">
+                    {{ pythonWorkerRestarting ? "重启中..." : taskRunning || fontLoading ? "终止并重启处理引擎" : "重启处理引擎" }}
+                  </button>
+                </div>
+              </div>
+              <div class="worker-control-grid">
+                <article class="worker-status-card glass-medium" :class="`state-${pythonWorkerStatus.state}`">
+                  <span class="worker-status-dot" aria-hidden="true"></span>
+                  <div>
+                    <strong>{{ pythonWorkerStatusLabel }}</strong>
+                    <p>{{ pythonWorkerStatus.message }}</p>
+                  </div>
+                </article>
+                <div class="settings-log-card glass-medium">
+                  <span>Worker 进程</span>
+                  <strong>{{ pythonWorkerStatus.pid ? `PID ${pythonWorkerStatus.pid}` : "尚未提供进程 ID" }}</strong>
+                </div>
+                <label class="settings-preference-card settings-preference-card-number glass-medium">
+                  <div>
+                    <strong>自动恢复次数</strong>
+                    <p>仅恢复处理引擎，不会重跑中断的任务。</p>
+                  </div>
+                  <input v-model.number="settings.pythonWorkerAutoRestartLimit" min="0" max="5" step="1"
+                    type="number" @change="normalizePythonWorkerAutoRestartLimitInPlace" />
+                </label>
+              </div>
+              <p v-if="pythonWorkerStatus.recoveryAttempts > 0" class="worker-recovery-note">
+                本次会话已自动恢复 {{ pythonWorkerStatus.recoveryAttempts }}/{{ pythonWorkerStatus.autoRestartLimit }} 次。
+              </p>
+              <p v-if="pythonWorkerStatus.lastError" class="worker-error-message">
+                最近错误：{{ pythonWorkerStatus.lastError }}
+              </p>
             </section>
 
             <section class="settings-block section-animated-block glass-medium">

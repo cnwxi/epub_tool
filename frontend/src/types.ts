@@ -8,6 +8,13 @@ export type TaskType =
 export type SectionKey = TaskType | "settings" | "about";
 export type FontLoadStatus = "idle" | "loading" | "loaded" | "error";
 export type OcrCharPolicy = "strict" | "compatible";
+export type PythonWorkerState =
+  | "stopped"
+  | "starting"
+  | "ready"
+  | "busy"
+  | "recovering"
+  | "unavailable";
 export type TaskOutputDirectoryMap = Record<TaskType, string>;
 
 export interface QueuedFile {
@@ -17,6 +24,20 @@ export interface QueuedFile {
   selectedFontFamilies: string[];
   fontLoadStatus: FontLoadStatus;
   fontLoadError: string;
+}
+
+export interface FontTargetResult {
+  ok: boolean;
+  input_file: string;
+  font_families: string[];
+  error?: string | null;
+}
+
+export interface FontTargetProgressEvent {
+  event: "font-targets.progress";
+  current_index: number;
+  total_files: number;
+  result: FontTargetResult;
 }
 
 export interface TaskRequest {
@@ -61,6 +82,16 @@ export interface AppSettings {
   autoOpenLogFile: boolean;
   autoCheckUpdates: boolean;
   keepHistoryCount: number;
+  pythonWorkerAutoRestartLimit: number;
+}
+
+export interface PythonWorkerStatus {
+  state: PythonWorkerState;
+  message: string;
+  lastError?: string | null;
+  pid?: number | null;
+  recoveryAttempts: number;
+  autoRestartLimit: number;
 }
 
 export interface FontDecryptSettings {
