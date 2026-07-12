@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -91,10 +92,8 @@ def main() -> int:
         run_command(["npm", "run", "tauri", "--", "build", "--bundles", "app"])
         create_macos_dmg()
     else:
-        try:
-            run_command(["npm", "run", "tauri", "--", "build"])
-        except:
-            run_command(["npm.cmd", "run", "tauri", "--", "build"])
+        npm_command = "npm.cmd" if os.name == "nt" else "npm"
+        run_command([npm_command, "run", "tauri", "--", "build"])
     return 0
 
 

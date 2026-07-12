@@ -12,7 +12,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    thread::JoinHandle,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{ipc::Channel, AppHandle, Manager, State};
@@ -69,7 +68,6 @@ struct PythonWorker {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
-    stderr_handle: Option<JoinHandle<()>>,
 }
 
 struct PythonWorkerStore {
@@ -503,6 +501,7 @@ fn default_ocr_model_name() -> &'static str {
 
 fn configure_backend_command(command: &mut Command, log_path: &Path, ocr_model_dir: Option<&Path>) {
     command.env("EPUB_TOOL_LOG_PATH", log_path);
+    command.env("EPUB_TOOL_PARENT_PID", std::process::id().to_string());
     if let Some(ocr_model_dir) = ocr_model_dir {
         command.env("EPUB_TOOL_OCR_ONNX_MODEL_DIR", ocr_model_dir);
     }
@@ -540,7 +539,7 @@ fn start_python_worker(app: &AppHandle) -> Result<PythonWorker, String> {
         .ok_or_else(|| "无法读取 Python worker stderr".to_string())?;
     let stderr_lines = Arc::new(Mutex::new(Vec::new()));
     let stderr_lines_for_thread = Arc::clone(&stderr_lines);
-    let stderr_handle = std::thread::spawn(move || {
+    std::thread::spawn(move || {
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
             if let Ok(mut lines) = stderr_lines_for_thread.lock() {
                 lines.push(line);
@@ -557,7 +556,6 @@ fn start_python_worker(app: &AppHandle) -> Result<PythonWorker, String> {
         stdin,
         stdout: BufReader::new(stdout),
         stderr_lines,
-        stderr_handle: Some(stderr_handle),
     })
 }
 
@@ -640,12 +638,31 @@ fn stop_python_worker(worker: &mut PythonWorker) -> Result<(), String> {
     child
         .wait()
         .map_err(|error| format!("等待 Python worker 退出失败: {error}"))?;
-    drop(child);
-    // 等待 stderr 读取线程退出，释放线程资源
-    if let Some(handle) = worker.stderr_handle.take() {
-        let _ = handle.join();
-    }
     Ok(())
+}
+
+fn shutdown_python_worker(store: &PythonWorkerStore) {
+    if let Ok(mut worker_slot) = store.worker.try_lock() {
+        if let Some(worker) = worker_slot.as_mut() {
+            let _ = stop_python_worker(worker);
+        }
+        *worker_slot = None;
+        set_active_worker_child(store, None);
+        return;
+    }
+
+    let active_child = store
+        .active_child
+        .lock()
+        .ok()
+        .and_then(|child| child.clone());
+    if let Some(active_child) = active_child {
+        if let Ok(mut child) = active_child.lock() {
+            if matches!(child.try_wait(), Ok(None)) {
+                let _ = child.kill();
+            }
+        }
+    }
 }
 
 fn recover_python_worker(
@@ -1190,7 +1207,7 @@ fn setup_window_effects(app: &tauri::App) -> Result<(), String> {
 }
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(PersistedStore::load(&app.handle()));
@@ -1225,6 +1242,13 @@ fn main() {
             set_python_worker_auto_restart_limit,
             restart_python_worker
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let worker_store = app_handle.state::<PythonWorkerStore>();
+            shutdown_python_worker(worker_store.inner());
+        }
+    });
 }

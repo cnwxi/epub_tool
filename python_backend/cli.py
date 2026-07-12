@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -11,12 +14,83 @@ from python_backend.protocol import TaskRequest
 from python_backend.task_runner import iter_font_targets, list_font_targets, run_task
 
 
+PARENT_PID_ENV = "EPUB_TOOL_PARENT_PID"
+PARENT_MONITOR_INTERVAL_SECONDS = 1.0
+WINDOWS_SYNCHRONIZE = 0x00100000
+WAIT_OBJECT_0 = 0
+WAIT_TIMEOUT = 0x00000102
+
+
 def configure_stdio() -> None:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
         if stream is None or not hasattr(stream, "reconfigure"):
             continue
         stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+def get_parent_pid() -> int | None:
+    raw_pid = os.environ.get(PARENT_PID_ENV, "").strip()
+    try:
+        parent_pid = int(raw_pid)
+    except ValueError:
+        return None
+    return parent_pid if parent_pid > 0 else None
+
+
+def parent_process_is_alive(parent_pid: int) -> bool:
+    """A sidecar is a direct child of Tauri, so re-parenting means Tauri is gone."""
+    return os.getppid() == parent_pid
+
+
+def monitor_windows_parent_process(parent_pid: int) -> None:
+    """Wait on the original process object so PID reuse cannot keep the worker alive."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    handle = kernel32.OpenProcess(WINDOWS_SYNCHRONIZE, False, parent_pid)
+    if not handle:
+        return
+    try:
+        while (
+            kernel32.WaitForSingleObject(
+                handle, int(PARENT_MONITOR_INTERVAL_SECONDS * 1000)
+            )
+            == WAIT_TIMEOUT
+        ):
+            pass
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def monitor_parent_process(parent_pid: int) -> None:
+    if os.name == "nt":
+        monitor_windows_parent_process(parent_pid)
+    else:
+        while parent_process_is_alive(parent_pid):
+            time.sleep(PARENT_MONITOR_INTERVAL_SECONDS)
+    # The Rust parent has already disappeared, so buffered protocol output is no longer useful.
+    os._exit(0)
+
+
+def start_parent_monitor() -> None:
+    parent_pid = get_parent_pid()
+    if parent_pid is None:
+        return
+    threading.Thread(
+        target=monitor_parent_process,
+        args=(parent_pid,),
+        name="epub-tool-parent-monitor",
+        daemon=True,
+    ).start()
 
 
 def pick_payload_value(payload: dict[str, Any], *keys: str, default: Any = None) -> Any:
@@ -109,6 +183,7 @@ def cmd_serve(_args: argparse.Namespace) -> int:
     请求按顺序执行，保证现有服务模块的全局 logger 替换和日志文件写入不发生
     并发冲突。任务事件会直接复用既有 stdout 协议，最后再发送 worker.response。
     """
+    start_parent_monitor()
     for raw_line in sys.stdin:
         line = raw_line.strip()
         if not line:
