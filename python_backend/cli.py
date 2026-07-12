@@ -65,12 +65,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
-def cmd_list_fonts(args: argparse.Namespace) -> int:
-    payload = list_font_targets(args.input_file)
-    sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    return 0
-
-
 def cmd_list_fonts_batch(args: argparse.Namespace) -> int:
     results = []
     for event in iter_font_targets(args.input_files):
@@ -86,6 +80,12 @@ def cmd_list_fonts_batch(args: argparse.Namespace) -> int:
         + "\n"
     )
     sys.stdout.flush()
+    return 0
+
+
+def cmd_list_fonts(args: argparse.Namespace) -> int:
+    payload = list_font_targets(args.input_file)
+    sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
     return 0
 
 

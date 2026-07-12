@@ -8,7 +8,11 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    thread::JoinHandle,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{ipc::Channel, AppHandle, Manager, State};
@@ -61,14 +65,18 @@ struct PersistedStore {
 }
 
 struct PythonWorker {
-    child: Child,
+    child: Arc<Mutex<Child>>,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
+    stderr_handle: Option<JoinHandle<()>>,
 }
 
 struct PythonWorkerStore {
     worker: Mutex<Option<PythonWorker>>,
+    // The active child stays separately accessible while stdout is being read under `worker`.
+    active_child: Mutex<Option<Arc<Mutex<Child>>>>,
+    manual_restart_requested: AtomicBool,
     status: Mutex<PythonWorkerStatus>,
 }
 
@@ -532,7 +540,7 @@ fn start_python_worker(app: &AppHandle) -> Result<PythonWorker, String> {
         .ok_or_else(|| "无法读取 Python worker stderr".to_string())?;
     let stderr_lines = Arc::new(Mutex::new(Vec::new()));
     let stderr_lines_for_thread = Arc::clone(&stderr_lines);
-    std::thread::spawn(move || {
+    let stderr_handle = std::thread::spawn(move || {
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
             if let Ok(mut lines) = stderr_lines_for_thread.lock() {
                 lines.push(line);
@@ -545,11 +553,22 @@ fn start_python_worker(app: &AppHandle) -> Result<PythonWorker, String> {
     });
 
     Ok(PythonWorker {
-        child,
+        child: Arc::new(Mutex::new(child)),
         stdin,
         stdout: BufReader::new(stdout),
         stderr_lines,
+        stderr_handle: Some(stderr_handle),
     })
+}
+
+fn worker_pid(worker: &PythonWorker) -> Option<u32> {
+    worker.child.lock().ok().map(|child| child.id())
+}
+
+fn set_active_worker_child(store: &PythonWorkerStore, child: Option<Arc<Mutex<Child>>>) {
+    if let Ok(mut active_child) = store.active_child.lock() {
+        *active_child = child;
+    }
 }
 
 fn ensure_python_worker(
@@ -560,6 +579,8 @@ fn ensure_python_worker(
     if let Some(worker) = worker_slot.as_mut() {
         if worker
             .child
+            .lock()
+            .map_err(|_| "Python worker 子进程锁已损坏".to_string())?
             .try_wait()
             .map_err(|error| format!("检查 Python worker 状态失败: {error}"))?
             .is_none()
@@ -576,7 +597,7 @@ fn ensure_python_worker(
             status.state = "ready".to_string();
             status.message = "处理引擎已就绪".to_string();
             status.last_error = None;
-            status.pid = Some(worker.child.id());
+            status.pid = worker_pid(&worker);
             *worker_slot = Some(worker);
             Ok(())
         }
@@ -603,25 +624,36 @@ fn prewarm_python_worker(app: &AppHandle, store: &PythonWorkerStore) -> Result<(
 }
 
 fn stop_python_worker(worker: &mut PythonWorker) -> Result<(), String> {
-    if worker
+    let mut child = worker
         .child
+        .lock()
+        .map_err(|_| "Python worker 子进程锁已损坏".to_string())?;
+    if child
         .try_wait()
         .map_err(|error| format!("检查 Python worker 退出状态失败: {error}"))?
         .is_none()
     {
-        worker
-            .child
+        child
             .kill()
             .map_err(|error| format!("终止 Python worker 失败: {error}"))?;
     }
-    worker
-        .child
+    child
         .wait()
         .map_err(|error| format!("等待 Python worker 退出失败: {error}"))?;
+    drop(child);
+    // 等待 stderr 读取线程退出，释放线程资源
+    if let Some(handle) = worker.stderr_handle.take() {
+        let _ = handle.join();
+    }
     Ok(())
 }
 
-fn recover_python_worker(app: &AppHandle, store: &PythonWorkerStore, error: &str) {
+fn recover_python_worker(
+    app: &AppHandle,
+    store: &PythonWorkerStore,
+    error: &str,
+    force_restart: bool,
+) {
     let mut worker_slot = match store.worker.lock() {
         Ok(worker_slot) => worker_slot,
         Err(_) => return,
@@ -637,7 +669,7 @@ fn recover_python_worker(app: &AppHandle, store: &PythonWorkerStore, error: &str
     };
     status.last_error = Some(error.to_string());
     status.pid = None;
-    if status.recovery_attempts >= status.auto_restart_limit {
+    if !force_restart && status.recovery_attempts >= status.auto_restart_limit {
         status.state = "unavailable".to_string();
         status.message = format!(
             "自动恢复已达到上限（{}/{}）",
@@ -646,20 +678,32 @@ fn recover_python_worker(app: &AppHandle, store: &PythonWorkerStore, error: &str
         return;
     }
 
-    status.recovery_attempts += 1;
+    if force_restart {
+        status.recovery_attempts = 0;
+    } else {
+        status.recovery_attempts += 1;
+    }
     status.state = "recovering".to_string();
-    status.message = format!(
-        "正在自动恢复处理引擎（{}/{}）…",
-        status.recovery_attempts, status.auto_restart_limit
-    );
+    status.message = if force_restart {
+        "正在重新启动处理引擎…".to_string()
+    } else {
+        format!(
+            "正在自动恢复处理引擎（{}/{}）…",
+            status.recovery_attempts, status.auto_restart_limit
+        )
+    };
     if let Err(start_error) = ensure_python_worker(app, &mut worker_slot, &mut status) {
         status.last_error = Some(format!("{error}\n自动恢复失败：{start_error}"));
     } else {
         status.last_error = Some(error.to_string());
-        status.message = format!(
-            "处理引擎已恢复（{}/{}）",
-            status.recovery_attempts, status.auto_restart_limit
-        );
+        status.message = if force_restart {
+            "处理引擎已手动重启".to_string()
+        } else {
+            format!(
+                "处理引擎已恢复（{}/{}）",
+                status.recovery_attempts, status.auto_restart_limit
+            )
+        };
     }
 }
 
@@ -669,6 +713,43 @@ fn worker_stderr_tail(worker: &PythonWorker) -> String {
         .lock()
         .map(|lines| lines.join("\n"))
         .unwrap_or_else(|_| "无法读取 Python worker stderr".to_string())
+}
+
+fn terminate_active_worker(store: &PythonWorkerStore) -> Result<PythonWorkerStatus, String> {
+    let active_child = store
+        .active_child
+        .lock()
+        .map_err(|_| "Python worker 活动子进程锁已损坏".to_string())?
+        .clone()
+        .ok_or_else(|| "处理引擎没有正在执行的请求。".to_string())?;
+    let mut child = active_child
+        .lock()
+        .map_err(|_| "Python worker 子进程锁已损坏".to_string())?;
+    if child
+        .try_wait()
+        .map_err(|error| format!("检查 Python worker 状态失败: {error}"))?
+        .is_some()
+    {
+        return Err("当前请求正在结束，请稍后再尝试重启处理引擎。".to_string());
+    }
+    child
+        .kill()
+        .map_err(|error| format!("终止 Python worker 失败: {error}"))?;
+    drop(child);
+    store
+        .manual_restart_requested
+        .store(true, Ordering::Release);
+
+    let mut status = store
+        .status
+        .lock()
+        .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+    status.state = "recovering".to_string();
+    status.message = "正在终止当前请求并重启处理引擎…".to_string();
+    status.last_error = Some("用户手动重启处理引擎。".to_string());
+    status.pid = None;
+    status.recovery_attempts = 0;
+    Ok(status.clone())
 }
 
 fn execute_worker_request(
@@ -697,6 +778,11 @@ fn execute_worker_request(
         status.state = "busy".to_string();
         status.message = "处理引擎正在执行请求".to_string();
     }
+    let active_child = worker_slot
+        .as_ref()
+        .map(|worker| Arc::clone(&worker.child))
+        .ok_or_else(|| "Python worker 未初始化".to_string())?;
+    set_active_worker_child(store, Some(active_child));
 
     let result = (|| -> Result<Value, String> {
         let worker = worker_slot
@@ -750,6 +836,7 @@ fn execute_worker_request(
                 .map_err(|error| format!("推送 Python worker 事件失败: {error}"))?;
         }
     })();
+    set_active_worker_child(store, None);
 
     if let Err(error) = &result {
         if let Some(worker) = worker_slot.as_mut() {
@@ -757,11 +844,12 @@ fn execute_worker_request(
         }
         *worker_slot = None;
         drop(worker_slot);
-        recover_python_worker(app, store, error);
+        let force_restart = store.manual_restart_requested.swap(false, Ordering::AcqRel);
+        recover_python_worker(app, store, error, force_restart);
     } else if let Ok(mut status) = store.status.lock() {
         status.state = "ready".to_string();
         status.message = "处理引擎已就绪".to_string();
-        status.pid = worker_slot.as_ref().map(|worker| worker.child.id());
+        status.pid = worker_slot.as_ref().and_then(worker_pid);
     }
     result
 }
@@ -818,7 +906,12 @@ fn get_python_worker_status(
 ) -> Result<PythonWorkerStatus, String> {
     let exit_error = if let Ok(mut worker_slot) = store.worker.try_lock() {
         if let Some(worker) = worker_slot.as_mut() {
-            match worker.child.try_wait() {
+            let worker_status = worker
+                .child
+                .lock()
+                .map_err(|_| "Python worker 子进程锁已损坏".to_string())?
+                .try_wait();
+            match worker_status {
                 Ok(Some(exit_status)) => {
                     *worker_slot = None;
                     Some(format!("检测到处理引擎意外退出：{exit_status}"))
@@ -834,7 +927,7 @@ fn get_python_worker_status(
     };
 
     if let Some(error) = exit_error {
-        recover_python_worker(&app, store.inner(), &error);
+        recover_python_worker(&app, store.inner(), &error, false);
     }
 
     store
@@ -862,10 +955,10 @@ fn restart_python_worker(
     app: AppHandle,
     store: State<'_, PythonWorkerStore>,
 ) -> Result<PythonWorkerStatus, String> {
-    let mut worker_slot = store
-        .worker
-        .try_lock()
-        .map_err(|_| "处理引擎正在执行任务，暂时不能重启。".to_string())?;
+    let mut worker_slot = match store.worker.try_lock() {
+        Ok(worker_slot) => worker_slot,
+        Err(_) => return terminate_active_worker(store.inner()),
+    };
     let mut status = store
         .status
         .lock()
@@ -1103,6 +1196,8 @@ fn main() {
             app.manage(PersistedStore::load(&app.handle()));
             app.manage(PythonWorkerStore {
                 worker: Mutex::new(None),
+                active_child: Mutex::new(None),
+                manual_restart_requested: AtomicBool::new(false),
                 status: Mutex::new(PythonWorkerStatus::default()),
             });
             setup_window_effects(app)?;

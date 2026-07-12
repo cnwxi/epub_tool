@@ -1156,7 +1156,14 @@ const normalizePythonWorkerAutoRestartLimitInPlace = () => {
 };
 
 const restartCurrentPythonWorker = async () => {
-  if (taskRunning.value || fontLoading.value || pythonWorkerRestarting.value) {
+  if (pythonWorkerRestarting.value) {
+    return;
+  }
+  if (
+    (taskRunning.value || fontLoading.value) &&
+    typeof window !== "undefined" &&
+    !window.confirm("终止当前处理请求并重启处理引擎？当前任务不会自动重跑。")
+  ) {
     return;
   }
   pythonWorkerRestarting.value = true;
@@ -1166,10 +1173,9 @@ const restartCurrentPythonWorker = async () => {
       pythonWorkerStatus.value = status;
     }
   } catch (error) {
+    await refreshPythonWorkerStatus();
     pythonWorkerStatus.value = {
       ...pythonWorkerStatus.value,
-      state: "unavailable",
-      message: "处理引擎重启失败",
       lastError: toErrorMessage(error, "处理引擎重启失败。"),
     };
   } finally {
@@ -1668,6 +1674,7 @@ const loadFontFamilies = async (options?: {
     if (requestId !== fontLoadRequestId) {
       return;
     }
+    // 事件回调已实时处理了大部分结果，这里只兜底未收到的
     for (const result of results) {
       applyResult(result);
     }
@@ -2739,9 +2746,9 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                   <p class="muted">常驻处理引擎会复用已加载模块与 OCR 模型；重启不会自动重放中断任务。</p>
                 </div>
                 <div class="panel-actions">
-                  <button class="ghost-btn settings-action-btn" :disabled="taskRunning || fontLoading || pythonWorkerRestarting"
+                  <button class="ghost-btn settings-action-btn" :disabled="pythonWorkerRestarting"
                     type="button" @click="restartCurrentPythonWorker">
-                    {{ pythonWorkerRestarting ? "重启中..." : "重启处理引擎" }}
+                    {{ pythonWorkerRestarting ? "重启中..." : taskRunning || fontLoading ? "终止并重启处理引擎" : "重启处理引擎" }}
                   </button>
                 </div>
               </div>
