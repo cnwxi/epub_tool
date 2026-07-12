@@ -1,5 +1,11 @@
 # 更新日志
 
+### 2026.07.12
+版本号更新为 `26.7.12`。<br>
+优化常驻 Python Worker：通过 JSON Lines 长连接复用处理模块与 OCR 运行时，新增父进程存活监控、运行状态展示、异常自动恢复与手动重启能力。<br>
+优化 sidecar 启动与打包：改为 PyInstaller 目录式布局，完善 Tauri 资源复制和运行时查找逻辑，避免单文件 sidecar 的解压启动开销。<br>
+补充 Worker 协议、任务模块按需加载及 ONNX-only sidecar 的测试覆盖。<br>
+
 ### 2026.07.11
 版本号更新为 `26.7.11`。<br>
 完善本地开发与编译文档：新增跨 macOS、Windows、Linux 的环境配置、依赖准备、Python sidecar 二进制编译、桌面打包及 `cargo metadata` 报错排查说明。<br>
