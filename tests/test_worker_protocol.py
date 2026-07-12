@@ -24,6 +24,9 @@ class WorkerProtocolTest(unittest.TestCase):
             def sendall(self, payload):
                 self.sent = payload
 
+            def settimeout(self, timeout):
+                self.timeout = timeout
+
             def recv(self, _size):
                 return b""
 
@@ -36,6 +39,7 @@ class WorkerProtocolTest(unittest.TestCase):
 
         create_connection.assert_called_once_with(("127.0.0.1", 1234), timeout=10)
         self.assertEqual(connection.sent, b"test-token\n")
+        self.assertIsNone(connection.timeout)
         exit_process.assert_called_once_with(0)
 
     def test_start_parent_monitor_requires_complete_liveness_configuration(self):

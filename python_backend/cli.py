@@ -32,6 +32,8 @@ def monitor_parent_liveness(address: str, token: str) -> None:
         host, raw_port = address.rsplit(":", 1)
         with socket.create_connection((host, int(raw_port)), timeout=10) as connection:
             connection.sendall(f"{token}\n".encode("utf-8"))
+            # create_connection keeps its connect timeout; liveness reads must wait indefinitely.
+            connection.settimeout(None)
             while connection.recv(4096):
                 pass
     except (OSError, ValueError):

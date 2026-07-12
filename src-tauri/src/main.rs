@@ -541,19 +541,26 @@ fn accept_parent_liveness_stream(listener: &TcpListener, token: &str) -> Result<
     let expected = format!("{token}\n").into_bytes();
     let deadline = Instant::now() + PARENT_LIVENESS_ACCEPT_TIMEOUT;
     loop {
+        if Instant::now() >= deadline {
+            return Err("等待 Python worker liveness 握手超时".to_string());
+        }
         match listener.accept() {
             Ok((mut stream, _)) => {
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(1)))
-                    .map_err(|error| format!("配置 worker liveness 握手失败: {error}"))?;
                 let mut received = Vec::with_capacity(expected.len());
                 while received.len() < expected.len() {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        break;
+                    }
+                    stream
+                        .set_read_timeout(Some(remaining.min(Duration::from_secs(1))))
+                        .map_err(|error| format!("配置 worker liveness 握手失败: {error}"))?;
                     let mut buffer = [0_u8; 64];
                     match stream.read(&mut buffer) {
                         Ok(0) => break,
                         Ok(length) => received.extend_from_slice(&buffer[..length]),
-                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
-                        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => break,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => continue,
+                        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => continue,
                         Err(error) => {
                             return Err(format!("读取 worker liveness 握手失败: {error}"));
                         }
@@ -567,9 +574,6 @@ fn accept_parent_liveness_stream(listener: &TcpListener, token: &str) -> Result<
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                if Instant::now() >= deadline {
-                    return Err("等待 Python worker liveness 握手超时".to_string());
-                }
                 thread::sleep(Duration::from_millis(20));
             }
             Err(error) => return Err(format!("接收 worker liveness 连接失败: {error}")),
@@ -681,8 +685,8 @@ fn set_active_worker_child(store: &PythonWorkerStore, child: Option<Arc<Mutex<Ch
 
 fn ensure_python_worker(
     app: &AppHandle,
+    store: &PythonWorkerStore,
     worker_slot: &mut Option<PythonWorker>,
-    status: &mut PythonWorkerStatus,
 ) -> Result<(), String> {
     if let Some(worker) = worker_slot.as_mut() {
         if worker
@@ -697,19 +701,36 @@ fn ensure_python_worker(
         }
     }
 
-    status.state = "starting".to_string();
-    status.message = "正在启动处理引擎…".to_string();
-    status.pid = None;
+    // The liveness handshake below may take up to 30 seconds.  Keep the
+    // status mutex available so frontend polling can show this transition.
+    {
+        let mut status = store
+            .status
+            .lock()
+            .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+        status.state = "starting".to_string();
+        status.message = "正在启动处理引擎…".to_string();
+        status.pid = None;
+    }
     match start_python_worker(app) {
         Ok(worker) => {
+            let pid = worker_pid(&worker);
+            *worker_slot = Some(worker);
+            let mut status = store
+                .status
+                .lock()
+                .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
             status.state = "ready".to_string();
             status.message = "处理引擎已就绪".to_string();
             status.last_error = None;
-            status.pid = worker_pid(&worker);
-            *worker_slot = Some(worker);
+            status.pid = pid;
             Ok(())
         }
         Err(error) => {
+            let mut status = store
+                .status
+                .lock()
+                .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
             status.state = "unavailable".to_string();
             status.message = "处理引擎启动失败".to_string();
             status.last_error = Some(error.clone());
@@ -724,11 +745,7 @@ fn prewarm_python_worker(app: &AppHandle, store: &PythonWorkerStore) -> Result<(
         .worker
         .lock()
         .map_err(|_| "Python worker 锁已损坏".to_string())?;
-    let mut status = store
-        .status
-        .lock()
-        .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
-    ensure_python_worker(app, &mut worker_slot, &mut status)
+    ensure_python_worker(app, store, &mut worker_slot)
 }
 
 fn stop_python_worker(worker: &mut PythonWorker) -> Result<(), String> {
@@ -788,38 +805,47 @@ fn recover_python_worker(
     }
     *worker_slot = None;
 
-    let mut status = match store.status.lock() {
-        Ok(status) => status,
-        Err(_) => return,
+    let should_restart = {
+        let mut status = match store.status.lock() {
+            Ok(status) => status,
+            Err(_) => return,
+        };
+        status.last_error = Some(error.to_string());
+        status.pid = None;
+        if !force_restart && status.recovery_attempts >= status.auto_restart_limit {
+            status.state = "unavailable".to_string();
+            status.message = format!(
+                "自动恢复已达到上限（{}/{}）",
+                status.recovery_attempts, status.auto_restart_limit
+            );
+            false
+        } else {
+            if force_restart {
+                status.recovery_attempts = 0;
+            } else {
+                status.recovery_attempts += 1;
+            }
+            status.state = "recovering".to_string();
+            status.message = if force_restart {
+                "正在重新启动处理引擎…".to_string()
+            } else {
+                format!(
+                    "正在自动恢复处理引擎（{}/{}）…",
+                    status.recovery_attempts, status.auto_restart_limit
+                )
+            };
+            true
+        }
     };
-    status.last_error = Some(error.to_string());
-    status.pid = None;
-    if !force_restart && status.recovery_attempts >= status.auto_restart_limit {
-        status.state = "unavailable".to_string();
-        status.message = format!(
-            "自动恢复已达到上限（{}/{}）",
-            status.recovery_attempts, status.auto_restart_limit
-        );
+    if !should_restart {
         return;
     }
 
-    if force_restart {
-        status.recovery_attempts = 0;
-    } else {
-        status.recovery_attempts += 1;
-    }
-    status.state = "recovering".to_string();
-    status.message = if force_restart {
-        "正在重新启动处理引擎…".to_string()
-    } else {
-        format!(
-            "正在自动恢复处理引擎（{}/{}）…",
-            status.recovery_attempts, status.auto_restart_limit
-        )
-    };
-    if let Err(start_error) = ensure_python_worker(app, &mut worker_slot, &mut status) {
-        status.last_error = Some(format!("{error}\n自动恢复失败：{start_error}"));
-    } else {
+    if let Err(start_error) = ensure_python_worker(app, store, &mut worker_slot) {
+        if let Ok(mut status) = store.status.lock() {
+            status.last_error = Some(format!("{error}\n自动恢复失败：{start_error}"));
+        }
+    } else if let Ok(mut status) = store.status.lock() {
         status.last_error = Some(error.to_string());
         status.message = if force_restart {
             "处理引擎已手动重启".to_string()
@@ -892,12 +918,12 @@ fn execute_worker_request(
         .worker
         .lock()
         .map_err(|_| "Python worker 锁已损坏".to_string())?;
+    ensure_python_worker(app, store, &mut worker_slot)?;
     {
         let mut status = store
             .status
             .lock()
             .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
-        ensure_python_worker(app, &mut worker_slot, &mut status)?;
         status.state = "busy".to_string();
         status.message = "处理引擎正在执行请求".to_string();
     }
@@ -1022,10 +1048,9 @@ async fn list_font_targets(
         .map_err(|error| format!("解析字体结果失败: {error}"))
 }
 
-#[tauri::command]
-fn get_python_worker_status(
-    app: AppHandle,
-    store: State<'_, PythonWorkerStore>,
+fn get_python_worker_status_blocking(
+    app: &AppHandle,
+    store: &PythonWorkerStore,
 ) -> Result<PythonWorkerStatus, String> {
     let exit_error = if let Ok(mut worker_slot) = store.worker.try_lock() {
         if let Some(worker) = worker_slot.as_mut() {
@@ -1050,7 +1075,34 @@ fn get_python_worker_status(
     };
 
     if let Some(error) = exit_error {
-        recover_python_worker(&app, store.inner(), &error, false);
+        let (status_snapshot, should_recover) = {
+            let mut status = store
+                .status
+                .lock()
+                .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+            status.last_error = Some(error.clone());
+            status.pid = None;
+            if status.recovery_attempts >= status.auto_restart_limit {
+                status.state = "unavailable".to_string();
+                status.message = format!(
+                    "自动恢复已达到上限（{}/{}）",
+                    status.recovery_attempts, status.auto_restart_limit
+                );
+                (status.clone(), false)
+            } else {
+                status.state = "recovering".to_string();
+                status.message = "检测到处理引擎退出，正在自动恢复…".to_string();
+                (status.clone(), true)
+            }
+        };
+        if should_recover {
+            let recovery_app = app.clone();
+            std::thread::spawn(move || {
+                let recovery_store = recovery_app.state::<PythonWorkerStore>();
+                recover_python_worker(&recovery_app, recovery_store.inner(), &error, false);
+            });
+        }
+        return Ok(status_snapshot);
     }
 
     store
@@ -1058,6 +1110,16 @@ fn get_python_worker_status(
         .lock()
         .map(|status| status.clone())
         .map_err(|_| "Python worker 状态锁已损坏".to_string())
+}
+
+#[tauri::command]
+async fn get_python_worker_status(app: AppHandle) -> Result<PythonWorkerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<PythonWorkerStore>();
+        get_python_worker_status_blocking(&app, store.inner())
+    })
+    .await
+    .map_err(|error| format!("异步获取 Python worker 状态失败: {error}"))?
 }
 
 #[tauri::command]
@@ -1073,28 +1135,46 @@ fn set_python_worker_auto_restart_limit(
     Ok(status.clone())
 }
 
-#[tauri::command]
-fn restart_python_worker(
-    app: AppHandle,
-    store: State<'_, PythonWorkerStore>,
+fn restart_python_worker_blocking(
+    app: &AppHandle,
+    store: &PythonWorkerStore,
 ) -> Result<PythonWorkerStatus, String> {
     let mut worker_slot = match store.worker.try_lock() {
         Ok(worker_slot) => worker_slot,
-        Err(_) => return terminate_active_worker(store.inner()),
+        Err(_) => return terminate_active_worker(store),
     };
-    let mut status = store
-        .status
-        .lock()
-        .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+    {
+        let mut status = store
+            .status
+            .lock()
+            .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+        status.recovery_attempts = 0;
+        status.last_error = None;
+        status.state = "recovering".to_string();
+        status.message = "正在重新启动处理引擎…".to_string();
+        status.pid = None;
+    }
     if let Some(worker) = worker_slot.as_mut() {
         stop_python_worker(worker)?;
     }
     *worker_slot = None;
-    status.recovery_attempts = 0;
-    status.last_error = None;
-    ensure_python_worker(&app, &mut worker_slot, &mut status)?;
+    ensure_python_worker(app, store, &mut worker_slot)?;
+    let mut status = store
+        .status
+        .lock()
+        .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
     status.message = "处理引擎已手动重启".to_string();
     Ok(status.clone())
+}
+
+#[tauri::command]
+async fn restart_python_worker(app: AppHandle) -> Result<PythonWorkerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<PythonWorkerStore>();
+        restart_python_worker_blocking(&app, store.inner())
+    })
+    .await
+    .map_err(|error| format!("异步重启 Python worker 失败: {error}"))?
 }
 
 #[tauri::command]
