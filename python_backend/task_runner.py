@@ -104,32 +104,42 @@ class BroadcastLogger:
         )
 
 
-@contextmanager
-def patched_loggers(logger: BroadcastLogger):
-    originals: list[tuple[Any, Any]] = []
-    try:
-        for module in load_modules().values():
-            originals.append((module, module.logger))
-            module.logger = logger
-        yield
-    finally:
-        for module, original in originals:
-            module.logger = original
+def load_module(task_type: str) -> Any:
+    """按任务惰性加载服务模块，并在当前进程内复用。
 
+    sidecar 既会处理实际任务，也会只读取字体列表。原先的实现每次都会
+    导入全部六个服务模块，使轻任务和字体列表读取也承担 OCR 相关依赖的
+    初始化成本。
+    """
+    module = _LOADED_MODULES.get(task_type)
+    if module is not None:
+        return module
 
-def load_modules() -> dict[str, Any]:
-    if _LOADED_MODULES:
-        return _LOADED_MODULES
+    module_path = MODULE_PATHS.get(task_type)
+    if module_path is None:
+        raise ValueError(f"不支持的任务类型: {task_type}")
 
     try:
-        for task_type, module_path in MODULE_PATHS.items():
-            _LOADED_MODULES[task_type] = import_module(module_path)
+        module = import_module(module_path)
     except ModuleNotFoundError as exc:
         raise RuntimeError(
             "Python 依赖未安装完整，请先执行 `python -m pip install -r requirements/requirements.txt`。"
         ) from exc
 
-    return _LOADED_MODULES
+    _LOADED_MODULES[task_type] = module
+    return module
+
+
+@contextmanager
+def patched_logger(task_type: str, logger: BroadcastLogger):
+    """只替换当前任务模块的 logger，避免为日志配置而导入无关模块。"""
+    module = load_module(task_type)
+    original = module.logger
+    module.logger = logger
+    try:
+        yield
+    finally:
+        module.logger = original
 
 
 def build_expected_output_path(
@@ -178,7 +188,7 @@ def normalize_target_map(raw_map: Any) -> dict[str, list[str]]:
 
 
 def list_font_targets(epub_path: str) -> dict[str, Any]:
-    font_module = load_modules()["font_encrypt"]
+    font_module = load_module("font_encrypt")
     result = font_module.list_epub_font_encrypt_targets(epub_path)
     return {
         "ok": True,
@@ -187,13 +197,40 @@ def list_font_targets(epub_path: str) -> dict[str, Any]:
     }
 
 
+def iter_font_targets(epub_paths: list[str]):
+    """逐本产生字体列表结果，使 CLI 能在一个 sidecar 中推送批量进度。"""
+    total_files = len(epub_paths)
+    for index, epub_path in enumerate(epub_paths, start=1):
+        normalized_path = os.path.normpath(epub_path)
+        try:
+            result = list_font_targets(normalized_path)
+        except Exception as exc:
+            result = {
+                "ok": False,
+                "input_file": normalized_path,
+                "font_families": [],
+                "error": str(exc),
+            }
+        yield {
+            "event": "font-targets.progress",
+            "current_index": index,
+            "total_files": total_files,
+            "result": result,
+        }
+
+
+def list_font_targets_batch(epub_paths: list[str]) -> list[dict[str, Any]]:
+    """保留可复用的批量 API，供 CLI 和测试调用。"""
+    return [event["result"] for event in iter_font_targets(epub_paths)]
+
+
 def execute_task(
     task_type: str,
     input_file: str,
     output_dir: str | None,
     options: dict[str, Any],
 ) -> Any:
-    module = load_modules().get(task_type)
+    module = load_module(task_type)
     func_name = FUNCTION_NAMES.get(task_type)
     if module is None or func_name is None:
         raise ValueError(f"不支持的任务类型: {task_type}")
@@ -236,12 +273,14 @@ def run_task(request: TaskRequest) -> TaskResult:
             task_id=request.task_id,
             status="started",
             progress=0,
-            message=f"开始执行 {TASK_LABELS.get(request.task_type, request.task_type)}",
+            message=(
+                f"正在加载{TASK_LABELS.get(request.task_type, request.task_type)}处理模块…"
+            ),
             total_files=total_files,
         )
     )
 
-    with patched_loggers(logger):
+    with patched_logger(request.task_type, logger):
         for index, input_file in enumerate(request.input_files, start=1):
             normalized_input = os.path.normpath(input_file)
             expected_output = build_expected_output_path(

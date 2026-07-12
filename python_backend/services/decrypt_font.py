@@ -38,6 +38,7 @@ if not OCR_MODEL_NAME:
 ONNX_OCR_MODEL_NAME = f"{OCR_MODEL_NAME}_onnx"
 ONNX_MODEL_FILE_NAME = "inference.onnx"
 ONNX_LOG_SEVERITY_ERROR = 3
+_OCR_BACKEND_CACHE = {}
 OCR_PASSTHROUGH_PUNCTUATION_CHARS = frozenset(
     "。，、；：？！“”‘’（）《》〈〉【】〔〕…—·"
 )
@@ -466,7 +467,17 @@ def load_text_recognition_config(config_path):
 
 
 def create_ocr_backend(options=None):
-    return OnnxGlyphOcrBackend(options)
+    options = options or {}
+    model_dir = resolve_onnx_ocr_model_dir(options)
+    config_path = resolve_onnx_ocr_config_path(model_dir, options)
+    providers = tuple(options.get("onnx_providers") or ["CPUExecutionProvider"])
+    max_image_width = int(options.get("onnx_max_image_width") or 3200)
+    cache_key = (model_dir, config_path, providers, max_image_width)
+    backend = _OCR_BACKEND_CACHE.get(cache_key)
+    if backend is None:
+        backend = OnnxGlyphOcrBackend(options)
+        _OCR_BACKEND_CACHE[cache_key] = backend
+    return backend
 
 
 class FontDecrypt:

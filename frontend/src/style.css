@@ -314,7 +314,7 @@ input {
 .brand-block {
   position: relative;
   overflow: hidden;
-  padding: 16px 18px;
+  padding: 14px 18px 15px;
   border-radius: 22px;
   background: linear-gradient(145deg,
       rgba(255, 255, 255, 0.08) 0%,
@@ -352,6 +352,12 @@ input {
 }
 
 .brand-content {
+  display: grid;
+  gap: 0;
+  width: 100%;
+  align-items: center;
+  justify-items: center;
+  text-align: center;
   position: relative;
   z-index: 1;
   transition:
@@ -381,8 +387,10 @@ input {
 .brand-title {
   display: grid;
   gap: 4px;
-  margin: 8px 0 10px;
+  margin: 0;
   line-height: 1;
+  justify-items: center;
+  text-align: center;
 }
 
 .brand-title-main {
@@ -398,6 +406,14 @@ input {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: rgba(242, 191, 94, 0.86);
+}
+
+.brand-worker-status {
+  width: 100%;
+  margin-top: 12px;
+  justify-content: center;
+  text-align: center;
+  background: rgba(9, 19, 34, 0.28);
 }
 
 .brand-copy {
@@ -595,6 +611,88 @@ input {
   font-size: 12px;
   line-height: 1.45;
   color: rgba(249, 242, 230, 0.62);
+}
+
+.nav-worker-group {
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.nav-worker-status {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 15px;
+  background: rgba(9, 19, 34, 0.2);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.nav-worker-status:hover {
+  transform: translateX(3px);
+  border-color: rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.nav-worker-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #98a5b8;
+  box-shadow: 0 0 0 3px rgba(152, 165, 184, 0.12);
+}
+
+.nav-worker-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.nav-worker-copy strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.nav-worker-copy small {
+  overflow: hidden;
+  color: rgba(249, 242, 230, 0.62);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-worker-status.state-ready .nav-worker-dot {
+  background: #71d49d;
+  box-shadow: 0 0 0 3px rgba(113, 212, 157, 0.14);
+}
+
+.nav-worker-status.state-busy .nav-worker-dot,
+.nav-worker-status.state-starting .nav-worker-dot,
+.nav-worker-status.state-recovering .nav-worker-dot {
+  background: #f2bf5e;
+  box-shadow: 0 0 0 3px rgba(242, 191, 94, 0.14);
+}
+
+.nav-worker-status.state-recovering .nav-worker-dot,
+.nav-worker-status.state-starting .nav-worker-dot {
+  animation: worker-status-pulse 1.2s ease-in-out infinite;
+}
+
+.nav-worker-status.state-unavailable .nav-worker-dot {
+  background: #ef8c8c;
+  box-shadow: 0 0 0 3px rgba(239, 140, 140, 0.14);
+}
+
+@keyframes worker-status-pulse {
+  50% { opacity: 0.35; transform: scale(0.78); }
 }
 
 @keyframes brand-forge-scan {
@@ -1413,6 +1511,53 @@ input {
 
 .settings-status-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.worker-control-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(180px, 0.7fr) minmax(250px, 1fr);
+  gap: var(--layout-gap-3);
+}
+
+.worker-status-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: var(--layout-pad-md) var(--layout-pad-lg);
+  border: 1px solid var(--glass-soft-border);
+  border-radius: var(--layout-radius-md);
+}
+
+.worker-status-card p,
+.worker-recovery-note,
+.worker-error-message {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.worker-status-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #98a5b8;
+}
+
+.worker-status-card.state-ready .worker-status-dot { background: #4dbb7a; }
+.worker-status-card.state-busy .worker-status-dot,
+.worker-status-card.state-starting .worker-status-dot,
+.worker-status-card.state-recovering .worker-status-dot { background: #d99e2b; }
+.worker-status-card.state-unavailable .worker-status-dot { background: #d85a5a; }
+
+.worker-error-message {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, #d85a5a 24%, var(--glass-soft-border));
+  border-radius: 12px;
+  color: color-mix(in srgb, #9e3232 78%, var(--text-primary));
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .settings-status-card,
