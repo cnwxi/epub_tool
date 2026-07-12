@@ -11,34 +11,55 @@ from python_backend.services import decrypt_font
 
 
 class WorkerProtocolTest(unittest.TestCase):
-    def test_get_parent_pid_accepts_only_positive_integer_values(self):
-        with patch.dict(os.environ, {cli.PARENT_PID_ENV: "123"}):
-            self.assertEqual(cli.get_parent_pid(), 123)
-        with patch.dict(os.environ, {cli.PARENT_PID_ENV: "0"}):
-            self.assertIsNone(cli.get_parent_pid())
-        with patch.dict(os.environ, {cli.PARENT_PID_ENV: "not-a-pid"}):
-            self.assertIsNone(cli.get_parent_pid())
+    def test_parent_liveness_monitor_exits_when_rust_closes_socket(self):
+        class FakeConnection:
+            sent = b""
 
-    def test_parent_process_liveness_checks_original_parent_pid(self):
-        with patch.object(cli.os, "kill") as kill_process:
-            self.assertTrue(cli.parent_process_is_alive(123))
-        kill_process.assert_called_once_with(123, 0)
+            def __enter__(self):
+                return self
 
-        with patch.object(cli.os, "kill", side_effect=ProcessLookupError):
-            self.assertFalse(cli.parent_process_is_alive(123))
-        with patch.object(cli.os, "kill", side_effect=PermissionError):
-            self.assertTrue(cli.parent_process_is_alive(123))
+            def __exit__(self, *_args):
+                return False
 
-    def test_parent_monitor_uses_process_handle_on_windows(self):
+            def sendall(self, payload):
+                self.sent = payload
+
+            def recv(self, _size):
+                return b""
+
+        connection = FakeConnection()
         with (
-            patch.object(cli.os, "name", "nt"),
-            patch.object(cli, "monitor_windows_parent_process") as monitor_windows,
+            patch.object(cli.socket, "create_connection", return_value=connection) as create_connection,
             patch.object(cli.os, "_exit") as exit_process,
         ):
-            cli.monitor_parent_process(123)
+            cli.monitor_parent_liveness("127.0.0.1:1234", "test-token")
 
-        monitor_windows.assert_called_once_with(123)
+        create_connection.assert_called_once_with(("127.0.0.1", 1234), timeout=10)
+        self.assertEqual(connection.sent, b"test-token\n")
         exit_process.assert_called_once_with(0)
+
+    def test_start_parent_monitor_requires_complete_liveness_configuration(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(cli.threading, "Thread") as thread:
+            cli.start_parent_monitor()
+        thread.assert_not_called()
+
+    def test_start_parent_monitor_uses_liveness_configuration(self):
+        environment = {
+            cli.PARENT_LIVENESS_ADDR_ENV: "127.0.0.1:1234",
+            cli.PARENT_LIVENESS_TOKEN_ENV: "test-token",
+        }
+        with patch.dict(os.environ, environment, clear=True), patch.object(
+            cli.threading, "Thread"
+        ) as thread:
+            cli.start_parent_monitor()
+
+        thread.assert_called_once_with(
+            target=cli.monitor_parent_liveness,
+            args=("127.0.0.1:1234", "test-token"),
+            name="epub-tool-parent-monitor",
+            daemon=True,
+        )
+        thread.return_value.start.assert_called_once()
 
     def test_serve_returns_result_for_run_request(self):
         original_stdin = sys.stdin

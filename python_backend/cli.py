@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import sys
 import threading
-import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -14,11 +14,8 @@ from python_backend.protocol import TaskRequest
 from python_backend.task_runner import iter_font_targets, list_font_targets, run_task
 
 
-PARENT_PID_ENV = "EPUB_TOOL_PARENT_PID"
-PARENT_MONITOR_INTERVAL_SECONDS = 1.0
-WINDOWS_SYNCHRONIZE = 0x00100000
-WAIT_OBJECT_0 = 0
-WAIT_TIMEOUT = 0x00000102
+PARENT_LIVENESS_ADDR_ENV = "EPUB_TOOL_PARENT_LIVENESS_ADDR"
+PARENT_LIVENESS_TOKEN_ENV = "EPUB_TOOL_PARENT_LIVENESS_TOKEN"
 
 
 def configure_stdio() -> None:
@@ -29,76 +26,28 @@ def configure_stdio() -> None:
         stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def get_parent_pid() -> int | None:
-    raw_pid = os.environ.get(PARENT_PID_ENV, "").strip()
+def monitor_parent_liveness(address: str, token: str) -> None:
+    """Exit when Rust closes its liveness connection, regardless of process ancestry."""
     try:
-        parent_pid = int(raw_pid)
-    except ValueError:
-        return None
-    return parent_pid if parent_pid > 0 else None
-
-
-def parent_process_is_alive(parent_pid: int) -> bool:
-    """Check the original Tauri process without assuming it is our direct parent.
-
-    PyInstaller one-file launches the bundled Python application from a
-    bootloader child process, so ``getppid()`` is not the Tauri PID there.
-    """
-    try:
-        os.kill(parent_pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # A live process can be outside the current user's signalling scope.
-        return True
-    return True
-
-
-def monitor_windows_parent_process(parent_pid: int) -> None:
-    """Wait on the original process object so PID reuse cannot keep the worker alive."""
-    import ctypes
-    from ctypes import wintypes
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-    kernel32.WaitForSingleObject.restype = wintypes.DWORD
-    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-    kernel32.CloseHandle.restype = wintypes.BOOL
-
-    handle = kernel32.OpenProcess(WINDOWS_SYNCHRONIZE, False, parent_pid)
-    if not handle:
-        return
-    try:
-        while (
-            kernel32.WaitForSingleObject(
-                handle, int(PARENT_MONITOR_INTERVAL_SECONDS * 1000)
-            )
-            == WAIT_TIMEOUT
-        ):
-            pass
-    finally:
-        kernel32.CloseHandle(handle)
-
-
-def monitor_parent_process(parent_pid: int) -> None:
-    if os.name == "nt":
-        monitor_windows_parent_process(parent_pid)
-    else:
-        while parent_process_is_alive(parent_pid):
-            time.sleep(PARENT_MONITOR_INTERVAL_SECONDS)
-    # The Rust parent has already disappeared, so buffered protocol output is no longer useful.
+        host, raw_port = address.rsplit(":", 1)
+        with socket.create_connection((host, int(raw_port)), timeout=10) as connection:
+            connection.sendall(f"{token}\n".encode("utf-8"))
+            while connection.recv(4096):
+                pass
+    except (OSError, ValueError):
+        # Without the liveness connection, keeping the worker running risks an orphan.
+        pass
     os._exit(0)
 
 
 def start_parent_monitor() -> None:
-    parent_pid = get_parent_pid()
-    if parent_pid is None:
+    address = os.environ.get(PARENT_LIVENESS_ADDR_ENV, "").strip()
+    token = os.environ.get(PARENT_LIVENESS_TOKEN_ENV, "")
+    if not address or not token:
         return
     threading.Thread(
-        target=monitor_parent_process,
-        args=(parent_pid,),
+        target=monitor_parent_liveness,
+        args=(address, token),
         name="epub-tool-parent-monitor",
         daemon=True,
     ).start()

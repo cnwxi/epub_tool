@@ -5,19 +5,21 @@ use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
+    net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -34,6 +36,7 @@ const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
 };
 const FALLBACK_OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec";
 const WORKER_STDERR_MAX_LINES: usize = 100;
+const PARENT_LIVENESS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -68,6 +71,7 @@ struct PythonWorker {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
+    _parent_liveness_stream: TcpStream,
 }
 
 struct PythonWorkerStore {
@@ -501,7 +505,6 @@ fn default_ocr_model_name() -> &'static str {
 
 fn configure_backend_command(command: &mut Command, log_path: &Path, ocr_model_dir: Option<&Path>) {
     command.env("EPUB_TOOL_LOG_PATH", log_path);
-    command.env("EPUB_TOOL_PARENT_PID", std::process::id().to_string());
     if let Some(ocr_model_dir) = ocr_model_dir {
         command.env("EPUB_TOOL_OCR_ONNX_MODEL_DIR", ocr_model_dir);
     }
@@ -516,15 +519,121 @@ fn configure_system_open_command(_command: &mut Command) {
     _command.creation_flags(CREATE_NO_WINDOW);
 }
 
+fn create_parent_liveness_listener() -> Result<(TcpListener, String, String), String> {
+    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .map_err(|error| format!("创建 worker liveness socket 失败: {error}"))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|error| format!("配置 worker liveness socket 失败: {error}"))?;
+    let address = listener
+        .local_addr()
+        .map_err(|error| format!("读取 worker liveness socket 地址失败: {error}"))?
+        .to_string();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_nanos())
+        .unwrap_or_default();
+    let token = format!("{}-{nonce}", std::process::id());
+    Ok((listener, address, token))
+}
+
+fn accept_parent_liveness_stream(listener: &TcpListener, token: &str) -> Result<TcpStream, String> {
+    let expected = format!("{token}\n").into_bytes();
+    let deadline = Instant::now() + PARENT_LIVENESS_ACCEPT_TIMEOUT;
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .map_err(|error| format!("配置 worker liveness 握手失败: {error}"))?;
+                let mut received = Vec::with_capacity(expected.len());
+                while received.len() < expected.len() {
+                    let mut buffer = [0_u8; 64];
+                    match stream.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(length) => received.extend_from_slice(&buffer[..length]),
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => break,
+                        Err(error) => {
+                            return Err(format!("读取 worker liveness 握手失败: {error}"));
+                        }
+                    }
+                }
+                if received == expected {
+                    stream.set_read_timeout(None).map_err(|error| {
+                        format!("恢复 worker liveness socket 配置失败: {error}")
+                    })?;
+                    return Ok(stream);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err("等待 Python worker liveness 握手超时".to_string());
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => return Err(format!("接收 worker liveness 连接失败: {error}")),
+        }
+    }
+}
+
+fn terminate_worker_process_tree(child: &mut Child) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let result = unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
+        if result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            return Ok(());
+        }
+        return Err(format!(
+            "终止 Python worker 进程组失败: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &child.id().to_string(), "/T", "/F"]);
+        command.creation_flags(CREATE_NO_WINDOW);
+        let status = command
+            .status()
+            .map_err(|error| format!("终止 Python worker 进程树失败: {error}"))?;
+        if status.success() || matches!(child.try_wait(), Ok(Some(_))) {
+            return Ok(());
+        }
+        return child
+            .kill()
+            .map_err(|error| format!("终止 Python worker 失败: {error}"));
+    }
+
+    #[cfg(not(any(unix, target_os = "windows")))]
+    child
+        .kill()
+        .map_err(|error| format!("终止 Python worker 失败: {error}"))
+}
+
 fn start_python_worker(app: &AppHandle) -> Result<PythonWorker, String> {
     let mut command = build_backend_command(app, "serve")?;
+    let (liveness_listener, liveness_address, liveness_token) = create_parent_liveness_listener()?;
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    command.env("EPUB_TOOL_PARENT_LIVENESS_ADDR", liveness_address);
+    command.env("EPUB_TOOL_PARENT_LIVENESS_TOKEN", liveness_token.clone());
+    #[cfg(unix)]
+    command.process_group(0);
     let mut child = command
         .spawn()
         .map_err(|error| format!("启动常驻 Python worker 失败: {error}"))?;
+    let parent_liveness_stream =
+        match accept_parent_liveness_stream(&liveness_listener, &liveness_token) {
+            Ok(stream) => stream,
+            Err(error) => {
+                let _ = terminate_worker_process_tree(&mut child);
+                return Err(error);
+            }
+        };
     let stdin = child
         .stdin
         .take()
@@ -556,6 +665,7 @@ fn start_python_worker(app: &AppHandle) -> Result<PythonWorker, String> {
         stdin,
         stdout: BufReader::new(stdout),
         stderr_lines,
+        _parent_liveness_stream: parent_liveness_stream,
     })
 }
 
@@ -631,9 +741,7 @@ fn stop_python_worker(worker: &mut PythonWorker) -> Result<(), String> {
         .map_err(|error| format!("检查 Python worker 退出状态失败: {error}"))?
         .is_none()
     {
-        child
-            .kill()
-            .map_err(|error| format!("终止 Python worker 失败: {error}"))?;
+        terminate_worker_process_tree(&mut child)?;
     }
     child
         .wait()
@@ -659,7 +767,7 @@ fn shutdown_python_worker(store: &PythonWorkerStore) {
     if let Some(active_child) = active_child {
         if let Ok(mut child) = active_child.lock() {
             if matches!(child.try_wait(), Ok(None)) {
-                let _ = child.kill();
+                let _ = terminate_worker_process_tree(&mut child);
             }
         }
     }
@@ -749,9 +857,7 @@ fn terminate_active_worker(store: &PythonWorkerStore) -> Result<PythonWorkerStat
     {
         return Err("当前请求正在结束，请稍后再尝试重启处理引擎。".to_string());
     }
-    child
-        .kill()
-        .map_err(|error| format!("终止 Python worker 失败: {error}"))?;
+    terminate_worker_process_tree(&mut child)?;
     drop(child);
     store
         .manual_restart_requested
