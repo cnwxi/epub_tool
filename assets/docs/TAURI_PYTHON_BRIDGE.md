@@ -15,7 +15,7 @@ Vue 组件
 ## Rust 侧职责
 
 - 解析前端请求
-- 优先查找 `src-tauri/binaries/epub-tool-python(.exe)` 或打包后资源目录中的 sidecar
+- 优先查找 `src-tauri/binaries/epub-tool-python/epub-tool-python(.exe)` 或打包后资源目录中的 sidecar
 - 仅在开发态回退到系统 Python：`python3` / `python` / Windows `py -3`
 - 启动 sidecar 或 `python_backend.cli`
 - 读取 stdout/stderr

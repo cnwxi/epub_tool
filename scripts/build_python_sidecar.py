@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ WORK_ROOT = REPO_ROOT / "build" / "python-sidecar"
 CONFIG_DIR = WORK_ROOT / "cache"
 SIDECAR_STEM = "epub-tool-python"
 SIDE_CAR_NAME = f"{SIDECAR_STEM}.exe" if sys.platform == "win32" else SIDECAR_STEM
+PYINSTALLER_MODE = "--onedir"
 BASE_REQUIRED_MODULES = [
     "bs4",
     "emoji",
@@ -81,7 +83,7 @@ def ensure_runtime_dependencies() -> None:
 
 
 def sidecar_output_path() -> Path:
-    return DIST_DIR / SIDE_CAR_NAME
+    return DIST_DIR / SIDECAR_STEM / SIDE_CAR_NAME
 
 
 def sidecar_exists() -> bool:
@@ -117,9 +119,12 @@ def build_sidecar() -> Path:
     work_dir.mkdir(parents=True, exist_ok=True)
     spec_dir.mkdir(parents=True, exist_ok=True)
 
-    target_path = sidecar_output_path()
-    if target_path.exists():
-        target_path.unlink()
+    target_dir = DIST_DIR / SIDECAR_STEM
+    if target_dir.exists():
+        if target_dir.is_dir():
+            shutil.rmtree(target_dir)
+        else:
+            target_dir.unlink()
 
     command = [
         sys.executable,
@@ -127,7 +132,7 @@ def build_sidecar() -> Path:
         "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onefile",
+        PYINSTALLER_MODE,
         "--name",
         SIDECAR_STEM,
         "--distpath",
@@ -155,7 +160,8 @@ def build_sidecar() -> Path:
 
     subprocess.run(command, cwd=REPO_ROOT, check=True, env=env)
 
-    if not target_path.exists():
+    target_path = sidecar_output_path()
+    if not target_path.is_file():
         raise SystemExit(f"Sidecar build finished but the output file was not found: {target_path}")
 
     if sys.platform != "win32":

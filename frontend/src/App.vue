@@ -421,6 +421,7 @@ const pythonWorkerStatus = ref<PythonWorkerStatus>({
 });
 const pythonWorkerRestarting = ref(false);
 let pythonWorkerStatusTimer = 0;
+let pythonWorkerStatusRefreshInFlight = false;
 const fontLoading = ref(false);
 const taskProgressCurrent = ref(0);
 const taskProgressTotal = ref(0);
@@ -1121,6 +1122,10 @@ const pythonWorkerStatusLabel = computed(() => {
 });
 
 const refreshPythonWorkerStatus = async () => {
+  if (pythonWorkerStatusRefreshInFlight) {
+    return;
+  }
+  pythonWorkerStatusRefreshInFlight = true;
   try {
     const status = await getPythonWorkerStatus();
     if (status) {
@@ -1133,6 +1138,8 @@ const refreshPythonWorkerStatus = async () => {
       message: "无法获取处理引擎状态",
       lastError: toErrorMessage(error, "无法获取处理引擎状态。"),
     };
+  } finally {
+    pythonWorkerStatusRefreshInFlight = false;
   }
 };
 

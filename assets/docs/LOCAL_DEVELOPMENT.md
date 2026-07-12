@@ -257,10 +257,10 @@ npm --prefix frontend install
 
 ### 构建 Python sidecar 二进制
 
-Python 后端会通过 PyInstaller 编译为当前平台的单文件 sidecar，输出到：
+Python 后端会通过 PyInstaller 编译为目录式 sidecar，避免单文件包每次启动时的解压延迟，输出到：
 
-- macOS / Linux：`src-tauri/binaries/epub-tool-python`
-- Windows：`src-tauri/binaries/epub-tool-python.exe`
+- macOS / Linux：`src-tauri/binaries/epub-tool-python/epub-tool-python`
+- Windows：`src-tauri/binaries/epub-tool-python/epub-tool-python.exe`
 
 可单独构建并验证该二进制：
 

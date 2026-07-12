@@ -27,13 +27,13 @@ conda run -n epub_tool npm run build:bundle-assets
 conda run -n epub_tool npm run tauri:build
 ```
 
-打包时，桌面应用会优先调用内置的 `src-tauri/binaries/epub-tool-python(.exe)`；只有本地开发环境中 sidecar 不存在时，才会回退到系统 Python。
+打包时，桌面应用会优先调用目录式 sidecar `src-tauri/binaries/epub-tool-python/epub-tool-python(.exe)`；只有本地开发环境中 sidecar 不存在时，才会回退到系统 Python。
 `scripts/build_python_sidecar.py` 只构建 ONNX Runtime 版 sidecar，不再收集 `paddle`、`paddleocr`、`paddlex`，也不保留 Paddle 回退模式。Paddle 相关依赖只存在于维护者刷新 ONNX 模型阶段，不参与默认构建。
 依赖入口按角色拆分：`requirements/requirements-base.txt` 是 EPUB 处理基础依赖，`requirements/requirements-onnx.txt` 是冻结运行时 OCR 依赖，`requirements/requirements-ocr-conversion.txt` 只供官方 Paddle 模型转 ONNX 使用。默认 `requirements/requirements.txt` 只聚合 base + ONNX。
 
 正式 bundle 前会自动生成一份独立的 `src-tauri/bundle-resources/` 资源目录：
 
-- `bundle-resources/binaries/` 只放当前平台的 sidecar
+- `bundle-resources/binaries/epub-tool-python/` 放当前平台的目录式 sidecar
 - `bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/` 放默认 ONNX 识别模型
 
 默认模型为 `PP-OCRv6_small_rec`，Paddle 源模型目录约 20 MiB，转换后的

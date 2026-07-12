@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     thread,
@@ -34,6 +34,8 @@ const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
 } else {
     "epub-tool-python"
 };
+const SIDECAR_DIR_NAME: &str = "epub-tool-python";
+const SIDECAR_RESOURCE_DIR_NAME: &str = "epub-tool-python-runtime";
 const FALLBACK_OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec";
 const WORKER_STDERR_MAX_LINES: usize = 100;
 const PARENT_LIVENESS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -79,6 +81,8 @@ struct PythonWorkerStore {
     // The active child stays separately accessible while stdout is being read under `worker`.
     active_child: Mutex<Option<Arc<Mutex<Child>>>>,
     manual_restart_requested: AtomicBool,
+    // Invalidates queued automatic recoveries whenever a newer start or restart begins.
+    recovery_epoch: AtomicU64,
     status: Mutex<PythonWorkerStatus>,
 }
 
@@ -190,7 +194,7 @@ fn cleanup_corrupt_store_backups(path: &Path, retain: usize) -> Result<(), Strin
         backups.push((modified_at, entry_path));
     }
 
-    backups.sort_by(|a, b| b.0.cmp(&a.0));
+    backups.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     for (_, backup_path) in backups.into_iter().skip(retain) {
         fs::remove_file(&backup_path).map_err(|error| {
             format!("清理旧损坏配置备份失败 {}: {error}", backup_path.display())
@@ -355,16 +359,26 @@ fn sidecar_candidates(app: &AppHandle) -> Vec<PathBuf> {
 
     if let Ok(explicit_path) = std::env::var("EPUB_TOOL_PYTHON_SIDECAR") {
         if !explicit_path.is_empty() {
-            candidates.push(PathBuf::from(explicit_path));
+            let explicit_path = PathBuf::from(explicit_path);
+            candidates.push(explicit_path.clone());
+            candidates.push(explicit_path.join(SIDECAR_NAME));
         }
     }
 
     if let Some(root) = workspace_root() {
-        candidates.push(root.join("src-tauri").join("binaries").join(SIDECAR_NAME));
+        let binaries_dir = root.join("src-tauri").join("binaries");
+        candidates.push(binaries_dir.join(SIDECAR_NAME));
+        candidates.push(binaries_dir.join(SIDECAR_DIR_NAME).join(SIDECAR_NAME));
     }
 
     if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("binaries").join(SIDECAR_NAME));
+        let binaries_dir = resource_dir.join("binaries");
+        candidates.push(binaries_dir.join(SIDECAR_NAME));
+        candidates.push(
+            binaries_dir
+                .join(SIDECAR_RESOURCE_DIR_NAME)
+                .join(SIDECAR_NAME),
+        );
     }
 
     candidates
@@ -588,10 +602,10 @@ fn terminate_worker_process_tree(child: &mut Child) -> Result<(), String> {
         if result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
             return Ok(());
         }
-        return Err(format!(
+        Err(format!(
             "终止 Python worker 进程组失败: {}",
             std::io::Error::last_os_error()
-        ));
+        ))
     }
 
     #[cfg(target_os = "windows")]
@@ -712,6 +726,7 @@ fn ensure_python_worker(
         status.message = "正在启动处理引擎…".to_string();
         status.pid = None;
     }
+    store.recovery_epoch.fetch_add(1, Ordering::AcqRel);
     match start_python_worker(app) {
         Ok(worker) => {
             let pid = worker_pid(&worker);
@@ -795,11 +810,17 @@ fn recover_python_worker(
     store: &PythonWorkerStore,
     error: &str,
     force_restart: bool,
+    expected_recovery_epoch: Option<u64>,
 ) {
     let mut worker_slot = match store.worker.lock() {
         Ok(worker_slot) => worker_slot,
         Err(_) => return,
     };
+    if let Some(expected_epoch) = expected_recovery_epoch {
+        if store.recovery_epoch.load(Ordering::Acquire) != expected_epoch {
+            return;
+        }
+    }
     if let Some(worker) = worker_slot.as_mut() {
         let _ = stop_python_worker(worker);
     }
@@ -994,7 +1015,7 @@ fn execute_worker_request(
         *worker_slot = None;
         drop(worker_slot);
         let force_restart = store.manual_restart_requested.swap(false, Ordering::AcqRel);
-        recover_python_worker(app, store, error, force_restart);
+        recover_python_worker(app, store, error, force_restart, None);
     } else if let Ok(mut status) = store.status.lock() {
         status.state = "ready".to_string();
         status.message = "处理引擎已就绪".to_string();
@@ -1062,7 +1083,11 @@ fn get_python_worker_status_blocking(
             match worker_status {
                 Ok(Some(exit_status)) => {
                     *worker_slot = None;
-                    Some(format!("检测到处理引擎意外退出：{exit_status}"))
+                    let recovery_epoch = store.recovery_epoch.fetch_add(1, Ordering::AcqRel) + 1;
+                    Some((
+                        format!("检测到处理引擎意外退出：{exit_status}"),
+                        recovery_epoch,
+                    ))
                 }
                 Ok(None) | Err(_) => None,
             }
@@ -1074,7 +1099,7 @@ fn get_python_worker_status_blocking(
         None
     };
 
-    if let Some(error) = exit_error {
+    if let Some((error, recovery_epoch)) = exit_error {
         let (status_snapshot, should_recover) = {
             let mut status = store
                 .status
@@ -1099,7 +1124,13 @@ fn get_python_worker_status_blocking(
             let recovery_app = app.clone();
             std::thread::spawn(move || {
                 let recovery_store = recovery_app.state::<PythonWorkerStore>();
-                recover_python_worker(&recovery_app, recovery_store.inner(), &error, false);
+                recover_python_worker(
+                    &recovery_app,
+                    recovery_store.inner(),
+                    &error,
+                    false,
+                    Some(recovery_epoch),
+                );
             });
         }
         return Ok(status_snapshot);
@@ -1139,6 +1170,7 @@ fn restart_python_worker_blocking(
     app: &AppHandle,
     store: &PythonWorkerStore,
 ) -> Result<PythonWorkerStatus, String> {
+    store.recovery_epoch.fetch_add(1, Ordering::AcqRel);
     let mut worker_slot = match store.worker.try_lock() {
         Ok(worker_slot) => worker_slot,
         Err(_) => return terminate_active_worker(store),
@@ -1396,11 +1428,12 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            app.manage(PersistedStore::load(&app.handle()));
+            app.manage(PersistedStore::load(app.handle()));
             app.manage(PythonWorkerStore {
                 worker: Mutex::new(None),
                 active_child: Mutex::new(None),
                 manual_restart_requested: AtomicBool::new(false),
+                recovery_epoch: AtomicU64::new(0),
                 status: Mutex::new(PythonWorkerStatus::default()),
             });
             setup_window_effects(app)?;
