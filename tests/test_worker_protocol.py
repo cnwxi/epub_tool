@@ -19,10 +19,15 @@ class WorkerProtocolTest(unittest.TestCase):
         with patch.dict(os.environ, {cli.PARENT_PID_ENV: "not-a-pid"}):
             self.assertIsNone(cli.get_parent_pid())
 
-    def test_parent_process_liveness_requires_expected_parent_pid(self):
-        with patch.object(cli.os, "getppid", return_value=123):
+    def test_parent_process_liveness_checks_original_parent_pid(self):
+        with patch.object(cli.os, "kill") as kill_process:
             self.assertTrue(cli.parent_process_is_alive(123))
-            self.assertFalse(cli.parent_process_is_alive(456))
+        kill_process.assert_called_once_with(123, 0)
+
+        with patch.object(cli.os, "kill", side_effect=ProcessLookupError):
+            self.assertFalse(cli.parent_process_is_alive(123))
+        with patch.object(cli.os, "kill", side_effect=PermissionError):
+            self.assertTrue(cli.parent_process_is_alive(123))
 
     def test_parent_monitor_uses_process_handle_on_windows(self):
         with (

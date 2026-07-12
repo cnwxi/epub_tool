@@ -39,8 +39,19 @@ def get_parent_pid() -> int | None:
 
 
 def parent_process_is_alive(parent_pid: int) -> bool:
-    """A sidecar is a direct child of Tauri, so re-parenting means Tauri is gone."""
-    return os.getppid() == parent_pid
+    """Check the original Tauri process without assuming it is our direct parent.
+
+    PyInstaller one-file launches the bundled Python application from a
+    bootloader child process, so ``getppid()`` is not the Tauri PID there.
+    """
+    try:
+        os.kill(parent_pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # A live process can be outside the current user's signalling scope.
+        return True
+    return True
 
 
 def monitor_windows_parent_process(parent_pid: int) -> None:
