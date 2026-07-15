@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from python_backend.json_output import dumps_json_line
 from python_backend.protocol import TaskRequest
 from python_backend.task_runner import iter_font_targets, list_font_targets, run_task
 
@@ -105,14 +106,11 @@ def cmd_list_fonts_batch(args: argparse.Namespace) -> int:
     results = []
     for event in iter_font_targets(args.input_files):
         results.append(event["result"])
-        sys.stdout.write(json.dumps(event, ensure_ascii=True) + "\n")
+        sys.stdout.write(dumps_json_line(event) + "\n")
         sys.stdout.flush()
 
     sys.stdout.write(
-        json.dumps(
-            {"event": "font-targets.finished", "font_targets": results},
-            ensure_ascii=True,
-        )
+        dumps_json_line({"event": "font-targets.finished", "font_targets": results})
         + "\n"
     )
     sys.stdout.flush()
@@ -121,7 +119,7 @@ def cmd_list_fonts_batch(args: argparse.Namespace) -> int:
 
 def cmd_list_fonts(args: argparse.Namespace) -> int:
     payload = list_font_targets(args.input_file)
-    sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    sys.stdout.write(dumps_json_line(payload) + "\n")
     return 0
 
 
@@ -135,7 +133,7 @@ def emit_worker_response(request_id: str, *, result: Any = None, error: str | No
         payload["result"] = result
     else:
         payload["error"] = error
-    sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    sys.stdout.write(dumps_json_line(payload) + "\n")
     sys.stdout.flush()
 
 
@@ -172,7 +170,7 @@ def cmd_serve(_args: argparse.Namespace) -> int:
                 results = []
                 for event in iter_font_targets([str(path) for path in input_files]):
                     results.append(event["result"])
-                    sys.stdout.write(json.dumps(event, ensure_ascii=True) + "\n")
+                    sys.stdout.write(dumps_json_line(event) + "\n")
                     sys.stdout.flush()
                 emit_worker_response(request_id, result=results)
             else:

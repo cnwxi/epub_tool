@@ -6,11 +6,25 @@ import unittest
 from unittest.mock import patch
 
 from python_backend import cli
+from python_backend.json_output import dumps_json_line
 from python_backend.protocol import TaskResult
 from python_backend.services import decrypt_font
 
 
 class WorkerProtocolTest(unittest.TestCase):
+    def test_json_line_output_replaces_lone_surrogates(self):
+        payload = {
+            "message": "broken-\ud83d-value",
+            "valid_pair": "emoji-\ud83d\ude00",
+        }
+
+        encoded = dumps_json_line(payload)
+        decoded = json.loads(encoded)
+
+        self.assertEqual(decoded["message"], "broken-\ufffd-value")
+        self.assertEqual(decoded["valid_pair"], "emoji-😀")
+        self.assertNotIn("\\ud83d-value", encoded)
+
     def test_parent_liveness_monitor_exits_when_rust_closes_socket(self):
         class FakeConnection:
             sent = b""

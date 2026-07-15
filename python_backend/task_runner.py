@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import sys
 import time
@@ -11,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from python_backend.epub_metadata import mark_epub_generated_by_tool
+from python_backend.json_output import dumps_json_line
 from python_backend.protocol import TaskEvent, TaskRequest, TaskResult
 
 
@@ -65,7 +65,7 @@ _LOADED_MODULES: dict[str, Any] = {}
 
 class JsonLineEmitter:
     def emit(self, event: TaskEvent) -> None:
-        sys.stdout.write(json.dumps(event.to_dict(), ensure_ascii=True) + "\n")
+        sys.stdout.write(dumps_json_line(event.to_dict()) + "\n")
         sys.stdout.flush()
 
 
