@@ -3,7 +3,7 @@ import json
 import os
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from python_backend import cli
 from python_backend.json_output import dumps_json_line
@@ -12,6 +12,22 @@ from python_backend.services import decrypt_font
 
 
 class WorkerProtocolTest(unittest.TestCase):
+    def test_configure_stdio_uses_utf8_for_worker_protocol(self):
+        stdin = Mock()
+        stdout = Mock()
+        stderr = Mock()
+
+        with (
+            patch.object(cli.sys, "stdin", stdin),
+            patch.object(cli.sys, "stdout", stdout),
+            patch.object(cli.sys, "stderr", stderr),
+        ):
+            cli.configure_stdio()
+
+        stdin.reconfigure.assert_called_once_with(encoding="utf-8", errors="strict")
+        stdout.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+        stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+
     def test_json_line_output_replaces_lone_surrogates(self):
         payload = {
             "message": "broken-\ud83d-value",

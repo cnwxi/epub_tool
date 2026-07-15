@@ -20,11 +20,12 @@ PARENT_LIVENESS_TOKEN_ENV = "EPUB_TOOL_PARENT_LIVENESS_TOKEN"
 
 
 def configure_stdio() -> None:
-    for stream_name in ("stdout", "stderr"):
+    for stream_name in ("stdin", "stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
         if stream is None or not hasattr(stream, "reconfigure"):
             continue
-        stream.reconfigure(encoding="utf-8", errors="replace")
+        errors = "strict" if stream_name == "stdin" else "replace"
+        stream.reconfigure(encoding="utf-8", errors=errors)
 
 
 def monitor_parent_liveness(address: str, token: str) -> None:

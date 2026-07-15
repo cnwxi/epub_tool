@@ -3,6 +3,7 @@
 ### 2026.07.15
 版本号更新为 `26.7.15`。<br>
 修复 Windows 下 Python Worker 输出包含孤立 UTF-16 代理字符时，Rust 无法解析 JSON 事件并导致处理引擎自动恢复及手动重启持续失败的问题；所有 Python 到 Rust 的 JSON Lines 输出现会统一净化非法代理字符，同时保留合法 Unicode 字符。<br>
+修复 Windows 使用不同系统代码页时，Python Worker 可能错误解码 Rust 发送的 UTF-8 请求并导致中文文件路径乱码的问题；Worker 标准输入现固定使用严格 UTF-8 解码。<br>
 规范 pytest 默认测试收集范围，避免误收集本地 `fixtures/` 目录中的测试文件。<br>
 
 ### 2026.07.12
