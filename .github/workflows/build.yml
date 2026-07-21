@@ -214,6 +214,7 @@ jobs:
           mkdir -p "$dmg_dir"
           rm -f "$dmg_path"
           ditto "$app_path" "$tmp_dir/Epub Tool NewUI.app"
+          ln -s /Applications "$tmp_dir/Applications"
           hdiutil create \
             -volname "Epub Tool NewUI" \
             -srcfolder "$tmp_dir" \

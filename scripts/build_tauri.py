@@ -67,6 +67,8 @@ def create_macos_dmg() -> Path:
         tmp_path = Path(tmp)
         staged_app = tmp_path / f"{name}.app"
         run_command([ditto, str(app_path), str(staged_app)])
+        # 在 DMG 中提供标准的“Applications”快捷方式，供用户将 .app 拖入应用程序目录。
+        (tmp_path / "Applications").symlink_to("/Applications")
         run_command(
             [
                 hdiutil,
