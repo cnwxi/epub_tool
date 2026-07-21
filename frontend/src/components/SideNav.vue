@@ -26,7 +26,12 @@ const executionSectionKeys: SectionKey[] = [
   "font_decrypt",
   "transfer_img",
 ];
+const overviewSectionKeys: SectionKey[] = ["overview", "engine"];
 const utilitySectionKeys: SectionKey[] = ["settings", "about"];
+
+const overviewItem = computed(() =>
+  props.items.find((item) => item.key === "overview"),
+);
 
 const executionItems = computed(() =>
   props.items.filter((item) => executionSectionKeys.includes(item.key)),
@@ -36,13 +41,20 @@ const utilityItems = computed(() =>
 );
 
 const executionOpen = ref(true);
+const overviewOpen = ref(true);
 const utilityOpen = ref(true);
+const pythonWorkerStateLabel = computed(() =>
+  props.pythonWorkerStatusLabel.replace(/^处理引擎/, "") || props.pythonWorkerStatusLabel,
+);
 
 watch(
   () => props.active,
   (active) => {
     if (executionSectionKeys.includes(active)) {
       executionOpen.value = true;
+    }
+    if (overviewSectionKeys.includes(active)) {
+      overviewOpen.value = true;
     }
     if (utilitySectionKeys.includes(active)) {
       utilityOpen.value = true;
@@ -69,18 +81,6 @@ watch(
             <span class="brand-title-main">Epub Tool</span>
             <span class="brand-title-alias">E-Book Thor</span>
           </h1>
-          <button
-            class="nav-worker-status brand-worker-status"
-            :class="`state-${props.pythonWorkerStatus.state}`"
-            type="button"
-            :title="`${props.pythonWorkerStatusLabel}：${props.pythonWorkerStatus.message}`"
-            @click.stop="emit('select', 'settings')"
-          >
-            <span class="nav-worker-dot" aria-hidden="true"></span>
-            <span class="nav-worker-copy">
-              <strong>{{ props.pythonWorkerStatusLabel }}</strong>
-            </span>
-          </button>
         </div>
         <div class="brand-easter-stage" aria-hidden="true">
           <div class="brand-easter-emblem">
@@ -93,9 +93,34 @@ watch(
       </div>
     </section>
 
+    <section class="nav-group nav-group-collapsible nav-group-overview nav-animated-block"
+      :class="{ open: overviewOpen }">
+      <button class="nav-group-toggle" type="button" @click="overviewOpen = !overviewOpen">
+        <span class="nav-group-title">概览</span>
+        <span class="nav-group-chevron" :class="{ open: overviewOpen }" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      <nav v-show="overviewOpen" class="nav-list">
+        <button v-if="overviewItem" class="nav-item" :class="{ active: overviewItem.key === active }"
+          type="button" @click="emit('select', overviewItem.key)">
+          <span>{{ overviewItem.label }}</span>
+        </button>
+        <button class="nav-item nav-worker-status" :class="`state-${props.pythonWorkerStatus.state}`"
+          type="button" :title="`${props.pythonWorkerStatusLabel}：${props.pythonWorkerStatus.message}`"
+          @click="emit('select', 'engine')">
+          <span class="nav-worker-name">处理引擎</span>
+          <span class="nav-worker-state">
+            <span class="nav-worker-dot" aria-hidden="true"></span>
+            <strong>{{ pythonWorkerStateLabel }}</strong>
+          </span>
+        </button>
+      </nav>
+    </section>
+
     <section class="nav-group nav-group-collapsible nav-animated-block" :class="{ open: executionOpen }">
       <button class="nav-group-toggle" type="button" @click="executionOpen = !executionOpen">
-        <span class="nav-group-title">工具箱</span>
+        <span class="nav-group-title">工具</span>
         <span class="nav-group-chevron" :class="{ open: executionOpen }" aria-hidden="true">
           ▾
         </span>
@@ -110,14 +135,13 @@ watch(
           @click="emit('select', item.key)"
         >
           <span>{{ item.label }}</span>
-          <small>{{ item.description }}</small>
         </button>
       </nav>
     </section>
 
     <section class="nav-group nav-group-collapsible nav-animated-block" :class="{ open: utilityOpen }">
       <button class="nav-group-toggle" type="button" @click="utilityOpen = !utilityOpen">
-        <span class="nav-group-title">设置与关于</span>
+        <span class="nav-group-title">系统</span>
         <span class="nav-group-chevron" :class="{ open: utilityOpen }" aria-hidden="true">
           ▾
         </span>
@@ -132,7 +156,6 @@ watch(
           @click="emit('select', item.key)"
         >
           <span>{{ item.label }}</span>
-          <small>{{ item.description }}</small>
         </button>
       </nav>
     </section>

@@ -40,6 +40,8 @@ const sectionItems: Array<{
   label: string;
   description: string;
 }> = [
+  { key: "overview", label: "功能概览", description: "按类别选择 EPUB 处理工具" },
+  { key: "engine", label: "处理引擎", description: "查看并管理 Python Worker 状态" },
   { key: "reformat", label: "格式化", description: "重构 EPUB 目录与引用" },
   { key: "decrypt", label: "文件解密", description: "还原文件名混淆" },
   { key: "encrypt", label: "文件加密", description: "生成文件名混淆版" },
@@ -64,6 +66,36 @@ const legacySectionMap: Record<string, SectionKey> = {
   settings: "settings",
   about: "about",
 };
+
+const overviewTaskGroups: Array<{
+  label: string;
+  description: string;
+  taskTypes: TaskType[];
+}> = [
+  {
+    label: "文件处理",
+    description: "整理 EPUB 结构，或处理文件名与资源引用混淆。",
+    taskTypes: ["reformat", "decrypt", "encrypt"],
+  },
+  {
+    label: "字体处理",
+    description: "按 EPUB 内嵌字体范围执行字形混淆或 OCR 还原。",
+    taskTypes: ["font_encrypt", "font_decrypt"],
+  },
+  {
+    label: "资源处理",
+    description: "转换 EPUB 内的 WEBP 图片并同步更新引用。",
+    taskTypes: ["transfer_img"],
+  },
+];
+const overviewGroups = computed(() =>
+  overviewTaskGroups.map((group) => ({
+    ...group,
+    items: group.taskTypes
+      .map((taskType) => sectionItems.find((item) => item.key === taskType))
+      .filter((item): item is (typeof sectionItems)[number] => Boolean(item)),
+  })),
+);
 
 const fontTargetTaskTypes: TaskType[] = ["font_encrypt", "font_decrypt"];
 const isFontTargetTask = (value: SectionKey | TaskType | null): value is TaskType =>
@@ -215,7 +247,7 @@ const detectClientPlatform = (): "windows" | "macos" | "linux" | "web" => {
 
 const normalizeSectionKey = (value: unknown): SectionKey => {
   if (typeof value !== "string") {
-    return "reformat";
+    return "overview";
   }
 
   const normalized = legacySectionMap[value] ?? value;
@@ -223,7 +255,7 @@ const normalizeSectionKey = (value: unknown): SectionKey => {
     return normalized as SectionKey;
   }
 
-  return "reformat";
+  return "overview";
 };
 
 const normalizeSettings = (value: unknown): AppSettings => {
@@ -343,7 +375,7 @@ const normalizeUpdateCheckState = (value: unknown): UpdateCheckState => {
 
 const activeSection = usePersistentState<SectionKey>(
   "epub-tool.active-section",
-  "reformat",
+  "overview",
   normalizeSectionKey,
 );
 const outputDirs = usePersistentState<TaskOutputDirectoryMap>(
@@ -447,7 +479,6 @@ const dragActive = ref(false);
 const browserFileInput = ref<HTMLInputElement | null>(null);
 const currentLogPath = ref("");
 const currentPersistedStorePath = ref("");
-const prefersReducedMotion = ref(false);
 const clientPlatform = ref<"windows" | "macos" | "linux" | "web">(detectClientPlatform());
 const defaultLogPaths = [
   {
@@ -642,6 +673,10 @@ if (!hasAggregateStats && taskHistory.value.length > 0) {
 
 const headerEyebrow = computed(() => {
   switch (activeSection.value) {
+    case "overview":
+      return "功能导航";
+    case "engine":
+      return "处理引擎";
     case "settings":
       return "使用偏好";
     case "about":
@@ -851,13 +886,6 @@ const activeTaskDescription = computed(() => {
   }
 });
 const appShellClassName = computed(() => `platform-${clientPlatform.value}`);
-const runningTaskLabel = computed(() => {
-  if (!runningTaskType.value) {
-    return "";
-  }
-
-  return formatTaskType(runningTaskType.value);
-});
 const outputDirectorySummary = computed(() =>
   taskSections.map((taskType) => ({
     taskType,
@@ -876,36 +904,6 @@ const aboutSummary = computed(() => {
   }
   return `累计已处理 ${total} 本 EPUB，其中成功 ${success} 本，跳过 ${skipped} 本，失败 ${failed} 本。`;
 });
-const settingsStatusItems = computed(() => [
-  {
-    label: "当前版本",
-    value: `v${currentVersion.value}`,
-  },
-  {
-    label: "处理引擎",
-    value: pythonWorkerStatusLabel.value,
-  },
-  {
-    label: "更新状态",
-    value: updateStatusLabel.value,
-  },
-  {
-    label: "自动检查更新",
-    value: settings.value.autoCheckUpdates ? "已开启" : "已关闭",
-  },
-  {
-    label: "自动打开输出目录",
-    value: settings.value.autoOpenOutputFolder ? "已开启" : "已关闭",
-  },
-  {
-    label: "自动打开日志",
-    value: settings.value.autoOpenLogFile ? "已开启" : "已关闭",
-  },
-  {
-    label: "历史记录条数",
-    value: `${historyLimit.value} 条`,
-  },
-]);
 const aboutHasStats = computed(() => aboutStats.value.total > 0);
 const toPercentText = (value: number, total: number): string => {
   if (total <= 0) {
@@ -951,7 +949,6 @@ const aboutChartStyle = computed(() => {
 
   const successRatio = aboutStats.value.success / total;
   const skippedRatio = aboutStats.value.skipped / total;
-  const failedRatio = aboutStats.value.failed / total;
   const baseRatio = 1 / 3;
   const progress = aboutAnimationProgress.value;
 
@@ -977,12 +974,6 @@ const animateAboutDashboard = () => {
     return;
   }
 
-  if (prefersReducedMotion.value) {
-    aboutAnimatedStats.value = { ...aboutStats.value };
-    aboutAnimationProgress.value = 1;
-    return;
-  }
-
   if (aboutAnimationFrame) {
     window.cancelAnimationFrame(aboutAnimationFrame);
     aboutAnimationFrame = 0;
@@ -990,10 +981,10 @@ const animateAboutDashboard = () => {
 
   const target = { ...aboutStats.value };
   const start =
-    activeSection.value === "about"
+    activeSection.value === "overview"
       ? { ...defaultTaskAggregateStats }
       : { ...aboutAnimatedStats.value };
-  aboutAnimationProgress.value = activeSection.value === "about" ? 0 : 1;
+  aboutAnimationProgress.value = activeSection.value === "overview" ? 0 : 1;
   const duration = 1580;
   const startedAt = performance.now();
 
@@ -1027,12 +1018,13 @@ const animateAboutDashboard = () => {
 const isViewingRunningTask = computed(
   () => taskRunning.value && !!activeTask.value && activeTask.value === runningTaskType.value,
 );
-const isOtherTaskRunning = computed(
-  () => taskRunning.value && !!runningTaskType.value && !isViewingRunningTask.value,
-);
 
 const activeTitle = computed(() => {
   switch (activeSection.value) {
+    case "overview":
+      return "功能概览";
+    case "engine":
+      return "处理引擎";
     case "reformat":
       return "格式化";
     case "decrypt":
@@ -1054,6 +1046,10 @@ const activeTitle = computed(() => {
 
 const activeDescription = computed(() => {
   switch (activeSection.value) {
+    case "overview":
+      return "查看累计处理统计，并按处理类别选择工具；每个任务会保留各自的文件队列与输出目录。";
+    case "engine":
+      return "查看 Python Worker 的运行状态、恢复记录、最近错误与最近任务，并可按需重启。";
     case "reformat":
     case "decrypt":
     case "encrypt":
@@ -1062,9 +1058,9 @@ const activeDescription = computed(() => {
     case "transfer_img":
       return activeTaskDescription.value;
     case "settings":
-      return "集中管理版本更新、自动行为、日志入口与最近任务历史。";
+      return "集中管理版本更新、自动行为，以及日志和设置文件入口。";
     default:
-      return "查看累计处理统计、功能范围、输出目录、日志和设置文件路径。";
+      return "查看功能范围、输出目录、日志和设置文件路径。";
   }
 });
 
@@ -2018,28 +2014,12 @@ const openLogFile = () => {
   void openPath("log.txt");
 };
 
-const openCurrentLogDirectory = () => {
-  if (!currentLogPath.value) {
-    return;
-  }
-
-  void openPath(getContainingDirectory(currentLogPath.value));
-};
-
 const openPersistedStoreFile = () => {
   if (!currentPersistedStorePath.value) {
     return;
   }
 
   void openPath(currentPersistedStorePath.value);
-};
-
-const openPersistedStoreDirectory = () => {
-  if (!currentPersistedStorePath.value) {
-    return;
-  }
-
-  void openPath(getContainingDirectory(currentPersistedStorePath.value));
 };
 
 const openOutputFolder = (path: string) => {
@@ -2062,7 +2042,7 @@ const toggleFontFamily = (filePath: string, family: string) => {
 
 watch(activeSection, async (section) => {
   activeSection.value = normalizeSectionKey(section);
-  if (activeSection.value === "about") {
+  if (activeSection.value === "overview") {
     animateAboutDashboard();
   }
   if (isFontTargetTask(activeSection.value) && files.value.length > 0) {
@@ -2191,7 +2171,7 @@ watch(
 watch(
   aboutStats,
   () => {
-    if (activeSection.value === "about") {
+    if (activeSection.value === "overview") {
       animateAboutDashboard();
       return;
     }
@@ -2201,8 +2181,6 @@ watch(
 );
 
 let unlistenDrop: (() => void) | null = null;
-let motionMediaQuery: MediaQueryList | null = null;
-let removeMotionPreferenceListener: (() => void) | null = null;
 let removeMasonryResizeListener: (() => void) | null = null;
 let removeCustomScrollbarResizeListener: (() => void) | null = null;
 
@@ -2210,24 +2188,6 @@ onMounted(async () => {
   if (typeof window !== "undefined") {
     clientPlatform.value = detectClientPlatform();
     document.addEventListener("pointerdown", handleOcrPolicyOutsidePointerDown);
-    motionMediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    prefersReducedMotion.value = motionMediaQuery.matches;
-    const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
-      prefersReducedMotion.value = event.matches;
-      if (event.matches) {
-        aboutAnimatedStats.value = { ...aboutStats.value };
-      }
-    };
-
-    if (typeof motionMediaQuery.addEventListener === "function") {
-      motionMediaQuery.addEventListener("change", handleMotionPreferenceChange);
-      removeMotionPreferenceListener = () =>
-        motionMediaQuery?.removeEventListener("change", handleMotionPreferenceChange);
-    } else {
-      motionMediaQuery.addListener(handleMotionPreferenceChange);
-      removeMotionPreferenceListener = () =>
-        motionMediaQuery?.removeListener(handleMotionPreferenceChange);
-    }
 
     if (typeof ResizeObserver !== "undefined") {
       masonryResizeObserver = new ResizeObserver(() => {
@@ -2353,7 +2313,6 @@ onBeforeUnmount(() => {
     window.cancelAnimationFrame(customScrollbarAnimationFrame);
     customScrollbarAnimationFrame = 0;
   }
-  removeMotionPreferenceListener?.();
   removeMasonryResizeListener?.();
   removeCustomScrollbarResizeListener?.();
   if (typeof document !== "undefined") {
@@ -2431,6 +2390,78 @@ activeSection.value = normalizeSectionKey(activeSection.value);
               <p class="muted content-animated-value">{{ activeDescription }}</p>
             </div>
           </header>
+
+          <section v-if="activeSection === 'overview'" class="overview-panel section-animated-panel">
+            <section class="about-dashboard section-animated-block">
+              <article class="about-card glass-medium">
+                <div class="about-dashboard-head">
+                  <div class="about-card-head">
+                    <p class="eyebrow">处理统计</p>
+                    <h4>累计处理概览</h4>
+                  </div>
+                  <p class="muted">{{ aboutSummary }}</p>
+                </div>
+                <div class="about-dashboard-body">
+                  <div class="about-chart-wrap">
+                    <div class="about-chart glass-medium" :style="aboutChartStyle">
+                      <div class="about-chart-core">
+                        <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
+                        <span>累计处理</span>
+                      </div>
+                    </div>
+                    <div class="about-chart-legend">
+                      <span class="about-legend-item success"><i />成功</span>
+                      <span class="about-legend-item skip"><i />跳过</span>
+                      <span class="about-legend-item error"><i />失败</span>
+                    </div>
+                  </div>
+                  <div class="about-metric-stack">
+                    <div class="about-metric about-metric-wide total glass-medium">
+                      <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
+                      <span>总数</span>
+                      <small>占比 100%</small>
+                    </div>
+                    <div class="about-metric-row">
+                      <div class="about-metric success glass-medium" :style="aboutMetricDistribution.success.style">
+                        <strong class="content-animated-value">{{ aboutAnimatedStats.success }}</strong>
+                        <span>成功</span>
+                        <small>占比 {{ aboutMetricDistribution.success.percent }}</small>
+                      </div>
+                      <div class="about-metric skip glass-medium" :style="aboutMetricDistribution.skipped.style">
+                        <strong class="content-animated-value">{{ aboutAnimatedStats.skipped }}</strong>
+                        <span>跳过</span>
+                        <small>占比 {{ aboutMetricDistribution.skipped.percent }}</small>
+                      </div>
+                      <div class="about-metric error glass-medium" :style="aboutMetricDistribution.failed.style">
+                        <strong class="content-animated-value">{{ aboutAnimatedStats.failed }}</strong>
+                        <span>失败</span>
+                        <small>占比 {{ aboutMetricDistribution.failed.percent }}</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="!aboutHasStats" class="about-dashboard-empty">
+                  还没有累计处理记录。执行任意 EPUB 任务后，这里会自动开始统计。
+                </div>
+              </article>
+            </section>
+            <section v-for="group in overviewGroups" :key="group.label"
+              class="overview-group section-animated-block glass-medium">
+              <div class="overview-group-head">
+                <div>
+                  <p class="eyebrow">{{ group.label }}</p>
+                  <h3>{{ group.description }}</h3>
+                </div>
+              </div>
+              <div class="overview-card-grid">
+                <button v-for="item in group.items" :key="item.key" class="overview-task-card glass-soft"
+                  type="button" @click="activeSection = item.key">
+                  <strong>{{ item.label }}</strong>
+                  <span>{{ item.description }}</span>
+                </button>
+              </div>
+            </section>
+          </section>
 
           <template v-if="isTaskSection">
             <DropZone :is-active="dragActive" :file-count="files.length" @drag-state="dragActive = $event"
@@ -2724,27 +2755,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             </section>
           </template>
 
-          <!-- <section v-if="activeSection === 'settings'" class="panel settings-panel section-animated-panel"> -->
-          <section v-if="activeSection === 'settings'" class="settings-panel section-animated-panel">
-            <section class="settings-overview section-animated-block glass-medium">
-              <div class="settings-block-head">
-                <div>
-                  <p class="eyebrow">状态总览</p>
-                  <h3>当前设置状态</h3>
-                  <p class="muted">汇总当前版本、更新状态、偏好开关与历史记录上限。</p>
-                </div>
-              </div>
-              <div class="settings-status-grid">
-                <article v-for="item in settingsStatusItems" :key="item.label"
-                  class="settings-status-card settings-interactive-card glass-medium">
-                  <span>{{ item.label }}</span>
-                  <strong :key="`${item.label}-${item.value}`" class="content-animated-value">
-                    {{ item.value }}
-                  </strong>
-                </article>
-              </div>
-            </section>
-
+          <section v-if="activeSection === 'engine'" class="settings-panel section-animated-panel">
             <section class="settings-block section-animated-block glass-medium">
               <div class="settings-block-head">
                 <div>
@@ -2753,32 +2764,27 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                   <p class="muted">常驻处理引擎会复用已加载模块与 OCR 模型；重启不会自动重放中断任务。</p>
                 </div>
                 <div class="panel-actions">
-                  <button class="ghost-btn settings-action-btn" :disabled="pythonWorkerRestarting"
+                  <button class="ghost-btn settings-action-btn engine-restart-btn" :disabled="pythonWorkerRestarting"
                     type="button" @click="restartCurrentPythonWorker">
-                    {{ pythonWorkerRestarting ? "重启中..." : taskRunning || fontLoading ? "终止并重启处理引擎" : "重启处理引擎" }}
+                    {{ pythonWorkerRestarting ? "重启中..." : "重启引擎" }}
                   </button>
                 </div>
               </div>
               <div class="worker-control-grid">
                 <article class="worker-status-card glass-medium" :class="`state-${pythonWorkerStatus.state}`">
-                  <span class="worker-status-dot" aria-hidden="true"></span>
-                  <div>
-                    <strong>{{ pythonWorkerStatusLabel }}</strong>
+                  <strong class="worker-card-title">运行状态</strong>
+                  <div class="worker-status-content">
+                    <span class="worker-card-value worker-status-value">
+                      <span class="worker-status-dot" aria-hidden="true"></span>
+                      {{ pythonWorkerStatusLabel }}
+                    </span>
                     <p>{{ pythonWorkerStatus.message }}</p>
                   </div>
                 </article>
                 <div class="settings-log-card glass-medium">
-                  <span>Worker 进程</span>
-                  <strong>{{ pythonWorkerStatus.pid ? `PID ${pythonWorkerStatus.pid}` : "尚未提供进程 ID" }}</strong>
+                  <strong class="worker-card-title">Worker 进程</strong>
+                  <span class="worker-card-value">{{ pythonWorkerStatus.pid ? `PID ${pythonWorkerStatus.pid}` : "尚未提供进程 ID" }}</span>
                 </div>
-                <label class="settings-preference-card settings-preference-card-number glass-medium">
-                  <div>
-                    <strong>自动恢复次数</strong>
-                    <p>仅恢复处理引擎，不会重跑中断的任务。</p>
-                  </div>
-                  <input v-model.number="settings.pythonWorkerAutoRestartLimit" min="0" max="5" step="1"
-                    type="number" @change="normalizePythonWorkerAutoRestartLimitInPlace" />
-                </label>
               </div>
               <p v-if="pythonWorkerStatus.recoveryAttempts > 0" class="worker-recovery-note">
                 本次会话已自动恢复 {{ pythonWorkerStatus.recoveryAttempts }}/{{ pythonWorkerStatus.autoRestartLimit }} 次。
@@ -2787,121 +2793,6 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 最近错误：{{ pythonWorkerStatus.lastError }}
               </p>
             </section>
-
-            <section class="settings-block section-animated-block glass-medium">
-              <div class="settings-block-head">
-                <div>
-                  <p class="eyebrow">更新</p>
-                  <h3>版本更新</h3>
-                  <p class="muted">支持手动检查 GitHub Release，并直接跳转到最新下载页。</p>
-                </div>
-                <div class="panel-actions">
-                  <button class="ghost-btn settings-action-btn" :disabled="updateStatus === 'checking'" type="button"
-                    @click="checkForUpdates()">
-                    {{ updateStatus === "checking" ? "检查中..." : "检查更新" }}
-                  </button>
-                  <button class="ghost-btn settings-action-btn" type="button" @click="openLatestReleasePage">
-                    下载最新版本
-                  </button>
-                </div>
-              </div>
-              <div class="settings-update-card settings-interactive-card glass-medium">
-                <div class="settings-update-copy">
-                  <strong :key="`current-version-${currentVersion}`" class="content-animated-value">
-                    当前版本 v{{ currentVersion }}
-                  </strong>
-                  <span :key="`update-status-${updateStatusLabel}`" class="content-animated-value">
-                    {{ updateStatusLabel }}
-                  </span>
-                  <span v-if="latestVersion" :key="`latest-version-${latestVersion}`" class="content-animated-value">
-                    最新版本：v{{ latestVersion }}
-                  </span>
-                  <span v-if="updateCheckedAt" :key="`checked-at-${updateCheckedAt}`" class="content-animated-value">
-                    最近检查：{{ formatUpdateTime(updateCheckedAt) }}
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            <section class="settings-block section-animated-block glass-medium">
-              <div class="settings-block-head">
-                <div>
-                  <p class="eyebrow">偏好设置</p>
-                  <h3>使用偏好</h3>
-                  <p class="muted">控制任务完成后的自动行为，以及最近任务的保留数量。</p>
-                </div>
-              </div>
-              <div class="settings-preference-grid">
-                <label class="settings-preference-card settings-interactive-card glass-medium">
-                  <div>
-                    <strong>自动打开输出文件夹</strong>
-                    <p>任务完成后直接定位到输出目录。</p>
-                  </div>
-                  <input v-model="settings.autoOpenOutputFolder" type="checkbox" />
-                </label>
-                <label class="settings-preference-card settings-interactive-card glass-medium">
-                  <div>
-                    <strong>自动打开处理日志</strong>
-                    <p>便于立刻回看处理细节。</p>
-                  </div>
-                  <input v-model="settings.autoOpenLogFile" type="checkbox" />
-                </label>
-                <label class="settings-preference-card settings-interactive-card glass-medium">
-                  <div>
-                    <strong>启动时自动检查更新</strong>
-                    <p>自动检查 GitHub Release 最新版本。</p>
-                  </div>
-                  <input v-model="settings.autoCheckUpdates" type="checkbox" />
-                </label>
-                <label
-                  class="settings-preference-card settings-preference-card-number settings-interactive-card glass-medium">
-                  <div>
-                    <strong>历史记录条数</strong>
-                    <p>控制最近任务列表的保留上限。</p>
-                  </div>
-                  <input v-model.number="settings.keepHistoryCount" min="1" max="30" type="number" />
-                </label>
-              </div>
-            </section>
-
-            <section class="settings-block section-animated-block glass-medium">
-              <div class="settings-block-head settings-path-head">
-                <div>
-                  <p class="eyebrow">路径工具</p>
-                  <h3>日志与设置文件</h3>
-                  <p class="muted">开发态写入仓库根目录，打包版分别写入系统日志目录和应用配置目录。</p>
-                </div>
-                <div class="panel-actions settings-path-actions">
-                  <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button"
-                    @click="openLogFile">
-                    打开日志文件
-                  </button>
-                  <button v-if="currentLogPath" class="ghost-btn settings-action-btn" type="button"
-                    @click="openCurrentLogDirectory">
-                    打开日志目录
-                  </button>
-                  <button v-if="currentPersistedStorePath" class="ghost-btn settings-action-btn" type="button"
-                    @click="openPersistedStoreFile">
-                    打开设置文件
-                  </button>
-                  <button v-if="currentPersistedStorePath" class="ghost-btn settings-action-btn" type="button"
-                    @click="openPersistedStoreDirectory">
-                    打开所在目录
-                  </button>
-                </div>
-              </div>
-              <div class="settings-path-grid">
-                <div class="settings-log-card settings-interactive-card glass-medium">
-                  <span>当前日志文件</span>
-                  <strong>{{ currentLogPath || "开发环境默认写入仓库根目录的 log.txt。" }}</strong>
-                </div>
-                <div class="settings-log-card settings-interactive-card glass-medium">
-                  <span>当前设置文件</span>
-                  <strong>{{ currentPersistedStorePath || "开发环境默认写入仓库根目录的 app-state.json。" }}</strong>
-                </div>
-              </div>
-            </section>
-
             <section class="settings-block section-animated-block glass-medium">
               <div class="settings-block-head">
                 <div>
@@ -2937,71 +2828,123 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             </section>
           </section>
 
-          <!-- <section v-if="activeSection === 'about'" class="panel about-panel glass-soft section-animated-panel"> -->
-          <section v-if="activeSection === 'about'" class="about-panel section-animated-panel">
-            <section class="about-dashboard section-animated-block">
-              <article class="about-card glass-medium">
-                <div class="about-dashboard-head">
-                  <div class="about-card-head">
-                    <p class="eyebrow">处理统计</p>
-                    <h4>累计处理概览</h4>
-                  </div>
-                  <p class="muted">{{ aboutSummary }}</p>
+          <section v-if="activeSection === 'settings'" class="settings-panel section-animated-panel">
+            <section class="settings-block section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">更新</p>
+                  <h3>版本更新</h3>
+                  <p class="muted">支持手动检查 GitHub Release、设置启动时自动检查，并直接跳转到最新下载页。</p>
                 </div>
-                <div class="about-dashboard-body">
-                  <div class="about-chart-wrap">
-                    <div class="about-chart glass-medium" :style="aboutChartStyle">
-                      <div class="about-chart-core">
-                        <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
-                        <span>累计处理</span>
-                      </div>
-                    </div>
-                    <div class="about-chart-legend">
-                      <span class="about-legend-item success">
-                        <i />
-                        成功
-                      </span>
-                      <span class="about-legend-item skip">
-                        <i />
-                        跳过
-                      </span>
-                      <span class="about-legend-item error">
-                        <i />
-                        失败
-                      </span>
-                    </div>
-                  </div>
-                  <div class="about-metric-stack">
-                    <div class="about-metric about-metric-wide total glass-medium">
-                      <strong class="content-animated-value">{{ aboutAnimatedStats.total }}</strong>
-                      <span>总数</span>
-                      <small>占比 100%</small>
-                    </div>
-                    <div class="about-metric-row">
-                      <div class="about-metric success glass-medium" :style="aboutMetricDistribution.success.style">
-                        <strong class="content-animated-value">{{ aboutAnimatedStats.success }}</strong>
-                        <span>成功</span>
-                        <small>占比 {{ aboutMetricDistribution.success.percent }}</small>
-                      </div>
-                      <div class="about-metric skip glass-medium" :style="aboutMetricDistribution.skipped.style">
-                        <strong class="content-animated-value">{{ aboutAnimatedStats.skipped }}</strong>
-                        <span>跳过</span>
-                        <small>占比 {{ aboutMetricDistribution.skipped.percent }}</small>
-                      </div>
-                      <div class="about-metric error glass-medium" :style="aboutMetricDistribution.failed.style">
-                        <strong class="content-animated-value">{{ aboutAnimatedStats.failed }}</strong>
-                        <span>失败</span>
-                        <small>占比 {{ aboutMetricDistribution.failed.percent }}</small>
-                      </div>
-                    </div>
-                  </div>
+                <div class="panel-actions">
+                  <label class="update-auto-check-toggle">
+                    <span>启动时自动检查</span>
+                    <span class="toggle-switch">
+                      <input v-model="settings.autoCheckUpdates" type="checkbox" />
+                      <span class="toggle-switch-track" aria-hidden="true"></span>
+                    </span>
+                  </label>
+                  <button class="ghost-btn settings-action-btn" :disabled="updateStatus === 'checking'" type="button"
+                    @click="checkForUpdates()">
+                    {{ updateStatus === "checking" ? "检查中..." : "检查更新" }}
+                  </button>
+                  <button class="ghost-btn settings-action-btn" type="button" @click="openLatestReleasePage">
+                    下载最新版本
+                  </button>
                 </div>
-                <div v-if="!aboutHasStats" class="about-dashboard-empty">
-                  还没有累计处理记录。执行任意 EPUB 任务后，这里会自动开始统计。
+              </div>
+              <div class="settings-update-card settings-interactive-card glass-medium">
+                <div class="settings-update-copy">
+                  <strong :key="`current-version-${currentVersion}`" class="content-animated-value">
+                    当前版本 v{{ currentVersion }}
+                  </strong>
+                  <span :key="`update-status-${updateStatusLabel}`" class="content-animated-value">
+                    {{ updateStatusLabel }}
+                  </span>
+                  <span v-if="latestVersion" :key="`latest-version-${latestVersion}`" class="content-animated-value">
+                    最新版本：v{{ latestVersion }}
+                  </span>
+                  <span v-if="updateCheckedAt" :key="`checked-at-${updateCheckedAt}`" class="content-animated-value">
+                    最近检查：{{ formatUpdateTime(updateCheckedAt) }}
+                  </span>
                 </div>
-              </article>
+              </div>
             </section>
 
+            <section class="settings-block section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">偏好设置</p>
+                  <h3>使用偏好</h3>
+                  <p class="muted">控制任务完成后的自动行为、引擎自动恢复，以及最近任务的保留数量。</p>
+                </div>
+              </div>
+              <div class="settings-preference-grid">
+                <label class="settings-preference-card settings-interactive-card glass-medium">
+                  <div>
+                    <strong>自动打开输出文件夹</strong>
+                    <p>任务完成后直接定位到输出目录。</p>
+                  </div>
+                  <span class="toggle-switch">
+                    <input v-model="settings.autoOpenOutputFolder" type="checkbox" />
+                    <span class="toggle-switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="settings-preference-card settings-interactive-card glass-medium">
+                  <div>
+                    <strong>自动打开处理日志</strong>
+                    <p>便于立刻回看处理细节。</p>
+                  </div>
+                  <span class="toggle-switch">
+                    <input v-model="settings.autoOpenLogFile" type="checkbox" />
+                    <span class="toggle-switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label
+                  class="settings-preference-card settings-preference-card-number settings-interactive-card glass-medium">
+                  <div>
+                    <strong>历史记录条数</strong>
+                    <p>控制最近任务列表的保留上限。</p>
+                  </div>
+                  <input v-model.number="settings.keepHistoryCount" min="1" max="30" type="number" />
+                </label>
+                <label
+                  class="settings-preference-card settings-preference-card-number settings-interactive-card glass-medium">
+                  <div>
+                    <strong>自动恢复次数</strong>
+                    <p>仅恢复引擎，不重试任务。</p>
+                  </div>
+                  <input v-model.number="settings.pythonWorkerAutoRestartLimit" min="0" max="5" step="1"
+                    type="number" @change="normalizePythonWorkerAutoRestartLimitInPlace" />
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-block section-animated-block glass-medium">
+              <div class="settings-block-head">
+                <div>
+                  <p class="eyebrow">路径工具</p>
+                  <h3>日志与设置文件</h3>
+                  <p class="muted">开发态写入仓库根目录，打包版分别写入系统日志目录和应用配置目录。</p>
+                </div>
+              </div>
+              <div class="settings-path-grid">
+                <button class="settings-log-card settings-path-card glass-medium" :disabled="!currentLogPath"
+                  type="button" @click="currentLogPath && openPath(currentLogPath)">
+                  <span>当前日志文件</span>
+                  <strong>{{ currentLogPath || "暂未获取日志文件路径。" }}</strong>
+                </button>
+                <button class="settings-log-card settings-path-card glass-medium" :disabled="!currentPersistedStorePath"
+                  type="button" @click="openPersistedStoreFile">
+                  <span>当前设置文件</span>
+                  <strong>{{ currentPersistedStorePath || "暂未获取设置文件路径。" }}</strong>
+                </button>
+              </div>
+            </section>
+
+          </section>
+
+          <section v-if="activeSection === 'about'" class="about-panel section-animated-panel">
             <section class="about-hero glass-medium section-animated-block">
               <p class="eyebrow">软件说明</p>
               <h3>Epub Tool 能做什么</h3>

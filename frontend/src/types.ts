@@ -5,7 +5,7 @@ export type TaskType =
   | "font_encrypt"
   | "font_decrypt"
   | "transfer_img";
-export type SectionKey = TaskType | "settings" | "about";
+export type SectionKey = TaskType | "overview" | "engine" | "settings" | "about";
 export type FontLoadStatus = "idle" | "loading" | "loaded" | "error";
 export type OcrCharPolicy = "strict" | "compatible";
 export type PythonWorkerState =
