@@ -509,6 +509,7 @@ class FontDecrypt:
         )
         if os.path.exists(self.file_write_path):
             os.remove(self.file_write_path)
+            logger.write(f"已删除同名输出文件: {self.file_write_path}")
 
         self.htmls = []
         self.css = []
@@ -3258,7 +3259,7 @@ class FontDecrypt:
         logger.write(f"EPUB文件处理完成，输出文件路径: {self.file_write_path}")
 
 
-def run_epub_font_decrypt(
+def run(
     epub_path,
     output_path=None,
     target_font_families=None,

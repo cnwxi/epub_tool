@@ -208,6 +208,7 @@ class FontEncrypt:
         )
         if os.path.exists(self.file_write_path):
             os.remove(self.file_write_path)
+            logger.write(f"已删除同名输出文件: {self.file_write_path}")
         self.htmls = []
         self.css = []
         self.fonts = []
@@ -2519,7 +2520,7 @@ class FontEncrypt:
     #    self.font_to_unchanged_file_mapping = font_file_mapping if font_file_mapping else {}
 
 
-def run_epub_font_encrypt(
+def run(
     epub_path,
     output_path=None,
     target_font_families=None,

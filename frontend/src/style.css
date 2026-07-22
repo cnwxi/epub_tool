@@ -1697,21 +1697,6 @@ input {
   color: var(--text-primary);
 }
 
-.settings-preference-card input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent-gold-700);
-  transition:
-    transform 160ms ease,
-    filter 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.settings-preference-card:hover input[type="checkbox"] {
-  transform: scale(1.06);
-  filter: saturate(1.05);
-}
-
 .update-auto-check-toggle {
   display: inline-flex;
   align-items: center;
@@ -1798,6 +1783,11 @@ input {
 .toggle-switch > input:focus-visible + .toggle-switch-track {
   outline: 2px solid color-mix(in srgb, var(--accent-gold-700) 54%, white 46%);
   outline-offset: 3px;
+}
+
+.toggle-switch > input:disabled + .toggle-switch-track {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .settings-preference-card-number input[type="number"] {
@@ -1921,6 +1911,10 @@ input {
 }
 
 .font-panel.font-panel-menu-open {
+  z-index: 60;
+}
+
+.task-panel.task-panel-menu-open {
   z-index: 60;
 }
 
@@ -2340,7 +2334,8 @@ input {
   box-shadow: var(--layout-shadow-surface);
 }
 
-.font-panel-menu-open .font-advanced-options {
+.font-panel-menu-open .font-advanced-options,
+.task-panel-menu-open .font-advanced-options {
   z-index: 70;
 }
 
@@ -2696,8 +2691,18 @@ input {
 
 .font-option {
   display: flex;
-  gap: 10px;
   align-items: center;
+}
+
+.toggle-option {
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.toggle-option > :first-child {
+  min-width: 0;
 }
 
 .log-row {

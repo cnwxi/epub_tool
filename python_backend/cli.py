@@ -192,12 +192,16 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--task-type",
         choices=[
-            "reformat",
-            "decrypt",
-            "encrypt",
-            "font_encrypt",
-            "font_decrypt",
-            "transfer_img",
+            "reformat_epub",
+            "decrypt_epub",
+            "encrypt_epub",
+            "encrypt_font",
+            "decrypt_font",
+            "webp_to_img",
+            "image_compress",
+            "image_to_webp",
+            "chinese_convert",
+            "replace_cover",
         ],
     )
     run_parser.add_argument("--task-id")

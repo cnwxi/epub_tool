@@ -33,10 +33,13 @@ class ImageTransfer:
         self.output_path = os.path.normpath(output_path)
         self.file_write_path = os.path.join(
             self.output_path,
-            os.path.basename(self.epub_path).replace(".epub", "_transfer.epub"),
+            os.path.basename(self.epub_path).replace(
+                ".epub", "_webp_to_img.epub"
+            ),
         )
         if os.path.exists(self.file_write_path):
             os.remove(self.file_write_path)
+            logger.write(f"已删除同名输出文件: {self.file_write_path}")
         self.htmls = []
         self.css = []
         self.images = []
@@ -212,7 +215,7 @@ class ImageTransfer:
             index += 1
 
     def _rewrite_opf_by_regex_fallback(self, opf_text: str) -> str:
-        logger.write("opf_malformed_fallback_used: transfer_img")
+        logger.write("opf_malformed_fallback_used: webp_to_img")
         manifest_id_replacements = {}
         used_manifest_ids = set()
         item_pattern = r"<item\b([^>]*?)\/?>"
@@ -481,7 +484,7 @@ class ImageTransfer:
             logger.write("临时文件不存在或已被删除。")
 
 
-def run_epub_img_transfer(epub_path, output_path):
+def run(epub_path, output_path):
     logger.write(f"\n正在尝试转换epub中webp格式图片: {epub_path}")
     it = None
     try:

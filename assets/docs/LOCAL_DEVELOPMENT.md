@@ -222,12 +222,12 @@ npm run dev
 ## 单独调试 Python 处理逻辑
 
 ```bash
-conda run -n epub_tool python -m python_backend.cli run --task-type reformat --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type decrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type encrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type font_encrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type font_decrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type transfer_img --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type reformat_epub --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_epub --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_epub --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_font --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_font --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type webp_to_img --input-file ./book.epub
 conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
 ```
 
@@ -283,7 +283,7 @@ conda run -n epub_tool npm run tauri:build
 4. 准备 `src-tauri/bundle-resources/`
 5. 执行 Tauri 打包
 
-`font_decrypt` 默认使用随应用内置的 `PP-OCRv6_small_rec_onnx` 模型。模型文件位于
+`decrypt_font` 默认使用随应用内置的 `PP-OCRv6_small_rec_onnx` 模型。模型文件位于
 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`，落盘约 20 MiB。
 该模型会在构建时直接打包进桌面安装包，运行时无需下载，也不会加载 Paddle Python 运行时。
 

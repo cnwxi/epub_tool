@@ -31,7 +31,12 @@ BASE_REQUIRED_MODULES = [
     "python_backend.services.encrypt_epub",
     "python_backend.services.encrypt_font",
     "python_backend.services.decrypt_font",
-    "python_backend.services.transfer_img",
+    "python_backend.services.webp_to_img",
+    "python_backend.services.image_compress",
+    "python_backend.services.image_to_webp",
+    "python_backend.services.chinese_convert",
+    "python_backend.services.replace_cover",
+    "opencc",
 ]
 ONNX_REQUIRED_MODULES = [
     "onnxruntime",
@@ -145,6 +150,8 @@ def build_sidecar() -> Path:
         str(REPO_ROOT),
         "--collect-submodules",
         "python_backend",
+        "--collect-data",
+        "opencc",
         *PYINSTALLER_ONNX_ARGS,
         "--collect-submodules",
         "bidi",
