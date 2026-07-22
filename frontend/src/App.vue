@@ -2955,8 +2955,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
 
             <section class="about-summary-grid section-animated-block">
               <article class="about-summary-card glass-medium">
-                <strong>6 类任务</strong>
-                <span>格式化、文件解密、文件加密、字体加密、字体解密、图片转换</span>
+                <strong>处理能力</strong>
+                <span>已启用 {{ taskSections.length }} 项 EPUB 处理任务</span>
               </article>
               <article class="about-summary-card glass-medium">
                 <strong>统一任务视图</strong>
@@ -2971,27 +2971,13 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             <section class="about-grid section-animated-block">
               <article class="about-card glass-medium">
                 <div class="about-card-head">
-                  <p class="eyebrow">功能范围</p>
-                  <h4>支持的处理能力</h4>
+                  <p class="eyebrow">任务体系</p>
+                  <h4>统一执行与按需扩展</h4>
                 </div>
                 <div class="about-list">
-                  <span>任务页统一支持拖拽导入、系统文件选择和目录扫描三种输入方式。</span>
-                  <span>当前提供格式化、文件解密、文件加密、字体加密、字体解密和图片转换六类 EPUB 处理任务。</span>
-                  <span>文件解密/加密处理的是文件名与资源引用混淆，不提供 DRM 内容解密。</span>
-                </div>
-              </article>
-
-              <article class="about-card glass-medium">
-                <div class="about-card-head">
-                  <p class="eyebrow">处理行为</p>
-                  <h4>执行方式说明</h4>
-                </div>
-                <div class="about-list">
-                  <span>字体加密和字体解密都支持按每本 EPUB 单独选择目标字体 family 后再批量执行。</span>
-                  <span>字体解密使用内置 ONNX OCR 模型识别混淆字形，默认不依赖 Paddle Python 运行时或联网下载模型。</span>
-                  <span>图片转换会将 EPUB 内 WEBP 图片改写为 PNG 或 JPEG，并同步更新 OPF 引用。</span>
-                  <span>任务页实时展示待处理列表、处理日志和最近一次执行摘要。</span>
-                  <span>设置页可查看更新状态、日志入口和最近任务历史。</span>
+                  <span>各项处理能力共用文件导入、任务队列、执行进度、处理日志和结果摘要。</span>
+                  <span>需要专属参数或交互的任务可在自身页面扩展，不影响其他功能的内容与布局。</span>
+                  <span>具体能力及使用说明以功能概览和对应任务页面为准。</span>
                 </div>
               </article>
             </section>

@@ -108,7 +108,7 @@ def load_module(task_type: str) -> Any:
     """按任务惰性加载服务模块，并在当前进程内复用。
 
     sidecar 既会处理实际任务，也会只读取字体列表。原先的实现每次都会
-    导入全部六个服务模块，使轻任务和字体列表读取也承担 OCR 相关依赖的
+    导入全部任务服务模块，使轻任务和字体列表读取也承担 OCR 相关依赖的
     初始化成本。
     """
     module = _LOADED_MODULES.get(task_type)
