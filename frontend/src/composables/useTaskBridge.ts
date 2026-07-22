@@ -3,6 +3,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   FontTargetProgressEvent,
   FontTargetResult,
+  ImagePreviewResponse,
   PythonWorkerStatus,
   TaskEvent,
   TaskRequest,
@@ -121,6 +122,13 @@ export function useTaskBridge() {
     await invoke("open_path", { path });
   };
 
+  const readImagePreview = async (path: string): Promise<ImagePreviewResponse> => {
+    if (!isTauriRuntime()) {
+      throw new Error("当前环境不支持本地图片预览。");
+    }
+    return invoke<ImagePreviewResponse>("read_image_preview", { path });
+  };
+
   const savePersistedState = async (key: string, value: unknown): Promise<void> => {
     if (!isTauriRuntime()) {
       return;
@@ -137,6 +145,7 @@ export function useTaskBridge() {
     listFontTargetsBatch,
     loadPersistedState,
     openPath,
+    readImagePreview,
     resolveInputSources,
     runTask,
     savePersistedState,

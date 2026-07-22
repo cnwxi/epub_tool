@@ -39,6 +39,7 @@ const SIDECAR_RESOURCE_DIR_NAME: &str = "epub-tool-python-runtime";
 const FALLBACK_OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec";
 const WORKER_STDERR_MAX_LINES: usize = 100;
 const PARENT_LIVENESS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
+const COVER_PREVIEW_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -61,6 +62,26 @@ struct FontTargetResponse {
     font_families: Vec<String>,
     #[serde(default)]
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImagePreviewResponse {
+    bytes: Vec<u8>,
+    mime_type: String,
+}
+
+fn detect_preview_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("image/jpeg");
+    }
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("image/png");
+    }
+    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    None
 }
 
 struct PersistedStore {
@@ -1296,6 +1317,26 @@ async fn get_persisted_store_path(store: State<'_, PersistedStore>) -> Result<St
         .ok_or_else(|| "当前运行环境未提供配置存储路径。".to_string())
 }
 
+#[tauri::command]
+async fn read_image_preview(path: String) -> Result<ImagePreviewResponse, String> {
+    let image_path = PathBuf::from(path);
+    let metadata = fs::metadata(&image_path)
+        .map_err(|error| format!("读取封面文件信息失败: {error}"))?;
+    if !metadata.is_file() {
+        return Err("选择的封面路径不是文件。".to_string());
+    }
+    if metadata.len() > COVER_PREVIEW_MAX_BYTES {
+        return Err("封面文件超过 20 MB，无法生成预览。".to_string());
+    }
+    let bytes = fs::read(&image_path).map_err(|error| format!("读取封面文件失败: {error}"))?;
+    let mime_type = detect_preview_image_mime(&bytes)
+        .ok_or_else(|| "封面预览仅支持有效的 JPG、PNG 或 WebP 图片。".to_string())?;
+    Ok(ImagePreviewResponse {
+        bytes,
+        mime_type: mime_type.to_string(),
+    })
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PersistedStateResponse {
@@ -1455,6 +1496,7 @@ fn main() {
             list_font_targets_batch,
             load_persisted_state,
             open_path,
+            read_image_preview,
             resolve_input_sources,
             run_epub_task,
             save_persisted_state,

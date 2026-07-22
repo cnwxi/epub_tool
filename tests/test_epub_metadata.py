@@ -146,7 +146,7 @@ class EpubMetadataTest(unittest.TestCase):
                 result = task_runner.run_task(
                     TaskRequest(
                         task_id="test-task",
-                        task_type="reformat",
+                        task_type="reformat_epub",
                         input_files=[str(input_path)],
                         output_dir=temp_dir,
                     )

@@ -19,7 +19,12 @@ export function usePersistentState<T>(
     try {
       const raw = window.localStorage.getItem(key);
       if (raw != null) {
-        state.value = normalizeValue(JSON.parse(raw));
+        const parsed = JSON.parse(raw);
+        const normalized = normalizeValue(parsed);
+        state.value = normalized;
+        if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+          window.localStorage.setItem(key, JSON.stringify(normalized));
+        }
       }
     } catch {
       state.value = normalizeValue(fallback);

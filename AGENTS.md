@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-面向 EPUB 批量处理的桌面工具，技术栈为 Tauri 2 + Vue 3 + TypeScript + Python sidecar。任务体系可持续扩展；当前已注册 `reformat`、`decrypt`、`encrypt`、`font_encrypt`、`font_decrypt`、`transfer_img` 等任务类型。
+面向 EPUB 批量处理的桌面工具，技术栈为 Tauri 2 + Vue 3 + TypeScript + Python sidecar。任务体系可持续扩展；当前已注册 `reformat_epub`、`decrypt_epub`、`encrypt_epub`、`encrypt_font`、`decrypt_font`、`webp_to_img` 等任务类型。
 
 ## 常用命令
 
@@ -16,12 +16,12 @@ npm run tauri:dev
 npm run dev
 
 # Python CLI 单独调试
-conda run -n epub_tool python -m python_backend.cli run --task-type reformat --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type decrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type encrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type font_encrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type font_decrypt --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type transfer_img --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type reformat_epub --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_epub --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_epub --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_font --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_font --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type webp_to_img --input-file ./book.epub
 conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
 
 # 仅构建 ONNX-only sidecar
@@ -55,7 +55,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
 - **`python_backend/cli.py`** — Sidecar 的 CLI 入口。提供 `run`、`list-fonts`、`list-fonts-batch` 和常驻 Worker 使用的 `serve` 子命令；任务请求统一使用 `TaskRequest` 结构。
 - **`python_backend/task_runner.py`** — 编排批量任务执行。按任务类型动态导入 `python_backend/services/` 下的处理模块，将其 `logger` 替换为 `BroadcastLogger`，同时写入 `log.txt` 和 stdout JSON Lines 事件。按 `{stem}_{suffix}.epub` 规则推断输出路径。
 - **`python_backend/protocol.py`** — 数据类定义：`TaskRequest`、`TaskEvent`、`TaskResult`。
-- **`python_backend/services/`** — EPUB 处理服务模块。当前模块包括 `reformat_epub.py`、`decrypt_epub.py`、`encrypt_epub.py`、`encrypt_font.py`、`decrypt_font.py`、`transfer_img.py` 等；各模块对外暴露 `run()` 或等价入口，内部使用共享的 `logger` 对象，运行时由 `task_runner` 替换。另含 `log.py`（`logwriter` 类）。
+- **`python_backend/services/`** — EPUB 处理服务模块。当前模块包括 `reformat_epub.py`、`decrypt_epub.py`、`encrypt_epub.py`、`encrypt_font.py`、`decrypt_font.py`、`webp_to_img.py` 等；各模块对外暴露统一的 `run()` 入口，内部使用共享的 `logger` 对象，运行时由 `task_runner` 替换。另含 `log.py`（`logwriter` 类）。
 - **`scripts/`** — `verify_ocr_onnx_models.py`（校验已提交 ONNX OCR 模型）、`prepare_ocr_models.py`（维护者刷新模型时准备官方 Paddle 源模型）、`prepare_ocr_onnx_models.py`（维护者刷新模型时转换 ONNX OCR 模型）、`build_python_sidecar.py`（PyInstaller `--onefile` 构建 ONNX-only sidecar）、`prepare_bundle_resources.py`（将 sidecar 复制到 `bundle-resources/`）。
 - **`tests/`** — 自动化测试。
 - **`fixtures/`** — 本地测试用 EPUB 样本（默认不提交）。
@@ -73,7 +73,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
 
 - Python sidecar 通过 stdout 输出 JSON Lines 协议通信。每行一个 `TaskEvent`。最后一行 `event: "task.finished"`，其中 `result` 字段包含完整 `TaskResult`。
 - `python_backend/services/` 模块的 `logger` 属性在运行时会通过 `task_runner.patched_loggers()` 被替换——`BroadcastLogger` 同时写入 `log.txt` 和 stdout JSON Lines。
-- `font_encrypt` 与 `font_decrypt` 的 options 使用 `target_font_families_by_file`（按文件指定字体）和 `target_font_families`（默认字体）；`font_decrypt` 默认使用内置 `PP-OCRv6_small_rec_onnx` ONNX OCR 模型，不加载 Paddle Python 运行时；`PP-OCRv6_medium_rec` 仅作为高准确率可选构建档。
+- `encrypt_font` 与 `decrypt_font` 的 options 使用 `target_font_families_by_file`（按文件指定字体）和 `target_font_families`（默认字体）；`decrypt_font` 默认使用内置 `PP-OCRv6_small_rec_onnx` ONNX OCR 模型，不加载 Paddle Python 运行时；`PP-OCRv6_medium_rec` 仅作为高准确率可选构建档。
 - 应用版本号在 Vite 构建时从 `src-tauri/Cargo.toml` 读取，注入为 `__APP_VERSION__`。
 - `app-state.json` 已被 gitignore；损坏时自动备份并重置为默认状态。
 - 输出文件命名规则为 `{原文件名}_{后缀}.epub`，如 `book_reformat.epub`、`book_encrypt.epub`。

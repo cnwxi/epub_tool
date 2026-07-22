@@ -1,10 +1,14 @@
 export type TaskType =
-  | "reformat"
-  | "decrypt"
-  | "encrypt"
-  | "font_encrypt"
-  | "font_decrypt"
-  | "transfer_img";
+  | "reformat_epub"
+  | "decrypt_epub"
+  | "encrypt_epub"
+  | "encrypt_font"
+  | "decrypt_font"
+  | "webp_to_img"
+  | "image_compress"
+  | "image_to_webp"
+  | "chinese_convert"
+  | "replace_cover";
 export type SectionKey = TaskType | "overview" | "engine" | "settings" | "about";
 export type FontLoadStatus = "idle" | "loading" | "loaded" | "error";
 export type OcrCharPolicy = "strict" | "compatible";
@@ -24,6 +28,21 @@ export interface QueuedFile {
   selectedFontFamilies: string[];
   fontLoadStatus: FontLoadStatus;
   fontLoadError: string;
+  coverPath: string;
+  coverPreviewUrl: string;
+}
+
+export interface ImagePreviewResponse {
+  bytes: number[];
+  mimeType: string;
+}
+
+export interface NewTaskSettings {
+  jpegQuality: number;
+  webpQuality: number;
+  pngToJpg: boolean;
+  imageWebpQuality: number;
+  chineseDirection: "s2t" | "t2s";
 }
 
 export interface FontTargetResult {

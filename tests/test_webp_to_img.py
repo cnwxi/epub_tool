@@ -6,7 +6,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from python_backend.services.transfer_img import run_epub_img_transfer
+from python_backend.services.webp_to_img import run
 
 
 def build_webp_bytes(mode):
@@ -122,10 +122,10 @@ class TransferImagePathMappingTest(unittest.TestCase):
             epub_path = os.path.join(temp_dir, "book.epub")
             build_same_basename_webp_epub(epub_path)
 
-            result = run_epub_img_transfer(epub_path, temp_dir)
+            result = run(epub_path, temp_dir)
 
             self.assertEqual(result, 0)
-            output_path = os.path.join(temp_dir, "book_transfer.epub")
+            output_path = os.path.join(temp_dir, "book_webp_to_img.epub")
             with zipfile.ZipFile(output_path) as epub:
                 names = set(epub.namelist())
                 self.assertIn("OEBPS/Images/a.png", names)
@@ -152,10 +152,10 @@ class TransferImagePathMappingTest(unittest.TestCase):
             epub_path = os.path.join(temp_dir, "book.epub")
             build_same_basename_webp_epub(epub_path, include_reference_suffixes=True)
 
-            result = run_epub_img_transfer(epub_path, temp_dir)
+            result = run(epub_path, temp_dir)
 
             self.assertEqual(result, 0)
-            output_path = os.path.join(temp_dir, "book_transfer.epub")
+            output_path = os.path.join(temp_dir, "book_webp_to_img.epub")
             with zipfile.ZipFile(output_path) as epub:
                 html = epub.read("OEBPS/Text/chapter.xhtml").decode("utf-8")
                 self.assertIn("../Images/a.png?rev=1", html)
@@ -178,10 +178,10 @@ class TransferImagePathMappingTest(unittest.TestCase):
                 second_image_mode="RGB",
             )
 
-            result = run_epub_img_transfer(epub_path, temp_dir)
+            result = run(epub_path, temp_dir)
 
             self.assertEqual(result, 0)
-            output_path = os.path.join(temp_dir, "book_transfer.epub")
+            output_path = os.path.join(temp_dir, "book_webp_to_img.epub")
             with zipfile.ZipFile(output_path) as epub:
                 opf = epub.read("OEBPS/content.opf").decode("utf-8")
                 self.assertIn('id="a.jpg"', opf)
@@ -194,10 +194,10 @@ class TransferImagePathMappingTest(unittest.TestCase):
             epub_path = os.path.join(temp_dir, "book.epub")
             build_cover_meta_webp_epub(epub_path)
 
-            result = run_epub_img_transfer(epub_path, temp_dir)
+            result = run(epub_path, temp_dir)
 
             self.assertEqual(result, 0)
-            output_path = os.path.join(temp_dir, "book_transfer.epub")
+            output_path = os.path.join(temp_dir, "book_webp_to_img.epub")
             with zipfile.ZipFile(output_path) as epub:
                 opf = epub.read("OEBPS/content.opf").decode("utf-8")
                 self.assertIn('content="cover.jpg"', opf)
@@ -215,10 +215,10 @@ class TransferImagePathMappingTest(unittest.TestCase):
                 cover_item_href="Images/cover.webp?rev=1",
             )
 
-            result = run_epub_img_transfer(epub_path, temp_dir)
+            result = run(epub_path, temp_dir)
 
             self.assertEqual(result, 0)
-            output_path = os.path.join(temp_dir, "book_transfer.epub")
+            output_path = os.path.join(temp_dir, "book_webp_to_img.epub")
             with zipfile.ZipFile(output_path) as epub:
                 opf = epub.read("OEBPS/content.opf").decode("utf-8")
                 self.assertIn('content="cover.jpg"', opf)
@@ -236,10 +236,10 @@ class TransferImagePathMappingTest(unittest.TestCase):
                 cover_item_id="cover-image",
             )
 
-            result = run_epub_img_transfer(epub_path, temp_dir)
+            result = run(epub_path, temp_dir)
 
             self.assertEqual(result, 0)
-            output_path = os.path.join(temp_dir, "book_transfer.epub")
+            output_path = os.path.join(temp_dir, "book_webp_to_img.epub")
             with zipfile.ZipFile(output_path) as epub:
                 opf = epub.read("OEBPS/content.opf").decode("utf-8")
                 self.assertIn('content="Images/cover.jpg"', opf)

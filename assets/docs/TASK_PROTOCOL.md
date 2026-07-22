@@ -7,7 +7,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 ```json
 {
   "task_id": "uuid-or-custom-id",
-  "task_type": "reformat",
+  "task_type": "reformat_epub",
   "input_files": ["/abs/path/book.epub"],
   "output_dir": "/abs/path/output",
   "options": {}
@@ -16,12 +16,12 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 
 `task_type` 当前支持：
 
-- `reformat`
-- `decrypt`
-- `encrypt`
-- `font_encrypt`
-- `font_decrypt`
-- `transfer_img`
+- `reformat_epub`
+- `decrypt_epub`
+- `encrypt_epub`
+- `encrypt_font`
+- `decrypt_font`
+- `webp_to_img`
 
 ## 运行时事件
 
@@ -72,7 +72,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 
 ## 字体任务选项
 
-`font_encrypt` 和 `font_decrypt` 都使用同一套按文件选择字体 family 的选项：
+`encrypt_font` 和 `decrypt_font` 都使用同一套按文件选择字体 family 的选项：
 
 ```json
 {
@@ -84,7 +84,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 }
 ```
 
-`font_decrypt` 使用构建时内置的固定 ONNX OCR 模型，默认最低置信度为 `0.8`，
+`decrypt_font` 使用构建时内置的固定 ONNX OCR 模型，默认最低置信度为 `0.8`，
 默认 OCR 字符筛选策略为 `strict`：
 
 ```json

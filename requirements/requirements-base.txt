@@ -9,3 +9,4 @@ pillow
 PyYAML
 chardet>=3.0.2,<6.0.0
 python-bidi
+opencc-python-reimplemented

@@ -19,12 +19,16 @@ const emit = defineEmits<{
 }>();
 
 const executionSectionKeys: SectionKey[] = [
-  "reformat",
-  "decrypt",
-  "encrypt",
-  "font_encrypt",
-  "font_decrypt",
-  "transfer_img",
+  "reformat_epub",
+  "decrypt_epub",
+  "encrypt_epub",
+  "decrypt_font",
+  "encrypt_font",
+  "image_compress",
+  "webp_to_img",
+  "image_to_webp",
+  "replace_cover",
+  "chinese_convert",
 ];
 const overviewSectionKeys: SectionKey[] = ["overview", "engine"];
 const utilitySectionKeys: SectionKey[] = ["settings", "about"];

@@ -12,6 +12,7 @@ import type {
   AppSettings,
   FontDecryptSettings,
   FontLoadStatus,
+  NewTaskSettings,
   FontTargetResult,
   OcrCharPolicy,
   PythonWorkerStatus,
@@ -42,27 +43,35 @@ const sectionItems: Array<{
 }> = [
   { key: "overview", label: "功能概览", description: "按类别选择 EPUB 处理工具" },
   { key: "engine", label: "处理引擎", description: "查看并管理 Python Worker 状态" },
-  { key: "reformat", label: "格式化", description: "重构 EPUB 目录与引用" },
-  { key: "decrypt", label: "文件解密", description: "还原文件名混淆" },
-  { key: "encrypt", label: "文件加密", description: "生成文件名混淆版" },
-  { key: "font_encrypt", label: "字体加密", description: "混淆内嵌字体字形" },
-  { key: "font_decrypt", label: "字体解密", description: "OCR 反混淆字体字形" },
-  { key: "transfer_img", label: "图片转换", description: "转换 EPUB 内 WEBP 图片" },
+  { key: "reformat_epub", label: "格式化", description: "重构 EPUB 目录与引用" },
+  { key: "decrypt_epub", label: "文件解密", description: "还原文件名混淆" },
+  { key: "encrypt_epub", label: "文件加密", description: "生成文件名混淆版" },
+  { key: "decrypt_font", label: "字体解密", description: "OCR 反混淆字体字形" },
+  { key: "encrypt_font", label: "字体加密", description: "混淆内嵌字体字形" },
+  { key: "image_compress", label: "图片压缩", description: "压缩内嵌图片并保留更小版本" },
+  { key: "webp_to_img", label: "WebP 转图片", description: "按透明通道转换为 JPG 或 PNG" },
+  { key: "image_to_webp", label: "图片转 WebP", description: "转换 JPG、PNG、BMP 并同步引用" },
+  { key: "replace_cover", label: "更换封面", description: "为每本 EPUB 独立指定封面" },
+  { key: "chinese_convert", label: "简繁转换", description: "简体与繁体文本双向转换" },
   { key: "settings", label: "设置", description: "更新、偏好、日志与历史" },
   { key: "about", label: "关于", description: "统计、能力范围与路径" },
 ];
 const taskSections: TaskType[] = [
-  "reformat",
-  "decrypt",
-  "encrypt",
-  "font_encrypt",
-  "font_decrypt",
-  "transfer_img",
+  "reformat_epub",
+  "decrypt_epub",
+  "encrypt_epub",
+  "decrypt_font",
+  "encrypt_font",
+  "image_compress",
+  "webp_to_img",
+  "image_to_webp",
+  "replace_cover",
+  "chinese_convert",
 ];
 const legacySectionMap: Record<string, SectionKey> = {
-  batch: "reformat",
-  font: "font_encrypt",
-  image: "transfer_img",
+  batch: "reformat_epub",
+  font: "encrypt_font",
+  image: "webp_to_img",
   settings: "settings",
   about: "about",
 };
@@ -75,17 +84,22 @@ const overviewTaskGroups: Array<{
   {
     label: "文件处理",
     description: "整理 EPUB 结构，或处理文件名与资源引用混淆。",
-    taskTypes: ["reformat", "decrypt", "encrypt"],
+    taskTypes: ["reformat_epub", "decrypt_epub", "encrypt_epub"],
   },
   {
     label: "字体处理",
     description: "按 EPUB 内嵌字体范围执行字形混淆或 OCR 还原。",
-    taskTypes: ["font_encrypt", "font_decrypt"],
+    taskTypes: ["decrypt_font", "encrypt_font"],
   },
   {
     label: "资源处理",
-    description: "转换 EPUB 内的 WEBP 图片并同步更新引用。",
-    taskTypes: ["transfer_img"],
+    description: "压缩、转换 EPUB 图片，或逐本更换封面并同步引用。",
+    taskTypes: ["image_compress", "webp_to_img", "image_to_webp", "replace_cover"],
+  },
+  {
+    label: "文本处理",
+    description: "在不改变资源路径和文档结构的前提下转换可见中文文本。",
+    taskTypes: ["chinese_convert"],
   },
 ];
 const overviewGroups = computed(() =>
@@ -97,7 +111,7 @@ const overviewGroups = computed(() =>
   })),
 );
 
-const fontTargetTaskTypes: TaskType[] = ["font_encrypt", "font_decrypt"];
+const fontTargetTaskTypes: TaskType[] = ["encrypt_font", "decrypt_font"];
 const isFontTargetTask = (value: SectionKey | TaskType | null): value is TaskType =>
   fontTargetTaskTypes.includes(value as TaskType);
 
@@ -132,6 +146,14 @@ const ocrCharPolicyOptions: Array<{
   },
 ];
 const ocrCharPolicies = ocrCharPolicyOptions.map((option) => option.value);
+const chineseDirectionOptions: Array<{
+  value: NewTaskSettings["chineseDirection"];
+  label: string;
+  description: string;
+}> = [
+  { value: "s2t", label: "简体 → 繁体", description: "将可见简体中文转换为繁体" },
+  { value: "t2s", label: "繁体 → 简体", description: "将可见繁体中文转换为简体" },
+];
 const FRONTEND_MIN_OCR_CONFIDENCE = 0;
 const FRONTEND_MAX_OCR_CONFIDENCE = 1;
 const FRONTEND_OCR_CONFIDENCE_STEP = 0.05;
@@ -139,14 +161,39 @@ const defaultFontDecryptSettings: FontDecryptSettings = {
   ocrCharPolicy: "strict",
   minOcrConfidence: 0.8,
 };
+const defaultNewTaskSettings: NewTaskSettings = {
+  jpegQuality: 82,
+  webpQuality: 82,
+  pngToJpg: false,
+  imageWebpQuality: 82,
+  chineseDirection: "s2t",
+};
+const normalizeImageQuality = (value: unknown, fallback: number): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(1, Math.min(100, Math.round(numeric))) : fallback;
+};
+const normalizeNewTaskSettings = (value: unknown): NewTaskSettings => {
+  const raw = value && typeof value === "object" ? (value as Partial<NewTaskSettings>) : {};
+  return {
+    jpegQuality: normalizeImageQuality(raw.jpegQuality, defaultNewTaskSettings.jpegQuality),
+    webpQuality: normalizeImageQuality(raw.webpQuality, defaultNewTaskSettings.webpQuality),
+    pngToJpg: typeof raw.pngToJpg === "boolean" ? raw.pngToJpg : defaultNewTaskSettings.pngToJpg,
+    imageWebpQuality: normalizeImageQuality(raw.imageWebpQuality, defaultNewTaskSettings.imageWebpQuality),
+    chineseDirection: raw.chineseDirection === "t2s" ? "t2s" : "s2t",
+  };
+};
 
 const createTaskRecord = <T,>(factory: () => T): Record<TaskType, T> => ({
-  reformat: factory(),
-  decrypt: factory(),
-  encrypt: factory(),
-  font_encrypt: factory(),
-  font_decrypt: factory(),
-  transfer_img: factory(),
+  reformat_epub: factory(),
+  decrypt_epub: factory(),
+  encrypt_epub: factory(),
+  encrypt_font: factory(),
+  decrypt_font: factory(),
+  webp_to_img: factory(),
+  image_compress: factory(),
+  image_to_webp: factory(),
+  chinese_convert: factory(),
+  replace_cover: factory(),
 });
 const createOutputDirectoryMap = (): TaskOutputDirectoryMap => createTaskRecord(() => "");
 
@@ -182,6 +229,7 @@ const {
   isTauriRuntime,
   listFontTargetsBatch,
   openPath,
+  readImagePreview,
   resolveInputSources,
   restartPythonWorker,
   runTask,
@@ -337,6 +385,19 @@ const normalizeOutputDirectoryMap = (value: unknown): TaskOutputDirectoryMap => 
   };
 };
 
+const normalizeTaskHistory = (value: unknown): TaskHistoryEntry[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (entry): entry is TaskHistoryEntry =>
+      Boolean(entry) &&
+      typeof entry === "object" &&
+      taskSections.includes((entry as Partial<TaskHistoryEntry>).taskType as TaskType),
+  );
+};
+
 const normalizeTaskAggregateStats = (value: unknown): TaskAggregateStats => {
   const raw = value && typeof value === "object" ? (value as Partial<TaskAggregateStats>) : {};
   const normalizeCount = (candidate: unknown): number =>
@@ -393,13 +454,26 @@ const fontDecryptSettings = usePersistentState<FontDecryptSettings>(
   defaultFontDecryptSettings,
   normalizeFontDecryptSettings,
 );
+const newTaskSettings = usePersistentState<NewTaskSettings>(
+  "epub-tool.new-task-settings",
+  defaultNewTaskSettings,
+  normalizeNewTaskSettings,
+);
 const ocrPolicyMenuOpen = ref(false);
 const ocrPolicyMenuRef = ref<HTMLElement | null>(null);
+const chineseDirectionMenuOpen = ref(false);
+const chineseDirectionMenuRef = ref<HTMLElement | null>(null);
 const selectedOcrCharPolicyOption = computed(
   () =>
     ocrCharPolicyOptions.find(
       (option) => option.value === fontDecryptSettings.value.ocrCharPolicy,
     ) ?? ocrCharPolicyOptions[0],
+);
+const selectedChineseDirectionOption = computed(
+  () =>
+    chineseDirectionOptions.find(
+      (option) => option.value === newTaskSettings.value.chineseDirection,
+    ) ?? chineseDirectionOptions[0],
 );
 const formatOcrConfidenceValue = (value: number) =>
   value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
@@ -419,9 +493,13 @@ const minOcrConfidenceSliderStyle = computed(() => {
     "--ocr-confidence-percent": `${percent}%`,
   };
 });
+const qualitySliderStyle = (value: number) => ({
+  "--ocr-confidence-percent": `${((normalizeImageQuality(value, 82) - 1) / 99) * 100}%`,
+});
 const taskHistory = usePersistentState<TaskHistoryEntry[]>(
   "epub-tool.task-history",
   [],
+  normalizeTaskHistory,
 );
 const taskAggregateStats = usePersistentState<TaskAggregateStats>(
   "epub-tool.aggregate-stats",
@@ -869,18 +947,26 @@ const masonryColumns = computed<MasonryCard[][]>(() => {
 });
 const activeTaskDescription = computed(() => {
   switch (activeTask.value) {
-    case "reformat":
+    case "reformat_epub":
       return "重构 EPUB 目录结构、OPF 清单和资源引用，适合先做标准化整理后再继续其他处理。";
-    case "decrypt":
+    case "decrypt_epub":
       return "还原文件名与资源引用混淆，不提供 DRM 内容解密，支持单本、多本和目录扫描。";
-    case "encrypt":
+    case "encrypt_epub":
       return "生成文件名与资源引用混淆版 EPUB，支持单本、多本和目录扫描。";
-    case "font_encrypt":
+    case "encrypt_font":
       return "按每本 EPUB 独立选择目标字体 family，再对内嵌字体与正文映射执行字形混淆。";
-    case "font_decrypt":
+    case "decrypt_font":
       return "按每本 EPUB 独立选择目标字体 family，渲染混淆字形并用内置 ONNX OCR 识别后回写正文。";
-    case "transfer_img":
-      return "批量转换 EPUB 内 WEBP 图片，并同步更新 OPF 图片引用，支持单本、多本和目录扫描。";
+    case "webp_to_img":
+      return "将透明 WebP 转为 PNG、非透明 WebP 转为 JPEG，并同步更新 OPF 与内容引用。";
+    case "image_compress":
+      return "压缩 JPEG、PNG 与 WebP；仅保留体积更小的结果，透明 PNG 不会转成 JPEG。";
+    case "image_to_webp":
+      return "将 JPG、PNG、BMP 转为 WebP 并同步 OPF、正文、SVG 与 CSS 引用；旧阅读器可能不兼容。";
+    case "chinese_convert":
+      return "使用 OpenCC 双向转换可见中文文本，路径、ID、CSS 与脚本保持不变。";
+    case "replace_cover":
+      return "为队列中的每本 EPUB 独立选择 JPG、PNG 或 WebP 封面；未选择的文件会明确跳过。";
     default:
       return "";
   }
@@ -1025,18 +1111,26 @@ const activeTitle = computed(() => {
       return "功能概览";
     case "engine":
       return "处理引擎";
-    case "reformat":
+    case "reformat_epub":
       return "格式化";
-    case "decrypt":
+    case "decrypt_epub":
       return "文件解密";
-    case "encrypt":
+    case "encrypt_epub":
       return "文件加密";
-    case "font_encrypt":
+    case "encrypt_font":
       return "字体加密";
-    case "font_decrypt":
+    case "decrypt_font":
       return "字体解密";
-    case "transfer_img":
-      return "图片转换";
+    case "webp_to_img":
+      return "WebP 转图片";
+    case "image_compress":
+      return "图片压缩";
+    case "image_to_webp":
+      return "图片转 WebP";
+    case "chinese_convert":
+      return "简繁转换";
+    case "replace_cover":
+      return "更换封面";
     case "settings":
       return "设置";
     default:
@@ -1050,12 +1144,16 @@ const activeDescription = computed(() => {
       return "查看累计处理统计，并按处理类别选择工具；每个任务会保留各自的文件队列与输出目录。";
     case "engine":
       return "查看 Python Worker 的运行状态、恢复记录、最近错误与最近任务，并可按需重启。";
-    case "reformat":
-    case "decrypt":
-    case "encrypt":
-    case "font_encrypt":
-    case "font_decrypt":
-    case "transfer_img":
+    case "reformat_epub":
+    case "decrypt_epub":
+    case "encrypt_epub":
+    case "encrypt_font":
+    case "decrypt_font":
+    case "webp_to_img":
+    case "image_compress":
+    case "image_to_webp":
+    case "chinese_convert":
+    case "replace_cover":
       return activeTaskDescription.value;
     case "settings":
       return "集中管理版本更新、自动行为，以及日志和设置文件入口。";
@@ -1443,6 +1541,8 @@ const queuePaths = (paths: string[]) => {
       selectedFontFamilies: [],
       fontLoadStatus: "idle",
       fontLoadError: "",
+      coverPath: "",
+      coverPreviewUrl: "",
     });
     addedPaths.push(path);
     if (!firstQueuedPath) {
@@ -1534,8 +1634,19 @@ const resetOutput = () => {
   outputDir.value = "";
 };
 
+const releaseCoverPreview = (file: QueuedFile) => {
+  if (file.coverPreviewUrl) {
+    URL.revokeObjectURL(file.coverPreviewUrl);
+    file.coverPreviewUrl = "";
+  }
+};
+
 const removeFile = (path: string) => {
   const snapshot = [...files.value];
+  const removedFile = snapshot.find((item) => item.path === path);
+  if (removedFile) {
+    releaseCoverPreview(removedFile);
+  }
   const nextSelectedPath =
     selectedFilePath.value === path
       ? pickNeighborPath(snapshot, path)
@@ -1550,6 +1661,7 @@ const removeFile = (path: string) => {
 };
 
 const clearFiles = () => {
+  files.value.forEach(releaseCoverPreview);
   files.value = [];
   selectedFilePath.value = "";
 };
@@ -1753,7 +1865,7 @@ const buildRequest = (): TaskRequest => {
     };
   }
 
-  if (activeTask.value === "font_decrypt") {
+  if (activeTask.value === "decrypt_font") {
     const normalizedSettings = normalizeFontDecryptSettings(fontDecryptSettings.value);
     fontDecryptSettings.value = normalizedSettings;
     request.options = {
@@ -1763,7 +1875,47 @@ const buildRequest = (): TaskRequest => {
     };
   }
 
+  if (activeTask.value === "image_compress") {
+    request.options = {
+      jpeg_quality: Math.round(newTaskSettings.value.jpegQuality),
+      webp_quality: Math.round(newTaskSettings.value.webpQuality),
+      png_to_jpg: newTaskSettings.value.pngToJpg,
+    };
+  } else if (activeTask.value === "image_to_webp") {
+    request.options = { quality: Math.round(newTaskSettings.value.imageWebpQuality) };
+  } else if (activeTask.value === "chinese_convert") {
+    request.options = { direction: newTaskSettings.value.chineseDirection };
+  } else if (activeTask.value === "replace_cover") {
+    request.options = {
+      cover_path_by_file: Object.fromEntries(
+        files.value.filter((item) => item.coverPath).map((item) => [item.path, item.coverPath]),
+      ),
+    };
+  }
+
   return request;
+};
+
+const pickCoverForFile = async (file: QueuedFile) => {
+  const selected = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "封面图片", extensions: ["jpg", "jpeg", "png", "webp"] }],
+  });
+  if (typeof selected === "string") {
+    try {
+      const preview = await readImagePreview(selected);
+      if (file.coverPreviewUrl) {
+        URL.revokeObjectURL(file.coverPreviewUrl);
+      }
+      file.coverPath = selected;
+      file.coverPreviewUrl = URL.createObjectURL(
+        new Blob([new Uint8Array(preview.bytes)], { type: preview.mimeType }),
+      );
+    } catch (error) {
+      taskStatus.value = toErrorMessage(error, "封面预览加载失败，请重新选择图片。");
+    }
+  }
 };
 
 const normalizeFontDecryptSettingsInPlace = () => {
@@ -1775,7 +1927,22 @@ const closeOcrPolicyMenu = () => {
 };
 
 const toggleOcrPolicyMenu = () => {
+  chineseDirectionMenuOpen.value = false;
   ocrPolicyMenuOpen.value = !ocrPolicyMenuOpen.value;
+};
+
+const closeChineseDirectionMenu = () => {
+  chineseDirectionMenuOpen.value = false;
+};
+
+const toggleChineseDirectionMenu = () => {
+  ocrPolicyMenuOpen.value = false;
+  chineseDirectionMenuOpen.value = !chineseDirectionMenuOpen.value;
+};
+
+const selectChineseDirection = (value: NewTaskSettings["chineseDirection"]) => {
+  newTaskSettings.value.chineseDirection = value;
+  closeChineseDirectionMenu();
 };
 
 const selectOcrPolicy = (value: OcrCharPolicy) => {
@@ -1787,32 +1954,47 @@ const selectOcrPolicy = (value: OcrCharPolicy) => {
 };
 
 const handleOcrPolicyOutsidePointerDown = (event: PointerEvent) => {
-  if (!ocrPolicyMenuOpen.value) {
+  if (!ocrPolicyMenuOpen.value && !chineseDirectionMenuOpen.value) {
     return;
   }
 
   const target = event.target;
-  if (target instanceof Node && ocrPolicyMenuRef.value?.contains(target)) {
+  if (
+    target instanceof Node
+    && (
+      ocrPolicyMenuRef.value?.contains(target)
+      || chineseDirectionMenuRef.value?.contains(target)
+    )
+  ) {
     return;
   }
 
   closeOcrPolicyMenu();
+  closeChineseDirectionMenu();
 };
 
 const formatTaskType = (taskType: TaskType): string => {
   switch (taskType) {
-    case "reformat":
+    case "reformat_epub":
       return "格式化";
-    case "decrypt":
+    case "decrypt_epub":
       return "文件解密";
-    case "encrypt":
+    case "encrypt_epub":
       return "文件加密";
-    case "font_encrypt":
+    case "encrypt_font":
       return "字体加密";
-    case "font_decrypt":
+    case "decrypt_font":
       return "字体解密";
-    case "transfer_img":
-      return "图片转换";
+    case "webp_to_img":
+      return "WebP 转图片";
+    case "image_compress":
+      return "图片压缩";
+    case "image_to_webp":
+      return "图片转 WebP";
+        case "replace_cover":
+      return "更换封面";
+    case "chinese_convert":
+      return "简繁转换";
   }
 };
 
@@ -2302,6 +2484,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  Object.values(taskFilesByType.value).flat().forEach(releaseCoverPreview);
   if (pythonWorkerStatusTimer && typeof window !== "undefined") {
     window.clearInterval(pythonWorkerStatusTimer);
     pythonWorkerStatusTimer = 0;
@@ -2474,7 +2657,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 class="masonry-column">
                 <template v-for="card in column" :key="card.key">
                   <article v-if="card.key === 'task-config'"
-                    class="panel task-panel glass-medium content-animated-block">
+                    class="panel task-panel glass-medium content-animated-block"
+                    :class="{ 'task-panel-menu-open': chineseDirectionMenuOpen }">
                     <div class="panel-head">
                       <div>
                         <p class="eyebrow">任务配置</p>
@@ -2499,6 +2683,85 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                       <div class="task-callout glass-soft">
                         <strong class="content-animated-value">{{ activeTaskLabel }}</strong>
                         <span class="content-animated-value">{{ activeTaskDescription }}</span>
+                      </div>
+
+                      <div v-if="activeTask === 'image_compress'" class="font-advanced-options glass-soft">
+                        <label class="font-setting-field font-slider-field">
+                          <span class="font-slider-head"><span>JPEG 质量</span><strong>{{ newTaskSettings.jpegQuality }}</strong></span>
+                          <span class="font-slider-control" :style="qualitySliderStyle(newTaskSettings.jpegQuality)">
+                            <span class="font-slider-track" aria-hidden="true">
+                              <span class="font-slider-fill"></span>
+                            </span>
+                            <input v-model.number="newTaskSettings.jpegQuality" aria-label="JPEG 质量"
+                              :aria-valuetext="String(newTaskSettings.jpegQuality)" min="1" max="100"
+                              class="font-confidence-slider" type="range" />
+                          </span>
+                        </label>
+                        <label class="font-setting-field font-slider-field">
+                          <span class="font-slider-head"><span>WebP 质量</span><strong>{{ newTaskSettings.webpQuality }}</strong></span>
+                          <span class="font-slider-control" :style="qualitySliderStyle(newTaskSettings.webpQuality)">
+                            <span class="font-slider-track" aria-hidden="true">
+                              <span class="font-slider-fill"></span>
+                            </span>
+                            <input v-model.number="newTaskSettings.webpQuality" aria-label="WebP 质量"
+                              :aria-valuetext="String(newTaskSettings.webpQuality)" min="1" max="100"
+                              class="font-confidence-slider" type="range" />
+                          </span>
+                        </label>
+                        <label class="font-option toggle-option">
+                          <span>将无透明通道 PNG 尝试转换为 JPEG</span>
+                          <span class="toggle-switch">
+                            <input v-model="newTaskSettings.pngToJpg" type="checkbox" />
+                            <span class="toggle-switch-track" aria-hidden="true"></span>
+                          </span>
+                        </label>
+                      </div>
+
+                      <div v-else-if="activeTask === 'image_to_webp'" class="font-advanced-options glass-soft">
+                        <label class="font-setting-field font-slider-field">
+                          <span class="font-slider-head"><span>WebP 质量</span><strong>{{ newTaskSettings.imageWebpQuality }}</strong></span>
+                          <span class="font-slider-control" :style="qualitySliderStyle(newTaskSettings.imageWebpQuality)">
+                            <span class="font-slider-track" aria-hidden="true">
+                              <span class="font-slider-fill"></span>
+                            </span>
+                            <input v-model.number="newTaskSettings.imageWebpQuality" aria-label="WebP 质量"
+                              :aria-valuetext="String(newTaskSettings.imageWebpQuality)" min="1" max="100"
+                              class="font-confidence-slider" type="range" />
+                          </span>
+                        </label>
+                        <p class="muted">兼容性提示：EPUB 2 与旧版阅读器可能无法显示 WebP。</p>
+                      </div>
+
+                      <div v-else-if="activeTask === 'chinese_convert'"
+                        class="font-advanced-options glass-soft">
+                        <div class="font-setting-field">
+                          <span id="chinese-direction-label">转换方向</span>
+                          <div ref="chineseDirectionMenuRef" class="font-select"
+                            :class="{ open: chineseDirectionMenuOpen }">
+                            <button aria-haspopup="listbox" :aria-expanded="chineseDirectionMenuOpen"
+                              aria-labelledby="chinese-direction-label" class="font-select-trigger" type="button"
+                              @click="toggleChineseDirectionMenu"
+                              @keydown.down.prevent="chineseDirectionMenuOpen = true"
+                              @keydown.escape.stop.prevent="closeChineseDirectionMenu">
+                              <span>{{ selectedChineseDirectionOption.label }}</span>
+                              <span class="font-select-chevron" aria-hidden="true"></span>
+                            </button>
+                            <div v-if="chineseDirectionMenuOpen" aria-labelledby="chinese-direction-label"
+                              class="font-select-menu" role="listbox">
+                              <button v-for="option in chineseDirectionOptions" :key="option.value"
+                                :aria-selected="option.value === newTaskSettings.chineseDirection"
+                                class="font-select-option"
+                                :class="{ selected: option.value === newTaskSettings.chineseDirection }"
+                                role="option" type="button" @click="selectChineseDirection(option.value)">
+                                <span class="font-select-option-copy">
+                                  <strong>{{ option.label }}</strong>
+                                  <small>{{ option.description }}</small>
+                                </span>
+                                <span class="font-select-option-mark" aria-hidden="true"></span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
                       <div v-if="taskRunning || fontLoading" class="task-progress glass-soft">
@@ -2539,7 +2802,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                         </button>
                       </div>
                     </div>
-                    <div v-if="activeTask === 'font_decrypt'" class="font-advanced-options glass-soft">
+                    <div v-if="activeTask === 'decrypt_font'" class="font-advanced-options glass-soft">
                       <div class="font-advanced-head">
                         <p class="eyebrow">OCR 设置</p>
                         <h4>高级选项</h4>
@@ -2598,11 +2861,14 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                         <strong>{{ selectedFile.name }}</strong>
                         <p>{{ selectedFile.fontFamilies.length }} 个可选字体</p>
                         <label v-for="family in selectedFile.fontFamilies" :key="`${selectedFile.path}-${family}`"
-                          class="font-option">
-                          <input :disabled="selectedFile.fontLoadStatus === 'loading'"
-                            :checked="selectedFile.selectedFontFamilies.includes(family)" type="checkbox"
-                            @change="toggleFontFamily(selectedFile.path, family)" />
+                          class="font-option toggle-option">
                           <span>{{ family }}</span>
+                          <span class="toggle-switch">
+                            <input :disabled="selectedFile.fontLoadStatus === 'loading'"
+                              :checked="selectedFile.selectedFontFamilies.includes(family)" type="checkbox"
+                              @change="toggleFontFamily(selectedFile.path, family)" />
+                            <span class="toggle-switch-track" aria-hidden="true"></span>
+                          </span>
                         </label>
                         <p v-if="selectedFileFontMessage" class="muted">
                           {{ selectedFileFontMessage }}
@@ -2633,6 +2899,13 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                           </span>
                           <p>{{ file.path }}</p>
                         </button>
+                        <div v-if="activeTask === 'replace_cover'" class="panel-actions">
+                          <img v-if="file.coverPreviewUrl" :src="file.coverPreviewUrl" alt="封面预览"
+                            style="width: 42px; height: 56px; object-fit: cover; border-radius: 6px" />
+                          <button class="ghost-btn task-action-btn" type="button" @click="pickCoverForFile(file)">
+                            {{ file.coverPath ? "更换封面" : "选择封面" }}
+                          </button>
+                        </div>
                         <button class="ghost-btn" type="button" @click.stop="removeFile(file.path)">
                           移除
                         </button>

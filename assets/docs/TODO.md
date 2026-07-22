@@ -7,7 +7,7 @@
 
 ### 当前现状
 
-- `font_encrypt` 和 `font_decrypt` 已作为正式任务接入 sidecar、CLI 与前端。
+- `encrypt_font` 和 `decrypt_font` 已作为正式任务接入 sidecar、CLI 与前端。
 - 字体扫描已覆盖 `.ttf`、`.otf`、`.woff`、`.woff2`，并已有 WOFF2 回归。
 - CSS 解析已不是纯正则路径，当前使用 `tinycss2` 和 `cssselect2` 处理常见 EPUB 字体命中场景，包括选择器匹配、`@import`、`@media`、`@supports`、`@layer`、`@scope`、inline style、`!important`、继承、CSS custom property / `var()` 等。
 - 字体加密流程会先生成 `font_file -> 字符集合`，再改写字体 cmap 并回写正文。

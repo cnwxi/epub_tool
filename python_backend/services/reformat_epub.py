@@ -510,8 +510,14 @@ class EpubTool:
     def create_tgt_epub(self):
         output_path = self.output_path
         logger.write(f"输出路径: {output_path}")
+        target_path = path.join(
+            output_path, self.epub_name.replace(".epub", "_reformat.epub")
+        )
+        if path.exists(target_path):
+            os.remove(target_path)
+            logger.write(f"已删除同名输出文件: {target_path}")
         return zipfile.ZipFile(
-            path.join(output_path, self.epub_name.replace(".epub", "_reformat.epub")),
+            target_path,
             "w",
             zipfile.ZIP_STORED,
         )

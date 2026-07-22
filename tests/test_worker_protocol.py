@@ -105,7 +105,7 @@ class WorkerProtocolTest(unittest.TestCase):
                     "command": "run",
                     "request": {
                         "task_id": "task-1",
-                        "task_type": "reformat",
+                        "task_type": "reformat_epub",
                         "input_files": [],
                         "output_dir": None,
                         "options": {},
