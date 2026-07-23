@@ -30,7 +30,7 @@
 - `encrypt_epub`：生成文件名与资源引用混淆版 EPUB
 - `encrypt_font`：按每本 EPUB 单独选择字体 family，对内嵌字体与正文映射执行字形混淆
 - `decrypt_font`：按每本 EPUB 单独选择字体 family，渲染混淆字形，经内置 ONNX OCR 识别后回写正文，并用可见占位符标记低置信度字符
-- `image_compress`：压缩 EPUB 内 JPEG、PNG 与 WebP 图片，仅保留体积更小的结果；可选将无透明通道 PNG 转为 JPEG
+- `image_compress`：压缩 EPUB 内 JPEG、PNG 与 WebP 图片，仅保留体积更小的结果；可选将无透明通道 PNG 转为 JPEG，或将仍保留为 PNG 的图片降色至 256 色
 - `webp_to_img`：将 EPUB 内透明 WebP 转为 PNG、非透明 WebP 转为 JPEG，并同步更新清单和内容引用
 - `image_to_webp`：将 EPUB 内 JPG、PNG、BMP 转为 WebP，并同步更新清单和内容引用；旧版阅读器可能不支持 WebP
 - `replace_cover`：为每本 EPUB 指定 JPG、PNG 或 WebP 封面，并同步更新封面清单和内容页引用

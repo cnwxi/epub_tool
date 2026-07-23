@@ -165,6 +165,7 @@ const defaultNewTaskSettings: NewTaskSettings = {
   jpegQuality: 82,
   webpQuality: 82,
   pngToJpg: false,
+  imageCompressQuantizePng: false,
   webpToImageQuality: 82,
   webpToImageQuantizePng: false,
   imageWebpQuality: 82,
@@ -180,6 +181,9 @@ const normalizeNewTaskSettings = (value: unknown): NewTaskSettings => {
     jpegQuality: normalizeImageQuality(raw.jpegQuality, defaultNewTaskSettings.jpegQuality),
     webpQuality: normalizeImageQuality(raw.webpQuality, defaultNewTaskSettings.webpQuality),
     pngToJpg: typeof raw.pngToJpg === "boolean" ? raw.pngToJpg : defaultNewTaskSettings.pngToJpg,
+    imageCompressQuantizePng: typeof raw.imageCompressQuantizePng === "boolean"
+      ? raw.imageCompressQuantizePng
+      : defaultNewTaskSettings.imageCompressQuantizePng,
     webpToImageQuality: normalizeImageQuality(raw.webpToImageQuality, defaultNewTaskSettings.webpToImageQuality),
     webpToImageQuantizePng: typeof raw.webpToImageQuantizePng === "boolean"
       ? raw.webpToImageQuantizePng
@@ -1886,6 +1890,7 @@ const buildRequest = (): TaskRequest => {
       jpeg_quality: Math.round(newTaskSettings.value.jpegQuality),
       webp_quality: Math.round(newTaskSettings.value.webpQuality),
       png_to_jpg: newTaskSettings.value.pngToJpg,
+      png_quantize: newTaskSettings.value.imageCompressQuantizePng,
     };
   } else if (activeTask.value === "webp_to_img") {
     request.options = {
@@ -2726,6 +2731,14 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                             <span class="toggle-switch-track" aria-hidden="true"></span>
                           </span>
                         </label>
+                        <label class="font-option toggle-option image-toggle-option">
+                          <span>PNG 降色到 256 色（减小体积）</span>
+                          <span class="toggle-switch">
+                            <input v-model="newTaskSettings.imageCompressQuantizePng" type="checkbox" />
+                            <span class="toggle-switch-track" aria-hidden="true"></span>
+                          </span>
+                        </label>
+                        <p class="muted">降色仅作用于仍以 PNG 保存的图片；开启后会损失部分颜色细节。</p>
                       </div>
 
                       <div v-else-if="activeTask === 'webp_to_img'" class="font-advanced-options glass-soft">

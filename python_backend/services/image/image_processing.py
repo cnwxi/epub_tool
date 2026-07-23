@@ -168,6 +168,10 @@ def _has_transparency(image: Image.Image) -> bool:
     return image.mode == "P" and "transparency" in image.info
 
 
+def _quantize_png(image: Image.Image) -> Image.Image:
+    return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE)
+
+
 def process_images(
     input_file: str,
     output_path: str,
@@ -216,10 +220,7 @@ def process_images(
                         target_extension = ".png"
                         target_format = "PNG"
                         if png_quantize:
-                            image = image.quantize(
-                                colors=256,
-                                method=Image.Quantize.FASTOCTREE,
-                            )
+                            image = _quantize_png(image)
                     else:
                         target_extension = ".jpg"
                         target_format = "JPEG"
@@ -230,6 +231,8 @@ def process_images(
                     target_extension = ".jpg"
                     target_format = "JPEG"
                     save_options["quality"] = quality
+                elif extension == ".png" and png_quantize:
+                    image = _quantize_png(image)
                 elif extension == ".bmp":
                     kept += 1
                     continue

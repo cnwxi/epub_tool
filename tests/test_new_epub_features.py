@@ -194,6 +194,40 @@ def test_image_compress_preserves_transparent_png_when_jpeg_requested(tmp_path: 
     assert "OPS/Images/picture.png" in output.members
 
 
+def test_image_compress_quantizes_png_when_requested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "quantized-png.epub"
+    image = Image.new("RGBA", (80, 80))
+    image.putdata(
+        [
+            ((x * 13) % 256, (y * 17) % 256, (x * y) % 256, (x + y) % 256)
+            for y in range(80)
+            for x in range(80)
+        ]
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", compress_level=0)
+    write_epub(source, image_data=buffer.getvalue())
+    monkeypatch.setattr(image_compress, "logger", Logger())
+
+    assert image_compress.run(
+        str(source),
+        str(tmp_path),
+        options={
+            "jpeg_quality": 70,
+            "webp_quality": 70,
+            "png_to_jpg": False,
+            "png_quantize": True,
+        },
+    ) == 0
+
+    output = EpubWorkspace.load(tmp_path / "quantized-png_image_compress.epub")
+    with Image.open(io.BytesIO(output.members["OPS/Images/picture.png"])) as quantized:
+        assert quantized.mode == "P"
+        assert "transparency" in quantized.info
+
+
 def test_image_compress_handles_jpg_after_exif_normalization(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -306,6 +340,7 @@ def test_replace_cover_rewrites_percent_encoded_cover_references(
 
 @pytest.mark.parametrize("task_type, options", [
     ("image_compress", {"jpeg_quality": 0}),
+    ("image_compress", {"png_quantize": "yes"}),
     ("webp_to_img", {"quality": True}),
     ("webp_to_img", {"png_quantize": "yes"}),
     ("image_to_webp", {"quality": True}),

@@ -205,6 +205,8 @@ def validate_task_options(task_type: str, options: dict[str, Any]) -> None:
         _validate_quality(options, "webp_quality")
         if "png_to_jpg" in options and not isinstance(options["png_to_jpg"], bool):
             raise ValueError("png_to_jpg 必须是布尔值")
+        if "png_quantize" in options and not isinstance(options["png_quantize"], bool):
+            raise ValueError("png_quantize 必须是布尔值")
     elif task_type in {"webp_to_img", "image_to_webp"}:
         _validate_quality(options, "quality")
         if task_type == "webp_to_img" and "png_quantize" in options and not isinstance(options["png_quantize"], bool):
