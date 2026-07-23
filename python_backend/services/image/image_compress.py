@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from python_backend.services.image_processing import process_images
-from python_backend.services.log import logwriter
+from python_backend.services.image.image_processing import process_images
+from python_backend.services.utils.log import logwriter
 
 
 logger = logwriter()
@@ -21,5 +21,6 @@ def run(input_file: str, output_dir: str | None, *, options: dict[str, object]) 
         quality=jpeg_quality,
         webp_quality=webp_quality,
         png_to_jpg=bool(options.get("png_to_jpg", False)),
+        png_quantize=bool(options.get("png_quantize", False)),
         logger=logger,
     )

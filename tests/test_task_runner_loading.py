@@ -21,7 +21,7 @@ class TaskRunnerLoadingTest(unittest.TestCase):
             self.assertIs(task_runner.load_module("reformat_epub"), module)
             self.assertIs(task_runner.load_module("reformat_epub"), module)
 
-        importer.assert_called_once_with("python_backend.services.reformat_epub")
+        importer.assert_called_once_with("python_backend.services.epub.reformat_epub")
 
     def test_patched_logger_only_touches_requested_module(self):
         original_logger = object()

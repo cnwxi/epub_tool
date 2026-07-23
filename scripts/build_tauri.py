@@ -15,6 +15,7 @@ SRC_TAURI_DIR = REPO_ROOT / "src-tauri"
 CARGO_TOML = SRC_TAURI_DIR / "Cargo.toml"
 TAURI_CONF = SRC_TAURI_DIR / "tauri.conf.json"
 BUNDLE_DIR = SRC_TAURI_DIR / "target" / "release" / "bundle"
+DMG_VOLUME_ICON = REPO_ROOT / "assets" / "img" / "icon.icns"
 
 
 def run_command(command: list[str]) -> None:
@@ -43,11 +44,32 @@ def macos_arch_label() -> str:
     return machine
 
 
+def resolve_setfile() -> str:
+    setfile = shutil.which("SetFile")
+    if setfile:
+        return setfile
+
+    xcrun = shutil.which("xcrun")
+    if xcrun:
+        result = subprocess.run(
+            [xcrun, "--find", "SetFile"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+
+    raise SystemExit("macOS DMG 自定义卷图标需要 Xcode Command Line Tools 中的 SetFile。")
+
+
 def create_macos_dmg() -> Path:
     hdiutil = shutil.which("hdiutil")
     ditto = shutil.which("ditto")
     if not hdiutil or not ditto:
         raise SystemExit("macOS DMG 构建需要 hdiutil 和 ditto。")
+    if not DMG_VOLUME_ICON.is_file():
+        raise SystemExit(f"DMG 卷图标不存在: {DMG_VOLUME_ICON}")
 
     name = product_name()
     version = app_version()
@@ -61,14 +83,20 @@ def create_macos_dmg() -> Path:
     if dmg_path.exists():
         dmg_path.unlink()
 
-    # 使用系统 hdiutil 直接从 .app 生成压缩 DMG，避免 Tauri 内置 create-dmg
-    # 脚本在部分 macOS runner 上残留临时读写镜像后导致整次构建失败。
+    # 先生成可写镜像，才能为挂载卷写入 Finder 自定义图标标记；随后转换为压缩 DMG。
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        staged_app = tmp_path / f"{name}.app"
+        staging_path = tmp_path / "staging"
+        staging_path.mkdir()
+        staged_app = staging_path / f"{name}.app"
         run_command([ditto, str(app_path), str(staged_app)])
         # 在 DMG 中提供标准的“Applications”快捷方式，供用户将 .app 拖入应用程序目录。
-        (tmp_path / "Applications").symlink_to("/Applications")
+        (staging_path / "Applications").symlink_to("/Applications")
+        shutil.copy2(DMG_VOLUME_ICON, staging_path / ".VolumeIcon.icns")
+
+        writable_dmg_path = tmp_path / "writable.dmg"
+        mount_path = tmp_path / "mounted"
+        mount_path.mkdir()
         run_command(
             [
                 hdiutil,
@@ -76,10 +104,42 @@ def create_macos_dmg() -> Path:
                 "-volname",
                 name,
                 "-srcfolder",
-                str(tmp_path),
+                str(staging_path),
                 "-ov",
                 "-format",
+                "UDRW",
+                str(writable_dmg_path),
+            ]
+        )
+
+        attached = False
+        try:
+            run_command(
+                [
+                    hdiutil,
+                    "attach",
+                    "-readwrite",
+                    "-noverify",
+                    "-noautoopen",
+                    "-mountpoint",
+                    str(mount_path),
+                    str(writable_dmg_path),
+                ]
+            )
+            attached = True
+            run_command([resolve_setfile(), "-a", "C", str(mount_path)])
+        finally:
+            if attached:
+                run_command([hdiutil, "detach", str(mount_path)])
+
+        run_command(
+            [
+                hdiutil,
+                "convert",
+                str(writable_dmg_path),
+                "-format",
                 "UDZO",
+                "-o",
                 str(dmg_path),
             ]
         )

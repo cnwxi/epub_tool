@@ -41,6 +41,9 @@ export interface NewTaskSettings {
   jpegQuality: number;
   webpQuality: number;
   pngToJpg: boolean;
+  imageCompressQuantizePng: boolean;
+  webpToImageQuality: number;
+  webpToImageQuantizePng: boolean;
   imageWebpQuality: number;
   chineseDirection: "s2t" | "t2s";
 }

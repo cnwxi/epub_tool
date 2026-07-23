@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 from opencc import OpenCC
 
 from python_backend.epub_workspace import EpubWorkspace
-from python_backend.services.log import logwriter
+from python_backend.services.utils.log import logwriter
 
 
 logger = logwriter()
@@ -95,8 +95,11 @@ def run(input_file: str, output_dir: str | None, *, options: dict[str, object]) 
         if changed:
             workspace.members[name] = converted
             changed_files += 1
-    suffix = "traditional" if direction == "s2t" else "simplified"
+    suffix = "tc" if direction == "s2t" else "sc"
     target_dir = Path(output_dir) if output_dir else Path(input_file).parent
-    workspace.write(target_dir / f"{Path(input_file).stem}_{suffix}.epub", logger=logger)
+    workspace.write(
+        target_dir / f"{Path(input_file).stem}_chinese_convert_{suffix}.epub",
+        logger=logger,
+    )
     logger.write(f"简繁转换完成：更新 {changed_files} 个文本文件")
     return 0

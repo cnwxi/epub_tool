@@ -11,7 +11,7 @@ from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
-from python_backend.services.encrypt_font import (
+from python_backend.services.font.encrypt_font import (
     FONT_OBFUSCATION_ASCII_ALNUM_CODEPOINTS,
     FONT_OBFUSCATION_FULLWIDTH_ALNUM_CODEPOINTS,
     FONT_OBFUSCATION_LAYOUT_CODEPOINTS,
@@ -1622,7 +1622,7 @@ class FontEncryptObfuscationPolicyTest(unittest.TestCase):
             font_encrypt.encrypt_font()
             font_encrypt.read_html()
 
-            output_path = temp_path / "book_font_encrypt.epub"
+            output_path = temp_path / "book_encrypt_font.epub"
             with zipfile.ZipFile(output_path) as output_epub:
                 html = output_epub.read("OEBPS/chapter.xhtml").decode("utf-8")
                 encrypted_font = TTFont(BytesIO(output_epub.read(font_path)))

@@ -228,6 +228,10 @@ conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_epub
 conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_font --input-file ./book.epub
 conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_font --input-file ./book.epub
 conda run -n epub_tool python -m python_backend.cli run --task-type webp_to_img --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type image_compress --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type image_to_webp --input-file ./book.epub
+conda run -n epub_tool python -m python_backend.cli run --task-type replace_cover --input-file ./book.epub --options-json '{"cover_path_by_file":{"./book.epub":"./cover.jpg"}}'
+conda run -n epub_tool python -m python_backend.cli run --task-type chinese_convert --input-file ./book.epub --options-json '{"direction":"s2t"}'
 conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
 ```
 

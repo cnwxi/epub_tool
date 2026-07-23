@@ -55,7 +55,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
 - **`python_backend/cli.py`** — Sidecar 的 CLI 入口。提供 `run`、`list-fonts`、`list-fonts-batch` 和常驻 Worker 使用的 `serve` 子命令；任务请求统一使用 `TaskRequest` 结构。
 - **`python_backend/task_runner.py`** — 编排批量任务执行。按任务类型动态导入 `python_backend/services/` 下的处理模块，将其 `logger` 替换为 `BroadcastLogger`，同时写入 `log.txt` 和 stdout JSON Lines 事件。按 `{stem}_{suffix}.epub` 规则推断输出路径。
 - **`python_backend/protocol.py`** — 数据类定义：`TaskRequest`、`TaskEvent`、`TaskResult`。
-- **`python_backend/services/`** — EPUB 处理服务模块。当前模块包括 `reformat_epub.py`、`decrypt_epub.py`、`encrypt_epub.py`、`encrypt_font.py`、`decrypt_font.py`、`webp_to_img.py` 等；各模块对外暴露统一的 `run()` 入口，内部使用共享的 `logger` 对象，运行时由 `task_runner` 替换。另含 `log.py`（`logwriter` 类）。
+- **`python_backend/services/`** — EPUB 处理服务模块，按功能分为 `epub/`（格式化与文件加解密）、`font/`（字体加解密）、`image/`（图片转换、压缩、封面与图片处理共享逻辑）、`text/`（简繁转换）和 `utils/`（日志等跨领域共享工具）。任务模块对外暴露统一的 `run()` 入口，内部使用共享的 `logger` 对象，运行时由 `task_runner` 替换。
 - **`scripts/`** — `verify_ocr_onnx_models.py`（校验已提交 ONNX OCR 模型）、`prepare_ocr_models.py`（维护者刷新模型时准备官方 Paddle 源模型）、`prepare_ocr_onnx_models.py`（维护者刷新模型时转换 ONNX OCR 模型）、`build_python_sidecar.py`（PyInstaller `--onefile` 构建 ONNX-only sidecar）、`prepare_bundle_resources.py`（将 sidecar 复制到 `bundle-resources/`）。
 - **`tests/`** — 自动化测试。
 - **`fixtures/`** — 本地测试用 EPUB 样本（默认不提交）。
@@ -76,7 +76,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
 - `encrypt_font` 与 `decrypt_font` 的 options 使用 `target_font_families_by_file`（按文件指定字体）和 `target_font_families`（默认字体）；`decrypt_font` 默认使用内置 `PP-OCRv6_small_rec_onnx` ONNX OCR 模型，不加载 Paddle Python 运行时；`PP-OCRv6_medium_rec` 仅作为高准确率可选构建档。
 - 应用版本号在 Vite 构建时从 `src-tauri/Cargo.toml` 读取，注入为 `__APP_VERSION__`。
 - `app-state.json` 已被 gitignore；损坏时自动备份并重置为默认状态。
-- 输出文件命名规则为 `{原文件名}_{后缀}.epub`，如 `book_reformat.epub`、`book_encrypt.epub`。
+- 输出文件命名规则为 `{原文件名}_{任务脚本名}.epub`，如 `book_reformat_epub.epub`、`book_encrypt_epub.epub`；简繁转换额外使用方向后缀，如 `book_chinese_convert_sc.epub`、`book_chinese_convert_tc.epub`。
 
 ### 功能扩展与文案约束
 

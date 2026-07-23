@@ -5,7 +5,7 @@ import zipfile
 
 from bs4 import BeautifulSoup
 
-from python_backend.services.decrypt_font import FontDecrypt
+from python_backend.services.font.decrypt_font import FontDecrypt
 
 
 def build_reference_test_epub(epub_path):
@@ -1457,7 +1457,7 @@ class FontDecryptReferenceCleanupTest(unittest.TestCase):
 
             task.write_epub()
 
-            output_path = os.path.join(temp_dir, "book_font_decrypt.epub")
+            output_path = os.path.join(temp_dir, "book_decrypt_font.epub")
             with zipfile.ZipFile(output_path) as epub:
                 names = set(epub.namelist())
                 self.assertNotIn("OEBPS/Fonts/obf.ttf", names)
@@ -1526,7 +1526,7 @@ class FontDecryptReferenceCleanupTest(unittest.TestCase):
 
             task.write_epub()
 
-            output_path = os.path.join(temp_dir, "book_font_decrypt.epub")
+            output_path = os.path.join(temp_dir, "book_decrypt_font.epub")
             with zipfile.ZipFile(output_path) as epub:
                 names = set(epub.namelist())
                 self.assertIn(image_path, names)

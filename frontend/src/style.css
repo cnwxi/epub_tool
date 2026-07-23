@@ -1147,6 +1147,22 @@ input {
   box-shadow: var(--glass-soft-shadow);
 }
 
+.task-callout > strong,
+.task-field-card > span,
+.font-setting-field > span:first-child,
+.image-toggle-option > :first-child {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.task-callout > span {
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
 .task-progress {
   display: grid;
   gap: 10px;
@@ -2402,6 +2418,13 @@ input {
   min-height: 22px;
 }
 
+.font-slider-head > span:first-child {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .font-slider-head strong {
   min-width: 42px;
   padding: 2px 8px;
@@ -2702,6 +2725,10 @@ input {
 }
 
 .toggle-option > :first-child {
+  min-width: 0;
+}
+
+.image-toggle-option > :first-child {
   min-width: 0;
 }
 

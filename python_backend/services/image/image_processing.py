@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import posixpath
 import re
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
@@ -32,6 +31,15 @@ REFERENCE_ATTRIBUTES_RE = re.compile(
 )
 SRCSET_RE = re.compile(rb"(?P<prefix>\bsrcset\s*=\s*[\"'])(?P<value>[^\"']+)(?P<suffix>[\"'])", re.IGNORECASE)
 CSS_URL_RE = re.compile(rb"(?P<prefix>url\(\s*[\"']?)(?P<value>[^\"')]+)(?P<suffix>[\"']?\s*\))", re.IGNORECASE)
+OPF_ITEM_RE = re.compile(rb"(?P<prefix><item\b)(?P<attributes>[^>]*)(?P<suffix>/?>)", re.IGNORECASE)
+OPF_HREF_RE = re.compile(
+    rb"(?P<prefix>\bhref\s*=\s*[\"'])(?P<value>[^\"']+)(?P<suffix>[\"'])",
+    re.IGNORECASE,
+)
+OPF_MEDIA_TYPE_RE = re.compile(
+    rb"(?P<prefix>\bmedia-type\s*=\s*[\"'])(?P<value>[^\"']+)(?P<suffix>[\"'])",
+    re.IGNORECASE,
+)
 
 
 def format_size_mb(size_bytes: int) -> str:
@@ -73,13 +81,41 @@ def _rewrite_document(data: bytes, document_path: str, replacements: dict[str, s
 
     def replace_srcset(match: re.Match[bytes]) -> bytes:
         value = match.group("value").decode("utf-8", "surrogateescape")
-        entries = []
-        for entry in value.split(","):
-            pieces = entry.strip().split(maxsplit=1)
-            if pieces:
-                pieces[0] = _rewrite_one(pieces[0], document_path, replacements)
-            entries.append(" ".join(pieces))
-        return match.group("prefix") + ", ".join(entries).encode("utf-8", "surrogateescape") + match.group("suffix")
+        rewritten: list[str] = []
+        position = 0
+        while position < len(value):
+            while position < len(value) and (
+                value[position].isspace() or value[position] == ","
+            ):
+                rewritten.append(value[position])
+                position += 1
+            if position >= len(value):
+                break
+
+            url_start = position
+            while position < len(value) and not value[position].isspace():
+                position += 1
+            raw_url = value[url_start:position]
+            url = raw_url.rstrip(",")
+            rewritten.append(_rewrite_one(url, document_path, replacements))
+            rewritten.append(raw_url[len(url) :])
+            if len(url) != len(raw_url):
+                continue
+
+            parenthesis_depth = 0
+            while position < len(value):
+                char = value[position]
+                rewritten.append(char)
+                position += 1
+                if char == "(":
+                    parenthesis_depth += 1
+                elif char == ")":
+                    parenthesis_depth = max(0, parenthesis_depth - 1)
+                elif char == "," and parenthesis_depth == 0:
+                    break
+
+        encoded = "".join(rewritten).encode("utf-8", "surrogateescape")
+        return match.group("prefix") + encoded + match.group("suffix")
 
     result = REFERENCE_ATTRIBUTES_RE.sub(replace_attribute, data)
     result = SRCSET_RE.sub(replace_srcset, result)
@@ -87,18 +123,53 @@ def _rewrite_document(data: bytes, document_path: str, replacements: dict[str, s
 
 
 def _update_opf(workspace: EpubWorkspace, replacements: dict[str, str]) -> None:
-    data = _rewrite_document(workspace.members[workspace.opf_path], workspace.opf_path, replacements)
-    opf_dir = posixpath.dirname(workspace.opf_path)
-    for old, new in replacements.items():
-        old_href = posixpath.relpath(old, opf_dir or ".").encode()
-        new_href = posixpath.relpath(new, opf_dir or ".").encode()
-        data = data.replace(old_href, new_href)
-        old_type = media_type_for(old).encode()
-        new_type = media_type_for(new).encode()
-        if old_type != new_type:
-            pattern = re.compile(rb"(<item\b[^>]*\bhref=[\"']" + re.escape(new_href) + rb"[\"'][^>]*\bmedia-type=[\"'])" + re.escape(old_type) + rb"([\"'])", re.IGNORECASE)
-            data = pattern.sub(rb"\1" + new_type + rb"\2", data)
-    workspace.members[workspace.opf_path] = data
+    def replace_item(match: re.Match[bytes]) -> bytes:
+        attributes = match.group("attributes")
+        href_match = OPF_HREF_RE.search(attributes)
+        if href_match is None:
+            return match.group(0)
+
+        href = href_match.group("value").decode("utf-8", "surrogateescape")
+        try:
+            source = resolve_reference(workspace.opf_path, href)
+        except ValueError:
+            return match.group(0)
+        target = replacements.get(source or "")
+        if target is None:
+            return match.group(0)
+
+        rewritten_href = _rewrite_one(href, workspace.opf_path, replacements)
+        attributes = (
+            attributes[: href_match.start("value")]
+            + rewritten_href.encode("utf-8", "surrogateescape")
+            + attributes[href_match.end("value") :]
+        )
+        media_type_match = OPF_MEDIA_TYPE_RE.search(attributes)
+        if media_type_match is not None:
+            attributes = (
+                attributes[: media_type_match.start("value")]
+                + media_type_for(target).encode()
+                + attributes[media_type_match.end("value") :]
+            )
+        return match.group("prefix") + attributes + match.group("suffix")
+
+    updated = OPF_ITEM_RE.sub(
+        replace_item, workspace.members[workspace.opf_path]
+    )
+    workspace.members[workspace.opf_path] = _rewrite_document(
+        updated, workspace.opf_path, replacements
+    )
+
+
+def _has_transparency(image: Image.Image) -> bool:
+    if "A" in image.getbands():
+        alpha = image.getchannel("A")
+        return alpha.getextrema()[0] < 255
+    return image.mode == "P" and "transparency" in image.info
+
+
+def _quantize_png(image: Image.Image) -> Image.Image:
+    return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE)
 
 
 def process_images(
@@ -109,16 +180,20 @@ def process_images(
     quality: int,
     webp_quality: int | None = None,
     png_to_jpg: bool = False,
+    png_quantize: bool = False,
     logger,
-) -> int:
+) -> int | str:
     workspace = EpubWorkspace.load(input_file, logger=logger)
     replacements: dict[str, str] = {}
-    processed = kept = failed = saved = 0
+    candidates = processed = kept = failed = saved = 0
     existing = set(workspace.members)
     for source, original in list(workspace.members.items()):
         extension = PurePosixPath(source).suffix.lower()
         if extension not in IMAGE_EXTENSIONS:
             continue
+        if mode == "webp_to_image" and extension != ".webp":
+            continue
+        candidates += 1
         if mode == "webp" and extension == ".webp":
             kept += 1
             continue
@@ -140,12 +215,24 @@ def process_images(
                     target_extension = ".webp"
                     target_format = "WEBP"
                     save_options["quality"] = quality
+                elif mode == "webp_to_image":
+                    if _has_transparency(image):
+                        target_extension = ".png"
+                        target_format = "PNG"
+                        if png_quantize:
+                            image = _quantize_png(image)
+                    else:
+                        target_extension = ".jpg"
+                        target_format = "JPEG"
+                        save_options["quality"] = quality
                 elif extension in {".jpg", ".jpeg", ".webp"}:
                     save_options["quality"] = webp_quality if extension == ".webp" and webp_quality is not None else quality
                 elif extension == ".png" and png_to_jpg and "A" not in image.getbands():
                     target_extension = ".jpg"
                     target_format = "JPEG"
                     save_options["quality"] = quality
+                elif extension == ".png" and png_quantize:
+                    image = _quantize_png(image)
                 elif extension == ".bmp":
                     kept += 1
                     continue
@@ -173,10 +260,16 @@ def process_images(
         workspace.members[target] = converted
         processed += 1
         saved += len(original) - len(converted)
+    if mode == "webp_to_image":
+        if candidates == 0:
+            logger.write("没有找到需要转换的 WebP 图片")
+            return "skip"
+        if failed:
+            raise RuntimeError(f"WebP 图片转换失败：{failed} 个文件无法处理")
     if replacements:
         for name, data in list(workspace.members.items()):
             suffix = PurePosixPath(name).suffix.lower()
-            if suffix in {".opf", ".xhtml", ".html", ".htm", ".css", ".svg", ".ncx"}:
+            if suffix in {".xhtml", ".html", ".htm", ".css", ".svg", ".ncx"}:
                 workspace.members[name] = _rewrite_document(data, name, replacements)
         _update_opf(workspace, replacements)
     workspace.write(output_path, logger=logger)

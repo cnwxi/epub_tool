@@ -1,1 +1,1 @@
-"""EPUB processing implementations used by the task runner."""
+"""Task processing implementations grouped by feature area."""

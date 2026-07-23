@@ -3,7 +3,7 @@ import tempfile
 import unittest
 import zipfile
 
-from python_backend.services.decrypt_epub import EpubTool, run
+from python_backend.services.epub.decrypt_epub import EpubTool, run
 
 
 BASE_IMAGE_HREF = "Images/%2A%3A.jpg"
@@ -140,7 +140,7 @@ class DuokanSlimImageTest(unittest.TestCase):
 
             self.assertEqual(run(epub_path, temp_dir), 0)
 
-            output_path = os.path.join(temp_dir, "book_decrypt.epub")
+            output_path = os.path.join(temp_dir, "book_decrypt_epub.epub")
             with zipfile.ZipFile(output_path) as epub:
                 names = set(epub.namelist())
                 self.assertIn("OEBPS/Images/f2.jpg", names)
@@ -239,7 +239,7 @@ class DuokanSlimImageTest(unittest.TestCase):
 
             self.assertEqual(run(epub_path, temp_dir), 0)
 
-            output_path = os.path.join(temp_dir, "book_decrypt.epub")
+            output_path = os.path.join(temp_dir, "book_decrypt_epub.epub")
             with zipfile.ZipFile(output_path) as epub:
                 xhtml = epub.read("OEBPS/Text/chapter.xhtml").decode("utf-8")
                 for reference in [

@@ -3,9 +3,9 @@ import tempfile
 import unittest
 import zipfile
 
-from python_backend.services.encrypt_epub import EpubTool as EncryptEpubTool
-from python_backend.services.encrypt_epub import run as run_encrypt
-from python_backend.services.reformat_epub import run as run_reformat
+from python_backend.services.epub.encrypt_epub import EpubTool as EncryptEpubTool
+from python_backend.services.epub.encrypt_epub import run as run_encrypt
+from python_backend.services.epub.reformat_epub import run as run_reformat
 
 
 def build_safe_duokan_slim_epub(
@@ -155,7 +155,7 @@ class EncryptDuokanSlimTest(unittest.TestCase):
             self.assertEqual(filenames["f4"], f"{base_stem}~slim{base_ext}")
 
             self.assertEqual(run_encrypt(epub_path, temp_dir), 0)
-            output_path = os.path.join(temp_dir, "book_encrypt.epub")
+            output_path = os.path.join(temp_dir, "book_encrypt_epub.epub")
             with zipfile.ZipFile(output_path) as output:
                 names = set(output.namelist())
                 self.assertIn(f"OEBPS/Images/{filenames['f2']}", names)
@@ -230,7 +230,7 @@ class FragmentRewriteTest(unittest.TestCase):
             self.assertEqual(run_encrypt(epub_path, temp_dir), 0)
 
             self.assert_fragments_preserved(
-                os.path.join(temp_dir, "book_encrypt.epub")
+                os.path.join(temp_dir, "book_encrypt_epub.epub")
             )
 
     def test_reformat_fragment_is_preserved_for_all_resource_rewrite_paths(self):
@@ -241,5 +241,5 @@ class FragmentRewriteTest(unittest.TestCase):
             self.assertEqual(run_reformat(epub_path, temp_dir), 0)
 
             self.assert_fragments_preserved(
-                os.path.join(temp_dir, "book_reformat.epub")
+                os.path.join(temp_dir, "book_reformat_epub.epub")
             )

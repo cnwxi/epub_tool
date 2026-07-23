@@ -22,6 +22,25 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 - `encrypt_font`
 - `decrypt_font`
 - `webp_to_img`
+- `image_compress`
+- `image_to_webp`
+- `replace_cover`
+- `chinese_convert`
+
+## 输出文件命名
+
+任务会在输出目录中以 `{原文件名}_{任务脚本名}.epub` 创建结果文件。对应后缀为：
+
+- `reformat_epub`：`_reformat_epub.epub`
+- `decrypt_epub`：`_decrypt_epub.epub`
+- `encrypt_epub`：`_encrypt_epub.epub`
+- `encrypt_font`：`_encrypt_font.epub`
+- `decrypt_font`：`_decrypt_font.epub`
+- `webp_to_img`：`_webp_to_img.epub`
+- `image_compress`：`_image_compress.epub`
+- `image_to_webp`：`_image_to_webp.epub`
+- `replace_cover`：`_replace_cover.epub`
+- `chinese_convert`：简体转繁体为 `_chinese_convert_tc.epub`，繁体转简体为 `_chinese_convert_sc.epub`
 
 ## 运行时事件
 
@@ -37,7 +56,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
   "current_file": "/abs/path/book.epub",
   "current_index": 1,
   "total_files": 3,
-  "output_path": "/abs/path/book_reformat.epub",
+  "output_path": "/abs/path/book_reformat_epub.epub",
   "level": "info"
 }
 ```
@@ -57,7 +76,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 {
   "ok": true,
   "status": "success",
-  "outputs": ["/abs/path/book_reformat.epub"],
+  "outputs": ["/abs/path/book_reformat_epub.epub"],
   "errors": [],
   "skipped": [],
   "summary": {
@@ -112,3 +131,21 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 - 高置信度单字 OCR 结果会替换 HTML 文本节点中的混淆字符。
 - OCR 为空、非单字、置信度低于阈值或异常时，会分别写入带 `ocr-failure` class 的 HTML 可视化占位，正文显示为 `[字形缩略图 OCR_EMPTY]`、`[字形缩略图 OCR_MULTI_CHAR]`、`[字形缩略图 OCR_LOW_CONF]`、`[字形缩略图 OCR_EXCEPTION]`。缩略图 PNG 按 `Images/ocr-failures/{font_hash}_U-E000_OCR_LOW_CONF.png` 规则写入 EPUB，并在 OPF manifest 中登记为 `image/png`；HTML 属性保留 `U+XXXX`、状态码、字体路径和失败原因，便于人工回查和脚本统计。`OCR_FAILED` 仅作为无细分原因时的兜底状态。
 - 输出 EPUB 不再写入目标反混淆字体文件，并同步清理 OPF manifest 与 CSS 中的目标字体引用，避免混淆字体继续影响阅读器或后续文本工具的显示结果。
+
+## 图片与文本任务选项
+
+`webp_to_img` 使用以下选项：
+
+```json
+{
+  "options": {
+    "quality": 82,
+    "png_quantize": false
+  }
+}
+```
+
+- `quality`：非透明 WebP 转为 JPEG 时使用的质量，取值为 `1` 到 `100`，默认 `82`。
+- `png_quantize`：是否将透明 WebP 转出的 PNG 降色至最多 256 色，默认 `false`。开启后可减小体积，但会损失部分颜色细节。
+
+`image_compress` 使用 `jpeg_quality`、`webp_quality` 与可选的 `png_to_jpg`、`png_quantize`。后者会将仍保留为 PNG 的图片降色至最多 256 色；`image_to_webp` 使用 `quality`；`replace_cover` 使用按输入 EPUB 路径映射的 `cover_path_by_file`；`chinese_convert` 使用 `direction`，可选值为 `s2t` 或 `t2s`。

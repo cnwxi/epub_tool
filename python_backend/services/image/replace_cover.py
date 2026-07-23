@@ -8,8 +8,8 @@ from xml.etree import ElementTree
 from PIL import Image, UnidentifiedImageError
 
 from python_backend.epub_workspace import EpubWorkspace, media_type_for, resolve_reference
-from python_backend.services.image_processing import _rewrite_document
-from python_backend.services.log import logwriter
+from python_backend.services.image.image_processing import _rewrite_document
+from python_backend.services.utils.log import logwriter
 
 
 logger = logwriter()
@@ -92,6 +92,8 @@ def run(input_file: str, output_dir: str | None, *, cover_path: str) -> int:
     workspace.members[new_path] = raw_cover
     workspace.members[workspace.opf_path] = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
     target_dir = Path(output_dir) if output_dir else Path(input_file).parent
-    workspace.write(target_dir / f"{Path(input_file).stem}_cover.epub", logger=logger)
+    workspace.write(
+        target_dir / f"{Path(input_file).stem}_replace_cover.epub", logger=logger
+    )
     logger.write(f"封面已更换为 {new_path}")
     return 0
