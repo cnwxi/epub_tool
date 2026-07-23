@@ -5,6 +5,7 @@
 重组 Python EPUB 处理服务目录：按 `epub/`、`font/`、`image/`、`text/` 与 `utils/` 划分实现，并同步更新任务加载与 sidecar 打包配置。<br>
 统一各任务的输出文件后缀为任务脚本名；简繁转换使用 `chinese_convert_tc` 或 `chinese_convert_sc` 方向后缀。<br>
 优化 WebP 转图片与图片压缩：透明图片默认无损转 PNG，非透明图片转 JPEG；新增 JPEG 质量与 PNG 降色选项，并同步更新资源清单和内容引用。<br>
+修复图片引用重写：保留 `srcset` 中 Data URI 的内部逗号，并支持无描述符的逗号分隔图片候选同步更新。<br>
 优化 macOS DMG：构建镜像时写入自定义卷图标标记，改善 Finder 中的安装包展示。<br>
 
 ### 2026.07.22
