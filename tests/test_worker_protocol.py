@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from python_backend import cli
 from python_backend.json_output import dumps_json_line
 from python_backend.protocol import TaskResult
-from python_backend.services import decrypt_font
+from python_backend.services.font import decrypt_font
 
 
 class WorkerProtocolTest(unittest.TestCase):

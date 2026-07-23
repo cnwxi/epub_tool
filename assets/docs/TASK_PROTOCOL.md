@@ -37,7 +37,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
   "current_file": "/abs/path/book.epub",
   "current_index": 1,
   "total_files": 3,
-  "output_path": "/abs/path/book_reformat.epub",
+  "output_path": "/abs/path/book_reformat_epub.epub",
   "level": "info"
 }
 ```
@@ -57,7 +57,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 {
   "ok": true,
   "status": "success",
-  "outputs": ["/abs/path/book_reformat.epub"],
+  "outputs": ["/abs/path/book_reformat_epub.epub"],
   "errors": [],
   "skipped": [],
   "summary": {

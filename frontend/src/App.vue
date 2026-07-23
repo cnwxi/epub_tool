@@ -165,6 +165,8 @@ const defaultNewTaskSettings: NewTaskSettings = {
   jpegQuality: 82,
   webpQuality: 82,
   pngToJpg: false,
+  webpToImageQuality: 82,
+  webpToImageQuantizePng: false,
   imageWebpQuality: 82,
   chineseDirection: "s2t",
 };
@@ -178,6 +180,10 @@ const normalizeNewTaskSettings = (value: unknown): NewTaskSettings => {
     jpegQuality: normalizeImageQuality(raw.jpegQuality, defaultNewTaskSettings.jpegQuality),
     webpQuality: normalizeImageQuality(raw.webpQuality, defaultNewTaskSettings.webpQuality),
     pngToJpg: typeof raw.pngToJpg === "boolean" ? raw.pngToJpg : defaultNewTaskSettings.pngToJpg,
+    webpToImageQuality: normalizeImageQuality(raw.webpToImageQuality, defaultNewTaskSettings.webpToImageQuality),
+    webpToImageQuantizePng: typeof raw.webpToImageQuantizePng === "boolean"
+      ? raw.webpToImageQuantizePng
+      : defaultNewTaskSettings.webpToImageQuantizePng,
     imageWebpQuality: normalizeImageQuality(raw.imageWebpQuality, defaultNewTaskSettings.imageWebpQuality),
     chineseDirection: raw.chineseDirection === "t2s" ? "t2s" : "s2t",
   };
@@ -1881,6 +1887,11 @@ const buildRequest = (): TaskRequest => {
       webp_quality: Math.round(newTaskSettings.value.webpQuality),
       png_to_jpg: newTaskSettings.value.pngToJpg,
     };
+  } else if (activeTask.value === "webp_to_img") {
+    request.options = {
+      quality: Math.round(newTaskSettings.value.webpToImageQuality),
+      png_quantize: newTaskSettings.value.webpToImageQuantizePng,
+    };
   } else if (activeTask.value === "image_to_webp") {
     request.options = { quality: Math.round(newTaskSettings.value.imageWebpQuality) };
   } else if (activeTask.value === "chinese_convert") {
@@ -2708,13 +2719,35 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                               class="font-confidence-slider" type="range" />
                           </span>
                         </label>
-                        <label class="font-option toggle-option">
+                        <label class="font-option toggle-option image-toggle-option">
                           <span>将无透明通道 PNG 尝试转换为 JPEG</span>
                           <span class="toggle-switch">
                             <input v-model="newTaskSettings.pngToJpg" type="checkbox" />
                             <span class="toggle-switch-track" aria-hidden="true"></span>
                           </span>
                         </label>
+                      </div>
+
+                      <div v-else-if="activeTask === 'webp_to_img'" class="font-advanced-options glass-soft">
+                        <label class="font-setting-field font-slider-field">
+                          <span class="font-slider-head"><span>JPEG 质量</span><strong>{{ newTaskSettings.webpToImageQuality }}</strong></span>
+                          <span class="font-slider-control" :style="qualitySliderStyle(newTaskSettings.webpToImageQuality)">
+                            <span class="font-slider-track" aria-hidden="true">
+                              <span class="font-slider-fill"></span>
+                            </span>
+                            <input v-model.number="newTaskSettings.webpToImageQuality" aria-label="JPEG 质量"
+                              :aria-valuetext="String(newTaskSettings.webpToImageQuality)" min="1" max="100"
+                              class="font-confidence-slider" type="range" />
+                          </span>
+                        </label>
+                        <label class="font-option toggle-option image-toggle-option">
+                          <span>透明 PNG 降色到 256 色（减小体积）</span>
+                          <span class="toggle-switch">
+                            <input v-model="newTaskSettings.webpToImageQuantizePng" type="checkbox" />
+                            <span class="toggle-switch-track" aria-hidden="true"></span>
+                          </span>
+                        </label>
+                        <p class="muted">JPEG 质量仅影响非透明 WebP；透明 WebP 默认无损转 PNG，开启降色会损失部分颜色细节。</p>
                       </div>
 
                       <div v-else-if="activeTask === 'image_to_webp'" class="font-advanced-options glass-soft">
@@ -2803,10 +2836,6 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                       </div>
                     </div>
                     <div v-if="activeTask === 'decrypt_font'" class="font-advanced-options glass-soft">
-                      <div class="font-advanced-head">
-                        <p class="eyebrow">OCR 设置</p>
-                        <h4>高级选项</h4>
-                      </div>
                       <div class="font-setting-grid">
                         <div class="font-setting-field">
                           <span id="ocr-policy-label">OCR 字符范围</span>

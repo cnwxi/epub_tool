@@ -29,15 +29,15 @@ LOG_PATH = resolve_default_log_path()
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("EPUB_TOOL_LOG_PATH", str(LOG_PATH))
 TASK_SUFFIX = {
-    "reformat_epub": "_reformat.epub",
-    "decrypt_epub": "_decrypt.epub",
-    "encrypt_epub": "_encrypt.epub",
-    "encrypt_font": "_font_encrypt.epub",
-    "decrypt_font": "_font_decrypt.epub",
+    "reformat_epub": "_reformat_epub.epub",
+    "decrypt_epub": "_decrypt_epub.epub",
+    "encrypt_epub": "_encrypt_epub.epub",
+    "encrypt_font": "_encrypt_font.epub",
+    "decrypt_font": "_decrypt_font.epub",
     "webp_to_img": "_webp_to_img.epub",
     "image_compress": "_image_compress.epub",
-    "image_to_webp": "_img2webp.epub",
-    "replace_cover": "_cover.epub",
+    "image_to_webp": "_image_to_webp.epub",
+    "replace_cover": "_replace_cover.epub",
 }
 TASK_LABELS = {
     "reformat_epub": "格式化",
@@ -53,16 +53,16 @@ TASK_LABELS = {
 
 }
 MODULE_PATHS = {
-    "reformat_epub": "python_backend.services.reformat_epub",
-    "decrypt_epub": "python_backend.services.decrypt_epub",
-    "encrypt_epub": "python_backend.services.encrypt_epub",
-    "encrypt_font": "python_backend.services.encrypt_font",
-    "decrypt_font": "python_backend.services.decrypt_font",
-    "webp_to_img": "python_backend.services.webp_to_img",
-    "image_compress": "python_backend.services.image_compress",
-    "image_to_webp": "python_backend.services.image_to_webp",
-    "chinese_convert": "python_backend.services.chinese_convert",
-    "replace_cover": "python_backend.services.replace_cover",
+    "reformat_epub": "python_backend.services.epub.reformat_epub",
+    "decrypt_epub": "python_backend.services.epub.decrypt_epub",
+    "encrypt_epub": "python_backend.services.epub.encrypt_epub",
+    "encrypt_font": "python_backend.services.font.encrypt_font",
+    "decrypt_font": "python_backend.services.font.decrypt_font",
+    "webp_to_img": "python_backend.services.image.webp_to_img",
+    "image_compress": "python_backend.services.image.image_compress",
+    "image_to_webp": "python_backend.services.image.image_to_webp",
+    "chinese_convert": "python_backend.services.text.chinese_convert",
+    "replace_cover": "python_backend.services.image.replace_cover",
 }
 _LOADED_MODULES: dict[str, Any] = {}
 
@@ -149,8 +149,6 @@ def patched_logger(task_type: str, logger: BroadcastLogger):
 def build_expected_output_path(
     input_file: str, task_type: str, output_dir: str | None
 ) -> str | None:
-    if task_type == "chinese_convert":
-        return None
     suffix = TASK_SUFFIX.get(task_type)
     if suffix is None:
         return None
@@ -164,9 +162,9 @@ def get_task_output_suffix(task_type: str, options: dict[str, Any]) -> str | Non
     if task_type == "chinese_convert":
         direction = options.get("direction")
         if direction == "s2t":
-            return "_traditional.epub"
+            return "_chinese_convert_tc.epub"
         if direction == "t2s":
-            return "_simplified.epub"
+            return "_chinese_convert_sc.epub"
         return None
     return TASK_SUFFIX.get(task_type)
 
@@ -184,14 +182,12 @@ def build_request_output_path(
     output_dir: str | None,
     options: dict[str, Any],
 ) -> str | None:
-    if task_type == "chinese_convert":
-        suffix = get_task_output_suffix(task_type, options)
-        if suffix is None:
-            return None
-        input_path = Path(input_file)
-        target_dir = Path(output_dir) if output_dir else input_path.parent
-        return str(target_dir / f"{input_path.stem}{suffix}")
-    return build_expected_output_path(input_file, task_type, output_dir)
+    suffix = get_task_output_suffix(task_type, options)
+    if suffix is None:
+        return None
+    input_path = Path(input_file)
+    target_dir = Path(output_dir) if output_dir else input_path.parent
+    return str(target_dir / f"{input_path.stem}{suffix}")
 
 
 def _validate_quality(options: dict[str, Any], key: str, default: int = 82) -> int:
@@ -209,8 +205,10 @@ def validate_task_options(task_type: str, options: dict[str, Any]) -> None:
         _validate_quality(options, "webp_quality")
         if "png_to_jpg" in options and not isinstance(options["png_to_jpg"], bool):
             raise ValueError("png_to_jpg 必须是布尔值")
-    elif task_type == "image_to_webp":
+    elif task_type in {"webp_to_img", "image_to_webp"}:
         _validate_quality(options, "quality")
+        if task_type == "webp_to_img" and "png_quantize" in options and not isinstance(options["png_quantize"], bool):
+            raise ValueError("png_quantize 必须是布尔值")
     elif task_type == "chinese_convert":
         if options.get("direction") not in {"s2t", "t2s"}:
             raise ValueError("direction 必须是 s2t 或 t2s")
@@ -318,7 +316,7 @@ def execute_task(
             kwargs["ocr_options"] = options
         return func(input_file, output_dir, **kwargs)
 
-    if task_type in {"image_compress", "image_to_webp", "chinese_convert"}:
+    if task_type in {"webp_to_img", "image_compress", "image_to_webp", "chinese_convert"}:
         return func(input_file, output_dir, options=options)
 
     if task_type == "replace_cover":

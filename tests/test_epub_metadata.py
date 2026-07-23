@@ -119,7 +119,7 @@ class EpubMetadataTest(unittest.TestCase):
     def test_task_runner_marks_successful_output_epub(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = Path(temp_dir) / "book.epub"
-            output_path = Path(temp_dir) / "book_reformat.epub"
+            output_path = Path(temp_dir) / "book_reformat_epub.epub"
             build_minimal_epub(
                 input_path,
                 """<?xml version="1.0" encoding="UTF-8"?>

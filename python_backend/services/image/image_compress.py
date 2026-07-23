@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from python_backend.services.image_processing import process_images
-from python_backend.services.log import logwriter
+from python_backend.services.image.image_processing import process_images
+from python_backend.services.utils.log import logwriter
 
 
 logger = logwriter()

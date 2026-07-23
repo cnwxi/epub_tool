@@ -11,8 +11,9 @@ import pytest
 from PIL import Image
 
 from python_backend.epub_workspace import EpubWorkspace
-from python_backend.services import chinese_convert, image_compress, image_to_webp, replace_cover
-from python_backend.services.image_processing import format_size_mb
+from python_backend.services.image import image_compress, image_to_webp, replace_cover
+from python_backend.services.text import chinese_convert
+from python_backend.services.image.image_processing import format_size_mb
 from python_backend.protocol import TaskRequest
 from python_backend.task_runner import (
     input_has_task_output_suffix,
@@ -129,7 +130,7 @@ def test_image_to_webp_updates_manifest_and_references(tmp_path: Path, monkeypat
     logger = Logger()
     monkeypatch.setattr(image_to_webp, "logger", logger)
     assert image_to_webp.run(str(source), str(tmp_path), options={"quality": 75}) == 0
-    output = EpubWorkspace.load(tmp_path / "book_img2webp.epub")
+    output = EpubWorkspace.load(tmp_path / "book_image_to_webp.epub")
     assert "OPS/Images/picture.webp" in output.members
     assert "OPS/Images/picture.png" not in output.members
     opf = output.members[output.opf_path]
@@ -165,7 +166,7 @@ def test_image_to_webp_converts_even_when_webp_is_larger(
 
     assert image_to_webp.run(str(source), str(tmp_path), options={"quality": 82}) == 0
 
-    output = EpubWorkspace.load(tmp_path / "book_img2webp.epub")
+    output = EpubWorkspace.load(tmp_path / "book_image_to_webp.epub")
     assert "OPS/Images/picture.webp" in output.members
     assert "OPS/Images/picture.jpg" not in output.members
 
@@ -180,7 +181,7 @@ def test_image_to_webp_preserves_existing_webp_bytes(
 
     assert image_to_webp.run(str(source), str(tmp_path), options={"quality": 1}) == 0
 
-    output = EpubWorkspace.load(tmp_path / "webp-book_img2webp.epub")
+    output = EpubWorkspace.load(tmp_path / "webp-book_image_to_webp.epub")
     assert output.members["OPS/Images/picture.webp"] == original
 
 
@@ -233,7 +234,7 @@ def test_chinese_conversion_preserves_paths_ids_css_and_script(tmp_path: Path, m
     write_epub(source)
     monkeypatch.setattr(chinese_convert, "logger", Logger())
     assert chinese_convert.run(str(source), str(tmp_path), options={"direction": "s2t"}) == 0
-    output = EpubWorkspace.load(tmp_path / "book_traditional.epub")
+    output = EpubWorkspace.load(tmp_path / "book_chinese_convert_tc.epub")
     chapter = output.members["OPS/chapter.xhtml"].decode()
     assert "漢語發展" in chapter
     assert 'title="簡體提示"' in chapter
@@ -256,7 +257,7 @@ def test_chinese_conversion_reads_utf16_and_writes_utf8(
 
     assert chinese_convert.run(str(source), str(tmp_path), options={"direction": "s2t"}) == 0
 
-    output = EpubWorkspace.load(tmp_path / "utf16-book_traditional.epub")
+    output = EpubWorkspace.load(tmp_path / "utf16-book_chinese_convert_tc.epub")
     converted = output.members["OPS/chapter.xhtml"]
     assert converted.startswith(b'<?xml version="1.0" encoding="UTF-8"?>')
     assert "漢語發展" in converted.decode("utf-8")
@@ -269,7 +270,7 @@ def test_replace_cover_uses_detected_format_and_updates_epub2_and_epub3(tmp_path
     cover.write_bytes(image_bytes("JPEG", color=(10, 30, 200)))
     monkeypatch.setattr(replace_cover, "logger", Logger())
     assert replace_cover.run(str(source), str(tmp_path), cover_path=str(cover)) == 0
-    output = EpubWorkspace.load(tmp_path / "book_cover.epub")
+    output = EpubWorkspace.load(tmp_path / "book_replace_cover.epub")
     assert "OPS/Images/cover.jpg" in output.members
     assert "OPS/Images/picture.png" in output.members
     opf = output.members[output.opf_path]
@@ -297,7 +298,7 @@ def test_replace_cover_rewrites_percent_encoded_cover_references(
 
     assert replace_cover.run(str(source), str(tmp_path), cover_path=str(cover)) == 0
 
-    output = EpubWorkspace.load(tmp_path / "encoded-cover_cover.epub")
+    output = EpubWorkspace.load(tmp_path / "encoded-cover_replace_cover.epub")
     chapter = output.members["OPS/chapter.xhtml"]
     assert b"Images/cover.jpg?v=1#hero" in chapter
     assert b"Images/cover%20image.png?v=1#hero" not in chapter
@@ -305,6 +306,8 @@ def test_replace_cover_rewrites_percent_encoded_cover_references(
 
 @pytest.mark.parametrize("task_type, options", [
     ("image_compress", {"jpeg_quality": 0}),
+    ("webp_to_img", {"quality": True}),
+    ("webp_to_img", {"png_quantize": "yes"}),
     ("image_to_webp", {"quality": True}),
     ("chinese_convert", {"direction": "invalid"}),
     ("replace_cover", {"cover_path_by_file": []}),
@@ -328,7 +331,7 @@ def test_runner_emits_real_output_and_continues_partial_batch(tmp_path: Path, ca
     events = capsys.readouterr().out
     assert result.status == "partial"
     assert result.summary == {"total": 2, "success": 1, "failed": 1, "skipped": 0}
-    assert result.outputs == [str(tmp_path / "output" / "book_img2webp.epub")]
+    assert result.outputs == [str(tmp_path / "output" / "book_image_to_webp.epub")]
     event_names = [json.loads(line)["event"] for line in events.splitlines()]
     assert event_names.count("task.file.started") == 2
     assert event_names.count("task.file.finished") == 2
@@ -378,24 +381,24 @@ def test_built_sidecar_loads_opencc_data_when_available(tmp_path: Path) -> None:
         timeout=30,
     )
     assert completed.returncode == 0, completed.stderr
-    output = EpubWorkspace.load(tmp_path / "sidecar_traditional.epub")
+    output = EpubWorkspace.load(tmp_path / "sidecar_chinese_convert_tc.epub")
     assert "漢語發展" in output.members["OPS/chapter.xhtml"].decode()
 
 
 @pytest.mark.parametrize(
     "task_type, filename, options",
     [
-        ("reformat_epub", "book_reformat.epub", {}),
-        ("decrypt_epub", "book_decrypt.epub", {}),
-        ("encrypt_epub", "book_encrypt.epub", {}),
-        ("encrypt_font", "book_font_encrypt.epub", {}),
-        ("decrypt_font", "book_font_decrypt.epub", {}),
+        ("reformat_epub", "book_reformat_epub.epub", {}),
+        ("decrypt_epub", "book_decrypt_epub.epub", {}),
+        ("encrypt_epub", "book_encrypt_epub.epub", {}),
+        ("encrypt_font", "book_encrypt_font.epub", {}),
+        ("decrypt_font", "book_decrypt_font.epub", {}),
         ("webp_to_img", "book_webp_to_img.epub", {}),
         ("image_compress", "book_image_compress.epub", {}),
-        ("image_to_webp", "book_img2webp.epub", {}),
-        ("chinese_convert", "book_traditional.epub", {"direction": "s2t"}),
-        ("chinese_convert", "book_simplified.epub", {"direction": "t2s"}),
-        ("replace_cover", "book_cover.epub", {}),
+        ("image_to_webp", "book_image_to_webp.epub", {}),
+        ("chinese_convert", "book_chinese_convert_tc.epub", {"direction": "s2t"}),
+        ("chinese_convert", "book_chinese_convert_sc.epub", {"direction": "t2s"}),
+        ("replace_cover", "book_replace_cover.epub", {}),
     ],
 )
 def test_task_output_suffix_prevents_same_task_reexecution(
@@ -406,5 +409,5 @@ def test_task_output_suffix_prevents_same_task_reexecution(
 
 def test_different_task_suffix_does_not_block_processing() -> None:
     assert not input_has_task_output_suffix(
-        "book_reformat.epub", "image_compress", {}
+        "book_reformat_epub.epub", "image_compress", {}
     )

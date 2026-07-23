@@ -209,18 +209,41 @@ jobs:
           fi
 
           tmp_dir="$(mktemp -d)"
-          trap 'rm -rf "$tmp_dir"' EXIT
+          staging_dir="$tmp_dir/staging"
+          writable_dmg="$tmp_dir/writable.dmg"
+          mount_dir="$tmp_dir/mounted"
+          mounted=0
+          cleanup() {
+            if [ "$mounted" -eq 1 ]; then
+              hdiutil detach "$mount_dir" || true
+            fi
+            rm -rf "$tmp_dir"
+          }
+          trap cleanup EXIT
 
           mkdir -p "$dmg_dir"
           rm -f "$dmg_path"
-          ditto "$app_path" "$tmp_dir/Epub Tool NewUI.app"
-          ln -s /Applications "$tmp_dir/Applications"
+          mkdir -p "$staging_dir" "$mount_dir"
+          ditto "$app_path" "$staging_dir/Epub Tool NewUI.app"
+          ln -s /Applications "$staging_dir/Applications"
+          cp assets/img/icon.icns "$staging_dir/.VolumeIcon.icns"
           hdiutil create \
             -volname "Epub Tool NewUI" \
-            -srcfolder "$tmp_dir" \
+            -srcfolder "$staging_dir" \
             -ov \
-            -format UDZO \
-            "$dmg_path"
+            -format UDRW \
+            "$writable_dmg"
+          hdiutil attach \
+            -readwrite \
+            -noverify \
+            -noautoopen \
+            -mountpoint "$mount_dir" \
+            "$writable_dmg"
+          mounted=1
+          "$(xcrun --find SetFile)" -a C "$mount_dir"
+          hdiutil detach "$mount_dir"
+          mounted=0
+          hdiutil convert "$writable_dmg" -format UDZO -o "$dmg_path"
           hdiutil verify "$dmg_path"
           ls -lh "$dmg_path"
 

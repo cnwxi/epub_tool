@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 
 from scripts import build_python_sidecar
 from scripts import ocr_model_config
-from python_backend.services.decrypt_font import (
+from python_backend.services.font.decrypt_font import (
     DEFAULT_OCR_MODEL_NAME,
     OCR_CHAR_POLICY_COMPATIBLE,
     OCR_CHAR_POLICY_STRICT,
@@ -35,7 +35,7 @@ class OnnxOcrBackendTest(unittest.TestCase):
             / f"{DEFAULT_OCR_MODEL_NAME}_onnx"
         )
 
-        with patch("python_backend.services.decrypt_font.os.getcwd", return_value="/tmp"):
+        with patch("python_backend.services.font.decrypt_font.os.getcwd", return_value="/tmp"):
             candidates = list(iter_onnx_ocr_model_dir_candidates())
 
         self.assertEqual(candidates[-1], str(expected))
@@ -284,7 +284,7 @@ class FontDecryptOcrTextCleanupTest(unittest.TestCase):
                 font_decrypt.font_to_replace_mapping = {}
                 font_decrypt.font_to_ocr_failure_mapping = {}
 
-                with patch("python_backend.services.decrypt_font.FontGlyphRenderer", FakeRenderer):
+                with patch("python_backend.services.font.decrypt_font.FontGlyphRenderer", FakeRenderer):
                     font_decrypt.build_ocr_mapping()
 
                 self.assertEqual(
