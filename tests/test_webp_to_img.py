@@ -30,6 +30,7 @@ def build_same_basename_webp_epub(
 <img src="../Images/a.webp?rev=1"/>
 <image xlink:href="../Other/a.webp#icon"/>
 <img srcset="data:image/png;base64,AAAA 1x, ../Images/a.webp 2x"/>
+<img srcset="../Images/a.webp,../Other/a.webp"/>
 """
         css_suffix_references = """.query { background-image: url("../Images/a.webp?rev=1"); }
 .fragment { background-image: url(../Other/a.webp#cover); }
@@ -237,6 +238,10 @@ class TransferImagePathMappingTest(unittest.TestCase):
                 self.assertNotIn("../Other/a.webp#icon", html)
                 self.assertIn(
                     'srcset="data:image/png;base64,AAAA 1x, ../Images/a.png 2x"',
+                    html,
+                )
+                self.assertIn(
+                    'srcset="../Images/a.png,../Other/a.jpg"',
                     html,
                 )
 

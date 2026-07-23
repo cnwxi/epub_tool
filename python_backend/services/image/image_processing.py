@@ -93,7 +93,10 @@ def _rewrite_document(data: bytes, document_path: str, replacements: dict[str, s
                 break
 
             url_start = position
-            while position < len(value) and not value[position].isspace():
+            is_data_uri = value[position:].lower().startswith("data:")
+            while position < len(value) and not value[position].isspace() and (
+                is_data_uri or value[position] != ","
+            ):
                 position += 1
             raw_url = value[url_start:position]
             url = raw_url.rstrip(",")
