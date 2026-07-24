@@ -115,6 +115,13 @@ export function useTaskBridge() {
     });
   };
 
+  const validateOutputDirectory = async (directoryPath: string): Promise<void> => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    await invoke("validate_output_directory", { directoryPath });
+  };
+
   const openPath = async (path: string): Promise<void> => {
     if (!isTauriRuntime()) {
       return;
@@ -151,5 +158,6 @@ export function useTaskBridge() {
     savePersistedState,
     setPythonWorkerAutoRestartLimit,
     restartPythonWorker,
+    validateOutputDirectory,
   };
 }

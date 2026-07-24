@@ -372,6 +372,27 @@ def test_runner_emits_real_output_and_continues_partial_batch(tmp_path: Path, ca
     assert event_names.count("task.file.finished") == 2
 
 
+def test_runner_creates_missing_output_directory_for_rewrite_task(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "book.epub"
+    output_dir = tmp_path / "new-output"
+    write_epub(source)
+
+    result = run_task(TaskRequest(
+        task_id="rewrite-output-dir",
+        task_type="reformat_epub",
+        input_files=[str(source)],
+        output_dir=str(output_dir),
+        options={},
+    ))
+    capsys.readouterr()
+
+    assert result.ok is True
+    assert result.outputs == [str(output_dir / "book_reformat_epub.epub")]
+    assert (output_dir / "book_reformat_epub.epub").is_file()
+
+
 def test_replace_cover_runner_skips_files_without_mapping(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     first = tmp_path / "first.epub"
     second = tmp_path / "second.epub"

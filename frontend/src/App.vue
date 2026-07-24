@@ -244,6 +244,7 @@ const {
   restartPythonWorker,
   runTask,
   setPythonWorkerAutoRestartLimit,
+  validateOutputDirectory,
 } = useTaskBridge();
 
 const hideBrandEasterAnimation = () => {
@@ -2162,6 +2163,29 @@ const runSelectedTask = async () => {
     return;
   }
   const taskType = activeTask.value;
+  if (outputDir.value && isTauriRuntime()) {
+    const configuredOutputDir = outputDir.value;
+    try {
+      await validateOutputDirectory(configuredOutputDir);
+    } catch (error) {
+      outputDir.value = "";
+      const reason = toErrorMessage(error, "输出目录不可用。");
+      const message = `输出目录不可用：${configuredOutputDir}；${reason} 已恢复为默认输出目录（源文件同级目录）。`;
+      taskLogsByType.value[taskType] = [
+        {
+          event: "task.validation.error",
+          task_id: "local",
+          status: "error",
+          progress: 0,
+          message,
+          total_files: files.value.length,
+          level: "error",
+        },
+      ];
+      taskStatus.value = "输出目录无效，详情已写入处理日志";
+      return;
+    }
+  }
   if (isFontTargetTask(taskType)) {
     taskStatus.value = "正在读取字体列表…";
     await loadFontFamilies();

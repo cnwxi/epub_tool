@@ -146,17 +146,6 @@ def patched_logger(task_type: str, logger: BroadcastLogger):
         module.logger = original
 
 
-def build_expected_output_path(
-    input_file: str, task_type: str, output_dir: str | None
-) -> str | None:
-    suffix = TASK_SUFFIX.get(task_type)
-    if suffix is None:
-        return None
-    input_path = Path(input_file)
-    target_dir = Path(output_dir) if output_dir else input_path.parent
-    return str(target_dir / f"{input_path.stem}{suffix}")
-
-
 def get_task_output_suffix(task_type: str, options: dict[str, Any]) -> str | None:
     """返回当前任务请求唯一对应的输出后缀。"""
     if task_type == "chinese_convert":
@@ -223,24 +212,6 @@ def validate_task_options(task_type: str, options: dict[str, Any]) -> None:
                 raise ValueError("cover_path_by_file 的键和值必须是路径字符串")
             if not Path(cover_path).is_file():
                 raise ValueError(f"封面文件不存在: {cover_path}")
-
-
-def resolve_generated_output_path(
-    input_file: str, task_type: str, output_dir: str | None
-) -> str | None:
-    candidates = []
-    primary_output = build_expected_output_path(input_file, task_type, output_dir)
-    fallback_output = build_expected_output_path(input_file, task_type, None)
-
-    for candidate in (primary_output, fallback_output):
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
-
-    for candidate in candidates:
-        if os.path.exists(candidate):
-            return candidate
-
-    return primary_output
 
 
 def build_progress(index: int, total: int) -> float:
@@ -338,6 +309,11 @@ def run_task(request: TaskRequest) -> TaskResult:
     if request.task_type not in MODULE_PATHS:
         raise ValueError(f"不支持的任务类型: {request.task_type}")
     validate_task_options(request.task_type, request.options)
+    if request.output_dir:
+        output_dir = Path(request.output_dir)
+        if output_dir.exists() and not output_dir.is_dir():
+            raise ValueError(f"输出路径不是目录: {output_dir}")
+        output_dir.mkdir(parents=True, exist_ok=True)
     emitter = JsonLineEmitter()
     total_files = len(request.input_files)
     context = {

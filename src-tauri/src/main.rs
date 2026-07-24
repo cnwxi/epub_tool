@@ -1382,6 +1382,15 @@ async fn collect_epub_files(app: AppHandle, directory_path: String) -> Result<Ve
 }
 
 #[tauri::command]
+async fn validate_output_directory(app: AppHandle, directory_path: String) -> Result<(), String> {
+    let resolved = resolve_path(&app, &directory_path)?;
+    if !resolved.is_dir() {
+        return Err(format!("不是有效目录: {}", resolved.display()));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn resolve_input_sources(
     app: AppHandle,
     input_paths: Vec<String>,
@@ -1501,7 +1510,8 @@ fn main() {
             run_epub_task,
             save_persisted_state,
             set_python_worker_auto_restart_limit,
-            restart_python_worker
+            restart_python_worker,
+            validate_output_directory
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
