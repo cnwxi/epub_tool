@@ -10,7 +10,6 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
-from pathlib import Path
 from xml.etree import ElementTree
 
 import cssselect2
@@ -25,13 +24,7 @@ from tinycss2 import (
     serialize,
 )
 
-try:
-    from python_backend.services.utils.log import logwriter
-except ModuleNotFoundError:
-    services_dir = Path(__file__).resolve().parents[1]
-    if str(services_dir) not in sys.path:
-        sys.path.insert(0, str(services_dir))
-    from utils.log import logwriter
+from python_backend.services.utils.log import logwriter
 
 logger = logwriter()
 

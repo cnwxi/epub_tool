@@ -1,6 +1,6 @@
 # CLI Usage
 
-统一入口：`python -m python_backend.cli`
+统一入口：`python -m python_backend.cli`。任务模块仅供统一后端加载，不支持直接执行脚本；这样包内依赖的导入异常会原样暴露，便于诊断。
 
 ## 安装依赖
 

@@ -25,10 +25,10 @@ Vue 组件
 
 ## Python 侧职责
 
-- 通过 `python_backend/services/` 组织 EPUB 处理实现，并提供统一任务入口
+- 通过 `python_backend/services/` 组织 EPUB 处理实现；任务模块只由统一后端加载，不支持直接执行脚本
 - 统一计算输出路径
 - 同时写 `log.txt` 和 stdout 事件
-- 保持旧脚本逻辑不被重写
+- 保持既有处理逻辑不被重写，并让包内导入异常直接传播
 
 ## Sidecar 构建策略
 

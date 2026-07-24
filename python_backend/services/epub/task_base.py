@@ -9,7 +9,6 @@ from __future__ import annotations
 import codecs
 import os
 import re
-import sys
 from collections.abc import Callable, Iterable, Mapping
 from typing import Protocol
 from urllib.parse import unquote
@@ -693,37 +692,3 @@ class EpubTaskBase:
             self._logger.write(f"删除临时文件: {self.file_write_path}")
         else:
             self._logger.write("临时文件不存在或已被删除。")
-
-
-def epub_sources() -> list[str]:
-    """保留旧独立脚本使用的命令行 EPUB 参数收集行为。"""
-    if len(sys.argv) <= 1:
-        return sys.argv
-    sources = [path.dirname(sys.argv[0])]
-    for source in sys.argv[1:]:
-        if path.splitext(path.basename(source))[1].lower() == ".epub" and path.exists(
-            source
-        ):
-            sources.append(source)
-    return sources
-
-
-def run_epub_cli(
-    run_task: Callable[[str], object],
-    prompt: str = "【使用说明】请把EPUB文件拖曳到本窗口上（输入'e'退出）: ",
-) -> None:
-    """运行旧独立脚本的交互入口。"""
-    epub_src = input(prompt).strip("'").strip('"').strip()
-    if epub_src.lower() == "e":
-        print("程序已退出")
-        sys.exit()
-    if not os.path.isfile(epub_src):
-        print("错误: 找不到指定的EPUB文件，请确认文件路径是否正确并重新输入！")
-        return
-    result = run_task(epub_src)
-    if result == "skip":
-        print("已跳过该文件")
-    elif result == "e":
-        print("操作失败，请检查日志！")
-    else:
-        print("操作成功！")

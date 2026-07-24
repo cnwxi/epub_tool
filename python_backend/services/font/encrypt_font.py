@@ -2,8 +2,6 @@ import zipfile
 import os
 import posixpath
 import codecs
-import sys
-from pathlib import Path
 import cssselect2
 from bs4 import BeautifulSoup, Comment, NavigableString
 from tinycss2 import (
@@ -24,13 +22,7 @@ from datetime import datetime
 import unicodedata
 import uuid
 
-try:
-    from python_backend.services.utils.log import logwriter
-except ModuleNotFoundError:
-    services_dir = Path(__file__).resolve().parents[1]
-    if str(services_dir) not in sys.path:
-        sys.path.insert(0, str(services_dir))
-    from utils.log import logwriter
+from python_backend.services.utils.log import logwriter
 
 logger = logwriter()
 
@@ -2562,34 +2554,3 @@ def run(
         fe.fail_del_target()
         return e
     return 0
-
-
-if __name__ == "__main__":
-    epub_read_path = input("1、请输入EPUB文件路径（如: ./test.epub）: ")
-
-    file_write_dir = input("2、请输入输出文件夹路径（如: ./dist）: ")
-
-    # epub_read_path= './crazy.epub'
-    # file_write_dir = './dist'
-
-    fe = FontEncrypt(epub_read_path, file_write_dir)
-    fe.get_mapping()
-    # the_font_file_mapping = {}
-    print(f"3、此EPUB文件包含{len(fe.fonts)}个字体文件:")
-    print("\n".join(fe.fonts))
-    fe.clean_text()
-    try:
-        fe.encrypt_font()
-        print("4、字体加密成功")
-    except Exception as e:
-        print(f"4、字体加密失败，错误信息: {e}")
-        traceback.print_exc()
-        fe.close_file()
-        exit(1)
-    try:
-        fe.read_html()
-        print("5、EPUB文件处理成功")
-    except Exception as e:
-        print(f"5、EPUB文件处理失败，错误信息: {e}")
-        fe.close_file()
-        exit(1)

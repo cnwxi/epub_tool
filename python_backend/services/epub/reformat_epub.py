@@ -3,42 +3,21 @@
 # 源码: sigil吧ID: 遥遥心航
 
 import re
-import sys
 from os import path
-from pathlib import Path
 from typing import Any
 
-try:
-    from python_backend.services.epub.task_base import (
-        EpubTaskBase,
-        epub_sources,
-        get_bookpath,
-        run_epub_cli,
-        split_file_reference as _split_file_reference,
-    )
-    from python_backend.services.epub.rewrite_engine import (
-        EpubRewriteEngine,
-        EpubTaskPolicy,
-        RewritePolicy,
-        run_epub_task,
-    )
-except ImportError:
-    from task_base import (
-        EpubTaskBase,
-        epub_sources,
-        get_bookpath,
-        run_epub_cli,
-        split_file_reference as _split_file_reference,
-    )
-    from rewrite_engine import EpubRewriteEngine, EpubTaskPolicy, RewritePolicy, run_epub_task
-
-try:
-    from python_backend.services.utils.log import logwriter
-except ModuleNotFoundError:
-    services_dir = Path(__file__).resolve().parents[1]
-    if str(services_dir) not in sys.path:
-        sys.path.insert(0, str(services_dir))
-    from utils.log import logwriter
+from python_backend.services.epub.task_base import (
+    EpubTaskBase,
+    get_bookpath,
+    split_file_reference as _split_file_reference,
+)
+from python_backend.services.epub.rewrite_engine import (
+    EpubRewriteEngine,
+    EpubTaskPolicy,
+    RewritePolicy,
+    run_epub_task,
+)
+from python_backend.services.utils.log import logwriter
 
 logger = logwriter()
 
@@ -100,23 +79,3 @@ class EpubTool(EpubTaskBase):
 
 def run(epub_src: str, output_path: str | None = None):
     return run_epub_task(epub_src, output_path, EpubTool, logger, REFORMAT_TASK_POLICY)
-
-
-def main() -> None:
-    run_epub_cli(run)
-
-
-if __name__ == "__main__":
-    print(
-        "【脚本功能】\n"
-        + "1、 将epub目录结构规范化至sigil规范格式。\n"
-        + "2、 将没有列入manifest项的epub有效文件自动列入manifest项。\n"
-        + "3、 自动清除manifest中携带重复ID或多余ID的无效项。\n"
-        + "    脚本将优先保留spine或metadata中关联的ID。\n"
-        + "4、 自动检查并提醒spine节点中引用无效ID的itemref项。\n"
-        + "5、 自动检查并提醒manifest节点中xhtml类型文件不被spine节点引用的情况。\n"
-        + "6、 自动检测并纠正实际文件名与对应的引用链接大小写不一致的问题。\n"
-        + "7、 自动检测并提醒找不到对应文件的链接。"
-    )
-    while True:
-        main()

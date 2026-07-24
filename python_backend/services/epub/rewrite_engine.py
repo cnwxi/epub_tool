@@ -14,14 +14,11 @@ from dataclasses import dataclass
 from os import path
 from typing import Protocol
 
-try:
-    from python_backend.services.epub.task_base import (
-        build_resource_path_maps,
-        get_bookpath,
-        split_file_reference,
-    )
-except ImportError:
-    from task_base import build_resource_path_maps, get_bookpath, split_file_reference
+from python_backend.services.epub.task_base import (
+    build_resource_path_maps,
+    get_bookpath,
+    split_file_reference,
+)
 
 
 class _Logger(Protocol):

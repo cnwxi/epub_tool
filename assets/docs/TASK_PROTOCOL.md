@@ -29,7 +29,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 
 ## 输出文件命名
 
-任务会在输出目录中以 `{原文件名}_{任务脚本名}.epub` 创建结果文件。对应后缀为：
+任务会在输出目录中以 `{原文件名}_{任务名}.epub` 创建结果文件。对应后缀为：
 
 - `reformat_epub`：`_reformat_epub.epub`
 - `decrypt_epub`：`_decrypt_epub.epub`

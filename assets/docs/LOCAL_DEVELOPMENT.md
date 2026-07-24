@@ -221,6 +221,8 @@ npm run dev
 
 ## 单独调试 Python 处理逻辑
 
+所有任务都必须通过统一后端入口调试；不要直接执行 `python_backend/services/` 下的模块。统一入口会保留包内导入的原始异常，便于定位依赖或实现问题。
+
 ```bash
 conda run -n epub_tool python -m python_backend.cli run --task-type reformat_epub --input-file ./book.epub
 conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_epub --input-file ./book.epub
