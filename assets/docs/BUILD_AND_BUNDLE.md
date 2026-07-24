@@ -101,6 +101,21 @@ CI 只安装 `requirements/requirements.txt` 与 `pyinstaller`，随后执行 ON
 - GitHub Release 标签可使用 `v26.4.11`、`v26.4.11-1` 这类格式
 - 当前项目约定中，`-1`、`-2` 表示同日修订版，而不是 `beta` 等预发布标记
 
+### 更新日志与发布正文
+
+发布前必须在 `assets/docs/CHANGELOG.md` 新增对应记录。每个记录使用三级版本标题，格式为
+`### 年份后两位.月.日`，例如 `### 26.7.23`；标题不包含同日修订后缀。因此，
+`26.7.23-1` 与 `26.7.23-2` 都对应 `### 26.7.23`。
+
+手动运行 `Build And Release` 工作流时：
+
+- `release`：关闭时只构建并上传 artifact；开启时创建 GitHub Release。
+- `version`：留空时使用 `Cargo.toml` 的版本号，也可传入不带或带 `v` 前缀的版本号。
+- `release_type`：默认 `latest`，会发布正式版本并更新 Homebrew Tap；选择 `pre_release` 会创建 GitHub 预发布版本，不设为 Latest，也不会更新 Homebrew Tap。
+- `body`：留空时，工作流会从 CHANGELOG 提取与发布版本匹配的记录，生成“版本信息”后再附加默认安装说明；填写后会完全覆盖自动生成的正文。
+
+自动正文提取会移除发布版本中的第一个 `-` 及其后缀，再匹配对应的三级标题。找不到匹配记录时，发布会失败，避免产生没有版本说明的 Release。
+
 ## 维护注意事项
 
 - 发布前先确认 `npm run build:python-sidecar` 能正常生成 ONNX-only sidecar

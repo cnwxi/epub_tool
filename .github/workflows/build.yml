@@ -13,12 +13,20 @@ on:
         required: true
         default: true
         type: boolean
+      release_type:
+        description: "GitHub release channel"
+        required: true
+        default: latest
+        type: choice
+        options:
+          - latest
+          - pre_release
       version:
         description: "Release version"
         required: false
         default: ""
       body:
-        description: "Release body text（留空使用默认安装指引）"
+        description: "Release body text（留空使用更新日志与默认安装指引）"
         required: false
         default: ""
 
@@ -406,6 +414,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v6
+
       - name: Download renamed release assets
         uses: actions/download-artifact@v8
         with:
@@ -417,9 +428,31 @@ jobs:
         shell: bash
         env:
           RELEASE_BODY: ${{ inputs.body }}
+          ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
         run: |
           set -euo pipefail
-          cat > release-body.md <<'MARKDOWN'
+          if [ -n "$RELEASE_BODY" ]; then
+            printf '%s\n' "$RELEASE_BODY" > release-body.md
+            exit 0
+          fi
+
+          changelog_version="${ASSET_VERSION%%-*}"
+          release_notes="$(
+            awk -v heading="### $changelog_version" '
+              $0 == heading { capture = 1; next }
+              capture && substr($0, 1, 3) == "###" { exit }
+              capture { print }
+            ' assets/docs/CHANGELOG.md
+          )"
+
+          if [ -z "$release_notes" ]; then
+            echo "CHANGELOG 中未找到版本 $changelog_version 的更新日志" >&2
+            exit 1
+          fi
+
+          printf '## 版本信息\n\n%s\n\n---\n\n' "$release_notes" > release-body.md
+
+          cat >> release-body.md <<'MARKDOWN'
           ## 安装
 
           当前发布包内置 small OCR 模型，速度更快，安装包体积更小。
@@ -453,10 +486,6 @@ jobs:
           📖 [README](https://github.com/cnwxi/epub_tool#readme) · 📝 [更新日志](https://github.com/cnwxi/epub_tool/blob/main/assets/docs/CHANGELOG.md)
           MARKDOWN
 
-          if [ -n "$RELEASE_BODY" ]; then
-            printf '%s\n' "$RELEASE_BODY" > release-body.md
-          fi
-
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
         with:
@@ -466,10 +495,12 @@ jobs:
           files: release-assets/*
           fail_on_unmatched_files: true
           overwrite_files: true
+          prerelease: ${{ inputs.release_type == 'pre_release' }}
+          make_latest: ${{ inputs.release_type == 'latest' && 'true' || 'false' }}
 
   update_homebrew_tap:
     name: Update Homebrew Tap
-    if: inputs.release
+    if: inputs.release && inputs.release_type == 'latest'
     runs-on: ubuntu-22.04
     needs:
       - prepare
