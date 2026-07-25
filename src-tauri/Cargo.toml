@@ -9,10 +9,18 @@ edition = "2021"
 tauri-build = { version = "2.0.3", features = [] }
 
 [dependencies]
+encoding_rs = "0.8"
+ferrous-opencc = "0.4"
+image = { version = "0.25.5", default-features = false, features = ["bmp", "jpeg", "png", "webp"] }
+percent-encoding = "2.3"
+png = "0.18"
+regex = "1.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "2.2.5", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2.2.0"
+webp = "0.3"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

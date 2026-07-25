@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use epub_tool_newui::{rust_backend, FrontendTaskRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -43,17 +44,6 @@ const COVER_PREVIEW_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FrontendTaskRequest {
-    task_id: String,
-    task_type: String,
-    input_files: Vec<String>,
-    output_dir: Option<String>,
-    #[serde(default)]
-    options: Value,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FontTargetResponse {
@@ -1076,6 +1066,21 @@ async fn list_font_targets(
     app: AppHandle,
     file_path: String,
 ) -> Result<FontTargetResponse, String> {
+    match rust_backend::font_targets::list_font_targets(Path::new(&file_path)) {
+        Ok(font_families) => Ok(FontTargetResponse {
+            ok: true,
+            input_file: file_path,
+            font_families,
+            error: None,
+        }),
+        Err(_) => list_font_targets_with_python(&app, &file_path),
+    }
+}
+
+fn list_font_targets_with_python(
+    app: &AppHandle,
+    file_path: &str,
+) -> Result<FontTargetResponse, String> {
     let output = build_backend_command(&app, "list-fonts")?
         .arg(file_path)
         .output()
@@ -1241,6 +1246,33 @@ async fn list_font_targets_batch(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<FontTargetResponse>, String> {
+        let native_results = file_paths
+            .iter()
+            .map(|file_path| {
+                rust_backend::font_targets::list_font_targets(Path::new(file_path)).map(
+                    |font_families| FontTargetResponse {
+                        ok: true,
+                        input_file: file_path.clone(),
+                        font_families,
+                        error: None,
+                    },
+                )
+            })
+            .collect::<Result<Vec<_>, _>>();
+        if let Ok(results) = native_results {
+            let total_files = results.len();
+            for (position, result) in results.iter().enumerate() {
+                on_event
+                    .send(json!({
+                        "event": "font-targets.progress",
+                        "current_index": position + 1,
+                        "total_files": total_files,
+                        "result": result,
+                    }))
+                    .map_err(|error| format!("推送 Rust 字体扫描事件失败: {error}"))?;
+            }
+            return Ok(results);
+        }
         let store = app.state::<PythonWorkerStore>();
         let result = execute_worker_request(
             &app,
@@ -1415,6 +1447,7 @@ async fn run_epub_task(
 ) -> Result<Value, String> {
     let task_id = request.task_id.clone();
     let total_files = request.input_files.len();
+    let use_rust_backend = rust_backend::supports(&request);
     on_event
         .send(json!({
             "event": "task.launching",
@@ -1428,6 +1461,14 @@ async fn run_epub_task(
         .map_err(|error| format!("推送任务启动事件失败: {error}"))?;
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+        if use_rust_backend {
+            let log_path = resolve_log_path(&app)?;
+            return rust_backend::run(&request, &log_path, &mut |event| {
+                on_event
+                    .send(event)
+                    .map_err(|error| format!("推送 Rust 后端事件失败: {error}"))
+            });
+        }
         let store = app.state::<PythonWorkerStore>();
         execute_worker_request(
             &app,
