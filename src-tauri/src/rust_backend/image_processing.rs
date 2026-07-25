@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Cursor,
+    path::Path,
 };
 
 const IMAGE_EXTENSIONS: [&str; 5] = ["jpg", "jpeg", "png", "webp", "bmp"];
@@ -44,6 +45,31 @@ impl ImageTask {
             return false;
         }
         options.get("png_to_jpg").is_none_or(Value::is_boolean)
+    }
+
+    /// PNG preservation/optimization differs between Pillow and the Rust image
+    /// encoders for some palette and incorrectly-suffixed images. Keep those
+    /// books on the Python compatibility path until byte/visual parity is
+    /// established; WebP conversion remains covered by its own golden tests.
+    pub fn is_supported_input(&self, input: &Path, options: &Value) -> bool {
+        if options.get("png_quantize").and_then(Value::as_bool) == Some(true) {
+            return false;
+        }
+        if !matches!(self.mode, ImageMode::Compress) {
+            return true;
+        }
+        EpubWorkspace::load(input, |_| {})
+            .map(|workspace| {
+                !workspace.members.iter().any(|(path, member)| {
+                    let is_png = member.starts_with(b"\x89PNG\r\n\x1a\n");
+                    let palette_png = member.get(25) == Some(&3);
+                    let extension_is_png = path
+                        .rsplit_once('.')
+                        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("png"));
+                    is_png && (palette_png || !extension_is_png)
+                })
+            })
+            .unwrap_or(false)
     }
 
     pub fn process(
@@ -175,6 +201,9 @@ fn convert_image(
     let reader = ImageReader::new(Cursor::new(original))
         .with_guessed_format()
         .map_err(|error| format!("识别图片格式失败: {error}"))?;
+    let detected_format = reader
+        .format()
+        .ok_or_else(|| "无法识别图片格式".to_string())?;
     let image = reader
         .decode()
         .map_err(|error| format!("解码图片失败: {error}"))?;
@@ -222,12 +251,7 @@ fn convert_image(
                     extension: extension.to_string(),
                 });
             }
-            let target_format = match extension {
-                "jpg" | "jpeg" => ImageFormat::Jpeg,
-                "webp" => ImageFormat::WebP,
-                "png" => ImageFormat::Png,
-                _ => return Err(format!("不支持的图片格式: {extension}")),
-            };
+            let target_format = detected_format;
             Ok(ConvertedImage {
                 bytes: if target_format == ImageFormat::WebP {
                     encode_webp(&image, webp_quality)
@@ -555,9 +579,9 @@ fn rewrite_opf_manifest(opf: &str, opf_path: &str, replacements: &[(String, Stri
 
 #[cfg(test)]
 mod tests {
-    use super::{ImageMode, ImageProcessOutcome, ImageTask};
+    use super::{convert_image, ImageMode, ImageProcessOutcome, ImageTask};
     use crate::rust_backend::epub::EpubWorkspace;
-    use image::{DynamicImage, Rgba, RgbaImage};
+    use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
     use serde_json::json;
     use std::{collections::BTreeMap, io::Cursor};
 
@@ -600,5 +624,26 @@ mod tests {
         assert!(std::str::from_utf8(&workspace.members["OPS/chapter.xhtml"])
             .unwrap()
             .contains("Images/cover.png?rev=1#hero"));
+    }
+
+    #[test]
+    fn compression_preserves_detected_png_format_when_member_is_named_jpg() {
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(2, 2, Rgba([20, 30, 40, 255])));
+        let mut bytes = Cursor::new(Vec::new());
+        image.write_to(&mut bytes, ImageFormat::Png).unwrap();
+
+        let converted = convert_image(
+            &bytes.into_inner(),
+            "jpg",
+            ImageMode::Compress,
+            82,
+            82,
+            false,
+            false,
+        )
+        .unwrap();
+
+        assert!(converted.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert_eq!(converted.extension, "jpg");
     }
 }

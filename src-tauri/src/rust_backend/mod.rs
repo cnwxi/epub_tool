@@ -1,15 +1,29 @@
 mod chinese_convert;
+mod decrypt_epub;
+pub mod decrypt_font;
+mod encrypt_epub;
+pub mod encrypt_font;
 mod epub;
+pub mod font_cmap;
+pub mod font_cascade;
+pub mod font_selectors;
 pub mod font_targets;
+pub mod font_values;
 mod image_compress;
 mod image_processing;
 mod image_to_webp;
+mod reformat_epub;
 mod replace_cover;
+mod rewrite_engine;
+mod task_base;
 mod webp_to_img;
 
 use crate::FrontendTaskRequest;
 use chinese_convert::ChineseConvertTask;
+use decrypt_epub::DecryptEpubTask;
+use encrypt_epub::EncryptEpubTask;
 use image_processing::{ImageProcessOutcome, ImageTask};
+use reformat_epub::ReformatEpubTask;
 use replace_cover::ReplaceCoverTask;
 use serde_json::{json, Value};
 use std::{
@@ -21,6 +35,9 @@ use std::{
 pub trait EpubTask: Send + Sync {
     fn task_type(&self) -> &'static str;
     fn supports_options(&self, options: &Value) -> bool;
+    fn supports_input(&self, _input: &Path, _options: &Value) -> bool {
+        true
+    }
     fn output_suffix(&self, _options: &Value) -> Result<String, String> {
         Ok(format!("_{}.epub", self.task_type()))
     }
@@ -47,6 +64,10 @@ impl EpubTask for ImageTask {
         self.is_supported_options(options)
     }
 
+    fn supports_input(&self, input: &Path, options: &Value) -> bool {
+        self.is_supported_input(input, options)
+    }
+
     fn process(
         &self,
         _input: &Path,
@@ -62,7 +83,13 @@ impl EpubTask for ImageTask {
 }
 
 pub fn supports(request: &FrontendTaskRequest) -> bool {
-    task_for(&request.task_type).is_some_and(|task| task.supports_options(&request.options))
+    task_for(&request.task_type).is_some_and(|task| {
+        task.supports_options(&request.options)
+            && request
+                .input_files
+                .iter()
+                .all(|input| task.supports_input(Path::new(input), &request.options))
+    })
 }
 
 pub fn run(
@@ -276,6 +303,9 @@ fn run_file(
 
 fn task_for(task_type: &str) -> Option<Box<dyn EpubTask>> {
     match task_type {
+        "reformat_epub" => Some(Box::new(ReformatEpubTask)),
+        "decrypt_epub" => Some(Box::new(DecryptEpubTask)),
+        "encrypt_epub" => Some(Box::new(EncryptEpubTask)),
         "image_compress" => Some(Box::new(image_compress::task())),
         "image_to_webp" => Some(Box::new(image_to_webp::task())),
         "webp_to_img" => Some(Box::new(webp_to_img::task())),

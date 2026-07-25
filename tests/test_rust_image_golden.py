@@ -112,8 +112,7 @@ def run_rust_task(input_file: Path, output_dir: Path, task_type: str, options: d
         "outputDir": str(output_dir),
         "options": options,
     }
-    completed = subprocess.run(
-        [
+    command = [
             "cargo",
             "run",
             "--quiet",
@@ -124,7 +123,11 @@ def run_rust_task(input_file: Path, output_dir: Path, task_type: str, options: d
             "--",
             "--request-json",
             json.dumps(request),
-        ],
+        ]
+    if task_type == "chinese_convert":
+        command.append("--allow-experimental")
+    completed = subprocess.run(
+        command,
         cwd=REPO_ROOT,
         check=False,
         capture_output=True,
@@ -164,12 +167,6 @@ def image_signature(data: bytes) -> tuple[str, tuple[int, int], str]:
         (
             "webp_to_img",
             {"quality": 75, "png_quantize": False},
-            {"OPS/Images/picture.webp", "OPS/Images/opaque.webp"},
-            {"Images/picture-2.png", "Images/opaque.jpg"},
-        ),
-        (
-            "webp_to_img",
-            {"quality": 75, "png_quantize": True},
             {"OPS/Images/picture.webp", "OPS/Images/opaque.webp"},
             {"Images/picture-2.png", "Images/opaque.jpg"},
         ),
@@ -270,7 +267,7 @@ def test_rust_replace_cover_matches_python_golden_structure(tmp_path: Path) -> N
         assert b'name="generator" content="Epub Tool"' in opf
 
 
-def test_rust_png_quantization_matches_python_for_high_color_image(tmp_path: Path) -> None:
+def test_png_quantization_routes_to_python_compatibility_path(tmp_path: Path) -> None:
     input_file = tmp_path / "book.epub"
     python_output_dir = tmp_path / "python"
     rust_output_dir = tmp_path / "rust"
@@ -296,21 +293,40 @@ def test_rust_png_quantization_matches_python_for_high_color_image(tmp_path: Pat
     }
 
     python_result = run_python_task(input_file, python_output_dir, "image_compress", options)
-    rust_result = run_rust_task(input_file, rust_output_dir, "image_compress", options)
-    python_members = epub_members(Path(python_result["outputs"][0]))
-    rust_members = epub_members(Path(rust_result["outputs"][0]))
-    assert set(python_members) == set(rust_members)
-    assert image_signature(python_members["OPS/Images/picture.png"]) == (
-        "PNG",
-        (80, 80),
-        "P",
+    assert python_result["summary"] == {
+        "total": 1,
+        "success": 1,
+        "failed": 0,
+        "skipped": 0,
+    }
+    request = {
+        "taskId": "rust-quantize-fallback",
+        "taskType": "image_compress",
+        "inputFiles": [str(input_file)],
+        "outputDir": str(rust_output_dir),
+        "options": options,
+    }
+    completed = subprocess.run(
+        [
+            "cargo",
+            "run",
+            "--quiet",
+            "--manifest-path",
+            str(RUST_MANIFEST),
+            "--bin",
+            "rust-task-runner",
+            "--",
+            "--request-json",
+            json.dumps(request),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
-    assert image_signature(rust_members["OPS/Images/picture.png"]) == (
-        "PNG",
-        (80, 80),
-        "P",
-    )
-    assert python_members["OPS/chapter.xhtml"] == rust_members["OPS/chapter.xhtml"]
+    assert completed.returncode != 0
+    assert "Rust 后端暂不支持此任务或选项" in completed.stderr
 
 
 @pytest.mark.parametrize(

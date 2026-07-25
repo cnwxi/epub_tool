@@ -1352,8 +1352,8 @@ async fn get_persisted_store_path(store: State<'_, PersistedStore>) -> Result<St
 #[tauri::command]
 async fn read_image_preview(path: String) -> Result<ImagePreviewResponse, String> {
     let image_path = PathBuf::from(path);
-    let metadata = fs::metadata(&image_path)
-        .map_err(|error| format!("读取封面文件信息失败: {error}"))?;
+    let metadata =
+        fs::metadata(&image_path).map_err(|error| format!("读取封面文件信息失败: {error}"))?;
     if !metadata.is_file() {
         return Err("选择的封面路径不是文件。".to_string());
     }

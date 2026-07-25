@@ -13,10 +13,11 @@ impl EpubTask for ChineseConvertTask {
     }
 
     fn supports_options(&self, options: &Value) -> bool {
-        matches!(
-            options.get("direction").and_then(Value::as_str),
-            Some("s2t" | "t2s")
-        )
+        // The production Python OpenCC dictionaries differ on real books
+        // (for example 游/遊 and 才/纔). Keep sidecar behavior authoritative
+        // until a Rust dictionary with approved parity is selected.
+        let _ = options;
+        false
     }
 
     fn output_suffix(&self, options: &Value) -> Result<String, String> {
@@ -225,6 +226,33 @@ mod tests {
         assert!(converted.contains("id=\"简体\""));
         assert!(converted.contains(".简体"));
         assert!(converted.contains("const text = '汉语'"));
-        assert!(ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
+        assert!(!ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
+    }
+
+    #[test]
+    fn builtin_dictionary_is_not_python_opencc_s2t_compatible() {
+        // `opencc-python-reimplemented` is the current production reference.
+        // Its s2t output for this phrase set is
+        // `遊移不定 却才華洋溢 反取憀慄 其中很多只能 看成一出面對`;
+        // ferrous-opencc's bundled
+        // dictionary produces the value below. Keep this explicit regression
+        // gate so an accidental `supports_options = true` cannot silently
+        // change book text before an approved dictionary is bundled.
+        let converter = OpenCC::from_config(BuiltinConfig::S2t).unwrap();
+        assert_eq!(
+            converter.convert("游移不定 却才华洋溢 反取憀栗 其中很多只能 看成一出面对"),
+            "游移不定 卻纔華洋溢 反取憀栗 其中很多隻能 看成一齣面對"
+        );
+        assert!(!ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
+    }
+
+    #[test]
+    fn builtin_dictionary_is_not_python_opencc_t2s_compatible() {
+        // Python's production t2s dictionary converts `射覆` to `射复`,
+        // while the bundled Rust dictionary preserves `覆`. This was found by
+        // exercising every source key from Python's TS dictionaries.
+        let converter = OpenCC::from_config(BuiltinConfig::T2s).unwrap();
+        assert_eq!(converter.convert("射覆"), "射覆");
+        assert!(!ChineseConvertTask.supports_options(&json!({"direction": "t2s"})));
     }
 }
