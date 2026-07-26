@@ -521,7 +521,7 @@ def run_task(request: TaskRequest, emitter: TaskEventEmitter | None = None) -> T
             progress=100,
             message="任务执行完成",
             total_files=total_files,
-            result=result.to_dict(),
+            result=result,
         )
     )
     return result

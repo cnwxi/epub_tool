@@ -164,7 +164,7 @@ def task_event_to_wire(event: TaskEvent) -> engine_pb2.TaskEvent:
     if event.output_path is not None:
         wire.output_path = event.output_path
     if event.result is not None:
-        wire.result.CopyFrom(task_result_to_wire(TaskResult(**event.result)))
+        wire.result.CopyFrom(task_result_to_wire(event.result))
     return wire
 
 
