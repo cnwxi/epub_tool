@@ -140,14 +140,14 @@ class WorkerProtocolTest(unittest.TestCase):
         self.assertTrue(response["taskResult"]["ok"])
         self.assertEqual(response["taskResult"]["status"], "success")
 
-    def test_serve_rejects_legacy_snake_case_request(self):
+    def test_serve_rejects_request_without_operation(self):
         original_stdin = sys.stdin
         original_stdout = sys.stdout
         sys.stdin = io.StringIO(
             json.dumps(
                 {
-                    "protocol_version": "PROTOCOL_VERSION_V1",
-                    "request_id": "legacy-1",
+                    "protocolVersion": "PROTOCOL_VERSION_V1",
+                    "requestId": "missing-operation-1",
                 }
             )
             + "\n"
@@ -162,8 +162,56 @@ class WorkerProtocolTest(unittest.TestCase):
             sys.stdout = original_stdout
 
         response = json.loads(output.getvalue())
-        self.assertEqual(response["requestId"], "invalid-request")
+        self.assertEqual(response["requestId"], "missing-operation-1")
         self.assertEqual(response["error"]["code"], "INVALID_ARGUMENT")
+
+    def test_serve_returns_protocol_error_and_processes_the_next_request(self):
+        invalid_request = {
+            "protocolVersion": "PROTOCOL_VERSION_V1",
+            "requestId": "invalid-protocol-1",
+            "unknownField": True,
+        }
+        valid_request = {
+            "protocolVersion": "PROTOCOL_VERSION_V1",
+            "requestId": "run-after-invalid-2",
+            "runTask": {
+                "taskId": "task-2",
+                "taskType": "TASK_TYPE_REFORMAT_EPUB",
+                "inputFiles": [],
+                "options": {"empty": {}},
+            },
+        }
+        original_stdin = sys.stdin
+        original_stdout = sys.stdout
+        sys.stdin = io.StringIO(
+            json.dumps(invalid_request) + "\n" + json.dumps(valid_request) + "\n"
+        )
+        output = io.StringIO()
+        sys.stdout = output
+        try:
+            with (
+                patch.object(
+                    cli,
+                    "run_task",
+                    return_value=TaskResult(
+                        ok=True,
+                        status="success",
+                        summary={"total": 0, "success": 0, "failed": 0, "skipped": 0},
+                    ),
+                ) as run_task,
+                patch.object(cli, "start_parent_monitor"),
+            ):
+                self.assertEqual(cli.cmd_serve(None), 0)
+        finally:
+            sys.stdin = original_stdin
+            sys.stdout = original_stdout
+
+        responses = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(responses[0]["requestId"], "invalid-protocol-1")
+        self.assertEqual(responses[0]["error"]["code"], "INVALID_ARGUMENT")
+        self.assertEqual(responses[1]["requestId"], "run-after-invalid-2")
+        self.assertTrue(responses[1]["taskResult"]["ok"])
+        run_task.assert_called_once()
 
     def test_serve_returns_io_error_and_processes_the_next_request(self):
         request = {

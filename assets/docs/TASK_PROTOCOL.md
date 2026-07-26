@@ -1,8 +1,8 @@
 # Engine Task Protocol
 
 `proto/epub_tool/v1/engine.proto` 是 Vue、Rust 与 Python engine 之间唯一的
-协议源。Python worker 使用 JSON Lines，但每一行都是 protobuf JSON 映射，所有
-对外字段均为 lower camel case。运行 `npx --yes @bufbuild/buf@latest generate`
+协议源。Python worker 使用 JSON Lines，但每一行都是 protobuf JSON 映射；项目
+规范的请求与输出字段均为 lower camel case。运行 `npx --yes @bufbuild/buf@latest generate`
 生成 TypeScript 与 Python 类型；Rust 在 Cargo 构建时从同一文件生成类型。
 
 ## 请求
@@ -22,7 +22,15 @@
 ```
 
 `EngineRequest` 的 operation 是 `runTask` 或 `scanFonts`；`requestId` 必须在
-响应和每个流事件中回显。旧 snake_case JSON 不再受支持。
+响应和每个流事件中回显。项目仅保证 lower camel case 的请求格式与输出格式；其他
+字段命名不是受支持的 API 契约。
+
+Python engine 使用 `google.protobuf.json_format.ParseDict()` 解析请求。该上游解析器
+可将 proto 原始字段名（snake_case）和 protobuf JSON 字段名（lower camel case）解析为
+同一个内部消息字段，例如 `request_id` 与 `requestId` 都对应 `request.request_id`；它不会
+修改原始 JSON 对象。Worker 使用 `MessageToDict(..., preserving_proto_field_name=False)`
+输出消息，因此所有实际发出的 JSON Lines 均为 lower camel case。输入端的宽松解析是上游
+实现行为，不构成对非规范字段名的兼容承诺。
 
 Tauri IPC 与 Python Worker 都直接传递完整的 `EngineEvent` 和 `EngineResponse`
 信封；Rust 不会拆出 payload，Vue 也不接受未包裹的任务事件或任务结果。

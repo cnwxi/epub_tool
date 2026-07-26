@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
 from python_backend.generated.epub_tool.v1 import engine_pb2
 from python_backend.protocol import TaskEvent, TaskRequest, TaskResult
@@ -39,7 +39,7 @@ def parse_engine_request(payload: Mapping[str, Any]) -> engine_pb2.EngineRequest
     request = engine_pb2.EngineRequest()
     try:
         ParseDict(dict(payload), request, ignore_unknown_fields=False)
-    except (TypeError, ValueError) as exc:
+    except (ParseError, TypeError, ValueError) as exc:
         raise EngineProtocolError(f"无效的引擎请求: {exc}") from exc
     validate_engine_request(request)
     return request
