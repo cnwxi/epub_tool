@@ -1,6 +1,6 @@
 # 更新日志
 
-### 26.7.26-rust
+### 26.7.26
 桌面应用任务执行、构建、打包与发布链路切换为纯 Rust 后端；Python 仅保留为黄金样本回归、问题定位与 OCR 模型维护工具，不再作为运行时 sidecar。<br>
 迁移 EPUB 基础处理、图片处理、简繁转换、EPUB 加解密、字体加密与字体 OCR 解密至 Rust，并将 OpenCC 词库和 OCR ONNX 资源纳入版本管理与打包资源。<br>
 统一任务请求为唯一的 camelCase 结构：`taskId`、`taskType`、`inputFiles`、`outputDir`、`options`；Rust 与 Python 黄金样本 CLI 均直接接受该结构，拒绝 snake_case 别名。<br>
