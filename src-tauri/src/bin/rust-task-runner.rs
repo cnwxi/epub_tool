@@ -337,12 +337,12 @@ fn run() -> Result<(), String> {
     if !rust_backend::supports(&request) {
         return Err(format!(
             "Rust 后端暂不支持此任务或选项: {}",
-            request.task_type
+            request.taskType
         ));
     }
     let log_path = log_path.map(PathBuf::from).unwrap_or_else(|| {
         request
-            .output_dir
+            .outputDir
             .as_deref()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))

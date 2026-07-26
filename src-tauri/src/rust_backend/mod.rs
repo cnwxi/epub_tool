@@ -66,10 +66,10 @@ impl EpubTask for ImageTask {
 }
 
 pub fn supports(request: &FrontendTaskRequest) -> bool {
-    task_for(&request.task_type).is_some_and(|task| {
+    task_for(&request.taskType).is_some_and(|task| {
         task.supports_options(&request.options)
             && request
-                .input_files
+                .inputFiles
                 .iter()
                 .all(|input| task.supports_input(Path::new(input), &request.options))
     })
@@ -80,10 +80,10 @@ pub fn run(
     log_path: &Path,
     emit: &mut dyn FnMut(Value) -> Result<(), String>,
 ) -> Result<Value, String> {
-    let task = task_for(&request.task_type)
-        .ok_or_else(|| format!("Rust 后端暂不支持任务类型: {}", request.task_type))?;
-    let total_files = request.input_files.len();
-    if let Some(output_dir) = &request.output_dir {
+    let task = task_for(&request.taskType)
+        .ok_or_else(|| format!("Rust 后端暂不支持任务类型: {}", request.taskType))?;
+    let total_files = request.inputFiles.len();
+    if let Some(output_dir) = &request.outputDir {
         let output_dir = Path::new(output_dir);
         if output_dir.exists() && !output_dir.is_dir() {
             return Err(format!("输出路径不是目录: {}", output_dir.display()));
@@ -97,7 +97,7 @@ pub fn run(
         request,
         "started",
         0.0,
-        format!("正在加载{} Rust 处理模块…", task_label(&request.task_type)),
+        format!("正在加载{} Rust 处理模块…", task_label(&request.taskType)),
         None,
         0,
         total_files,
@@ -108,12 +108,12 @@ pub fn run(
     let mut outputs = Vec::new();
     let mut errors = Vec::new();
     let mut skipped = Vec::new();
-    for (position, input_file) in request.input_files.iter().enumerate() {
+    for (position, input_file) in request.inputFiles.iter().enumerate() {
         let index = position + 1;
         let input = PathBuf::from(input_file);
         let normalized = input.to_string_lossy().to_string();
         let output_suffix = task.output_suffix(&request.options)?;
-        let output = output_path(&input, request.output_dir.as_deref(), &output_suffix)?;
+        let output = output_path(&input, request.outputDir.as_deref(), &output_suffix)?;
         let output_text = output.to_string_lossy().to_string();
         emit(event(
             "task.file.started",
@@ -218,7 +218,7 @@ pub fn run(
     });
     emit(json!({
         "event": "task.finished",
-        "task_id": request.task_id,
+        "task_id": request.taskId,
         "status": status,
         "progress": 100,
         "message": "任务执行完成",
@@ -344,7 +344,7 @@ fn event(
 ) -> Value {
     let mut value = json!({
         "event": event,
-        "task_id": request.task_id,
+        "task_id": request.taskId,
         "status": status,
         "progress": progress,
         "message": message,
@@ -419,10 +419,10 @@ mod tests {
         let input = directory.join("book.epub");
         write_image_epub(&input);
         let request = FrontendTaskRequest {
-            task_id: "native-image-test".to_string(),
-            task_type: "image_to_webp".to_string(),
-            input_files: vec![input.to_string_lossy().to_string()],
-            output_dir: Some(directory.to_string_lossy().to_string()),
+            taskId: "native-image-test".to_string(),
+            taskType: "image_to_webp".to_string(),
+            inputFiles: vec![input.to_string_lossy().to_string()],
+            outputDir: Some(directory.to_string_lossy().to_string()),
             options: json!({"quality": 75}),
         };
         let mut events = Vec::new();

@@ -57,25 +57,21 @@ def start_parent_monitor() -> None:
     ).start()
 
 
-def pick_payload_value(payload: dict[str, Any], *keys: str, default: Any = None) -> Any:
-    for key in keys:
-        if key in payload and payload[key] is not None:
-            return payload[key]
-    return default
-
-
 def load_request_from_payload(payload: dict[str, Any]) -> TaskRequest:
-    task_type = pick_payload_value(payload, "task_type", "taskType")
+    allowed_keys = {"taskId", "taskType", "inputFiles", "outputDir", "options"}
+    unsupported_keys = sorted(set(payload).difference(allowed_keys))
+    if unsupported_keys:
+        raise ValueError(f"任务请求包含不支持字段: {', '.join(unsupported_keys)}")
+    task_type = payload.get("taskType")
     if not task_type:
-        raise ValueError("任务请求缺少 task_type/taskType")
+        raise ValueError("任务请求缺少 taskType")
 
     return TaskRequest(
-        task_id=pick_payload_value(payload, "task_id", "taskId", default=str(uuid.uuid4())),
-        task_type=task_type,
-        input_files=pick_payload_value(payload, "input_files", "inputFiles", default=[])
-        or [],
-        output_dir=pick_payload_value(payload, "output_dir", "outputDir"),
-        options=pick_payload_value(payload, "options", default={}) or {},
+        taskId=payload.get("taskId") or str(uuid.uuid4()),
+        taskType=task_type,
+        inputFiles=payload.get("inputFiles") or [],
+        outputDir=payload.get("outputDir"),
+        options=payload.get("options") or {},
     )
 
 
@@ -87,10 +83,10 @@ def load_request_from_args(args: argparse.Namespace) -> TaskRequest:
         payload = json.loads(args.request_json)
     else:
         payload = {
-            "task_id": args.task_id or str(uuid.uuid4()),
-            "task_type": args.task_type,
-            "input_files": args.input_file or [],
-            "output_dir": args.output_dir,
+            "taskId": args.task_id or str(uuid.uuid4()),
+            "taskType": args.task_type,
+            "inputFiles": args.input_file or [],
+            "outputDir": args.output_dir,
             "options": json.loads(args.options_json or "{}"),
         }
 

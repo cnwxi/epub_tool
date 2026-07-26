@@ -1,20 +1,23 @@
 # Task Protocol
 
-Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
+前端通过 Tauri IPC 调用 Rust 任务引擎。任务请求使用 camelCase，运行时不使用
+JSON Lines Python sidecar，也不接受另一套字段别名。
 
 ## 请求结构
 
 ```json
 {
-  "task_id": "uuid-or-custom-id",
-  "task_type": "reformat_epub",
-  "input_files": ["/abs/path/book.epub"],
-  "output_dir": "/abs/path/output",
+  "taskId": "uuid-or-custom-id",
+  "taskType": "reformat_epub",
+  "inputFiles": ["/abs/path/book.epub"],
+  "outputDir": "/abs/path/output",
   "options": {}
 }
 ```
 
-`task_type` 当前支持：
+Python 黄金样本 CLI 接受同一份 camelCase 请求，见 [CLI_USAGE.md](./CLI_USAGE.md)。
+
+`taskType` 当前支持：
 
 - `reformat_epub`
 - `decrypt_epub`
@@ -44,7 +47,7 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 
 ## 运行时事件
 
-每一行都是一个 JSON 对象，核心字段如下：
+`run_epub_task` 通过 Tauri Channel 推送 JSON 对象，核心字段如下：
 
 ```json
 {
@@ -123,8 +126,8 @@ Python 后端与 Tauri 壳层之间采用 JSON Lines 协议。
 后端也接受 `external` 作为 `compatible` 的兼容别名。
 
 默认模型为 `PP-OCRv6_small_rec_onnx`，资源目录为
-`ocr-models/PP-OCRv6_small_rec_onnx/`。Tauri 启动 Python sidecar 时会通过
-`EPUB_TOOL_OCR_ONNX_MODEL_DIR` 注入模型路径。若模型目录缺失，任务会直接失败；默认构建只校验已提交的 ONNX 模型资源，不会在运行时下载或转换 Paddle 源模型。
+`ocr-models/PP-OCRv6_small_rec_onnx/`。Rust `ort` 在应用内加载该模型；若模型目录缺失，
+任务会直接失败。默认构建只校验已提交的 ONNX 模型资源，不会在运行时下载或转换 Paddle 源模型。
 
 反混淆输出策略：
 

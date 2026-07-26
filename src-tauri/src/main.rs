@@ -630,14 +630,14 @@ async fn run_epub_task(
     request: FrontendTaskRequest,
     on_event: Channel<Value>,
 ) -> Result<Value, String> {
-    let task_id = request.task_id.clone();
-    let total_files = request.input_files.len();
-    if request.task_type == "chinese_convert" {
+    let task_id = request.taskId.clone();
+    let total_files = request.inputFiles.len();
+    if request.taskType == "chinese_convert" {
         if let Some(resource_dir) = resolve_opencc_resource_dir(&app) {
             rust_backend::text::configure_resource_dir(resource_dir)?;
         }
     }
-    if request.task_type == "decrypt_font" {
+    if request.taskType == "decrypt_font" {
         if let Some(resources) = resolve_rust_ocr_resources(&app) {
             rust_backend::font::decrypt_font::configure_ocr_resources(resources)?;
         }

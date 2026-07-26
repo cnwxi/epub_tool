@@ -1,4 +1,8 @@
-# CLI Usage
+# Python 黄金样本 CLI
+
+> Python CLI 不属于当前桌面应用的运行、构建、打包或发布链路。
+> 它仅用于 Rust 迁移的黄金输出对比、问题定位和 OCR 模型维护。
+> 任务请求与桌面端统一使用 camelCase；不接受 snake_case 别名。
 
 统一入口：`python -m python_backend.cli`。任务模块仅供统一后端加载，不支持直接执行脚本；这样包内依赖的导入异常会原样暴露，便于诊断。
 
@@ -46,10 +50,10 @@ conda run -n epub_tool python -m python_backend.cli run \
 
 ```bash
 conda run -n epub_tool python -m python_backend.cli run --request-json '{
-  "task_id": "demo-task",
-  "task_type": "encrypt_font",
-  "input_files": ["/path/book.epub"],
-  "output_dir": "/path/output",
+  "taskId": "demo-task",
+  "taskType": "encrypt_font",
+  "inputFiles": ["/path/book.epub"],
+  "outputDir": "/path/output",
   "options": {
     "target_font_families_by_file": {
       "/path/book.epub": ["KaiTi", "Source Han Serif SC"]

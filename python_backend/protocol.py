@@ -9,10 +9,10 @@ TaskType = str
 
 @dataclass(slots=True)
 class TaskRequest:
-    task_id: str
-    task_type: TaskType
-    input_files: list[str]
-    output_dir: str | None = None
+    taskId: str
+    taskType: TaskType
+    inputFiles: list[str]
+    outputDir: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -49,4 +49,3 @@ class TaskResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

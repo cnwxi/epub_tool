@@ -306,16 +306,16 @@ def execute_task(
 
 
 def run_task(request: TaskRequest) -> TaskResult:
-    if request.task_type not in MODULE_PATHS:
-        raise ValueError(f"不支持的任务类型: {request.task_type}")
-    validate_task_options(request.task_type, request.options)
-    if request.output_dir:
-        output_dir = Path(request.output_dir)
+    if request.taskType not in MODULE_PATHS:
+        raise ValueError(f"不支持的任务类型: {request.taskType}")
+    validate_task_options(request.taskType, request.options)
+    if request.outputDir:
+        output_dir = Path(request.outputDir)
         if output_dir.exists() and not output_dir.is_dir():
             raise ValueError(f"输出路径不是目录: {output_dir}")
         output_dir.mkdir(parents=True, exist_ok=True)
     emitter = JsonLineEmitter()
-    total_files = len(request.input_files)
+    total_files = len(request.inputFiles)
     context = {
         "current_file": None,
         "current_index": 0,
@@ -323,7 +323,7 @@ def run_task(request: TaskRequest) -> TaskResult:
         "progress": 0.0,
         "output_path": None,
     }
-    logger = BroadcastLogger(emitter, request.task_id, lambda: context.copy())
+    logger = BroadcastLogger(emitter, request.taskId, lambda: context.copy())
 
     outputs: list[str] = []
     errors: list[dict[str, str]] = []
@@ -333,21 +333,21 @@ def run_task(request: TaskRequest) -> TaskResult:
     emitter.emit(
         TaskEvent(
             event="task.started",
-            task_id=request.task_id,
+            task_id=request.taskId,
             status="started",
             progress=0,
             message=(
-                f"正在加载{TASK_LABELS.get(request.task_type, request.task_type)}处理模块…"
+                f"正在加载{TASK_LABELS.get(request.taskType, request.taskType)}处理模块…"
             ),
             total_files=total_files,
         )
     )
 
-    with patched_logger(request.task_type, logger):
-        for index, input_file in enumerate(request.input_files, start=1):
+    with patched_logger(request.taskType, logger):
+        for index, input_file in enumerate(request.inputFiles, start=1):
             normalized_input = os.path.normpath(input_file)
             expected_output = build_request_output_path(
-                normalized_input, request.task_type, request.output_dir, request.options
+                normalized_input, request.taskType, request.outputDir, request.options
             )
             output_existed_before = bool(expected_output and os.path.exists(expected_output))
             context.update(
@@ -362,7 +362,7 @@ def run_task(request: TaskRequest) -> TaskResult:
             emitter.emit(
                 TaskEvent(
                     event="task.file.started",
-                    task_id=request.task_id,
+                    task_id=request.taskId,
                     status="running",
                     progress=context["progress"],
                     message=f"开始处理 {os.path.basename(normalized_input)}",
@@ -381,16 +381,16 @@ def run_task(request: TaskRequest) -> TaskResult:
                 if not os.path.exists(normalized_input):
                     raise FileNotFoundError(f"EPUB文件不存在: {normalized_input}")
                 if input_has_task_output_suffix(
-                    normalized_input, request.task_type, request.options
+                    normalized_input, request.taskType, request.options
                 ):
-                    suffix = get_task_output_suffix(request.task_type, request.options)
+                    suffix = get_task_output_suffix(request.taskType, request.options)
                     skip_message = f"文件名已包含当前任务输出后缀 {suffix}，为避免重复执行已跳过。"
                     ret = "skip"
                 else:
                     ret = execute_task(
-                        request.task_type,
+                        request.taskType,
                         normalized_input,
-                        request.output_dir,
+                        request.outputDir,
                         request.options,
                     )
                 duration_ms = int((time.perf_counter() - start_at) * 1000)
@@ -408,7 +408,7 @@ def run_task(request: TaskRequest) -> TaskResult:
                     emitter.emit(
                         TaskEvent(
                             event="task.file.finished",
-                            task_id=request.task_id,
+                            task_id=request.taskId,
                             status="success",
                             progress=context["progress"],
                             message=f"处理成功，用时 {duration_ms}ms",
@@ -428,7 +428,7 @@ def run_task(request: TaskRequest) -> TaskResult:
                     emitter.emit(
                         TaskEvent(
                             event="task.file.finished",
-                            task_id=request.task_id,
+                            task_id=request.taskId,
                             status="skip",
                             progress=context["progress"],
                             message=skip_message,
@@ -449,7 +449,7 @@ def run_task(request: TaskRequest) -> TaskResult:
                     emitter.emit(
                         TaskEvent(
                             event="task.file.finished",
-                            task_id=request.task_id,
+                            task_id=request.taskId,
                             status="error",
                             progress=context["progress"],
                             message=str(ret),
@@ -472,7 +472,7 @@ def run_task(request: TaskRequest) -> TaskResult:
                 emitter.emit(
                     TaskEvent(
                         event="task.file.finished",
-                        task_id=request.task_id,
+                        task_id=request.taskId,
                         status="error",
                         progress=context["progress"],
                         message=error_message,
@@ -514,7 +514,7 @@ def run_task(request: TaskRequest) -> TaskResult:
     emitter.emit(
         TaskEvent(
             event="task.finished",
-            task_id=request.task_id,
+            task_id=request.taskId,
             status=final_status,
             progress=100,
             message="任务执行完成",

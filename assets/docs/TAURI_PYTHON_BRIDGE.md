@@ -1,43 +1,39 @@
-# Tauri Python Bridge
+# Tauri Rust 任务桥接
+
+此文件保留原文件路径，避免旧链接失效；当前实现不再存在 Tauri-Python bridge 或 Python sidecar。
 
 ## 调用链
 
 ```text
 Vue 组件
-  -> invoke("run_epub_task")
-  -> Rust command
-  -> 优先调用 PyInstaller 生成的 python sidecar
-  -> 若 sidecar 不存在且处于开发工作区，则回退 python -m python_backend.cli
-  -> Python 输出 JSON Lines
-  -> Rust 逐行读取并通过 Channel 推回前端
+  → invoke("run_epub_task")
+  → Tauri Rust command
+  → rust_backend::run
+  → EpubTask 注册表
+  → EPUB workspace 读写与任务实现
+  → Tauri Channel 推送 TaskEvent
+  → 返回 TaskResult
 ```
 
 ## Rust 侧职责
 
-- 解析前端请求
-- 优先查找 `src-tauri/binaries/epub-tool-python/epub-tool-python(.exe)` 或打包后资源目录中的 sidecar
-- 仅在开发态回退到系统 Python：`python3` / `python` / Windows `py -3`
-- 启动 sidecar 或 `python_backend.cli`
-- 读取 stdout/stderr
-- 将事件转发给前端
-- 返回最终 `TaskResult`
-- 递归扫描输入目录中的 `.epub` 文件，避免前端直接做本地文件系统递归
+- 解析并校验前端 `FrontendTaskRequest`；
+- 递归扫描输入目录中的 `.epub`；
+- 以统一 `EpubTask` trait 注册 EPUB、图片、文本和字体任务；
+- 使用同一事件和结果 JSON 结构推送进度、日志、成功、跳过与失败；
+- 读取打包资源中的 ONNX OCR 模型与 OpenCC 词典；
+- 写入输出 EPUB 和 `log.txt`。
 
-## Python 侧职责
+任务类型由 `src-tauri/src/rust_backend/mod.rs` 的注册表统一分发。前端 IPC 命令名和事件字段
+保持稳定，以避免前端协议因后端迁移发生变化。
 
-- 通过 `python_backend/services/` 组织 EPUB 处理实现；任务模块只由统一后端加载，不支持直接执行脚本
-- 统一计算输出路径
-- 同时写 `log.txt` 和 stdout 事件
-- 保持既有处理逻辑不被重写，并让包内导入异常直接传播
+## 资源与运行时
 
-## Sidecar 构建策略
+- `decrypt_font` 使用 Rust `ort` 运行 ONNX OCR 模型；
+- `chinese_convert` 使用打包的 OpenCC 词典；
+- 默认运行不会下载模型、调用系统 Python 或启动外部后端进程。
 
-- 当前 PyInstaller 只收集 base 运行依赖和 `onnxruntime`。
-- `paddle`、`paddleocr`、`paddlex` 不进入冻结产物；Paddle 依赖只用于维护者刷新已提交 ONNX 模型的转换阶段。
-- OCR 模型资源默认固定为 `ocr-models/PP-OCRv6_small_rec_onnx/`，Rust 启动后端时通过 `EPUB_TOOL_OCR_ONNX_MODEL_DIR` 注入；`EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec` 可用于本地高准确率档验证。
+## Python 的保留用途
 
-## 当前限制
-
-- sidecar 需要在构建机额外安装 `pyinstaller`
-- ONNX 模型转换仅用于维护已提交模型，需要在 `conda epub_tool` 环境中额外安装 `requirements/requirements-ocr-conversion.txt`
-- 还未做任务取消
+`python_backend/` 与 Python CLI 仅用于迁移期黄金输出对比，以及维护者刷新 OCR 模型。
+它们不在 Tauri 的开发、构建、打包或发布调用链中。

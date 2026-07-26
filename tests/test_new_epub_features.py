@@ -357,10 +357,10 @@ def test_runner_emits_real_output_and_continues_partial_batch(tmp_path: Path, ca
     missing = tmp_path / "missing.epub"
     write_epub(source)
     result = run_task(TaskRequest(
-        task_id="image-batch",
-        task_type="image_to_webp",
-        input_files=[str(missing), str(source)],
-        output_dir=str(tmp_path / "output"),
+        taskId="image-batch",
+        taskType="image_to_webp",
+        inputFiles=[str(missing), str(source)],
+        outputDir=str(tmp_path / "output"),
         options={"quality": 75},
     ))
     events = capsys.readouterr().out
@@ -380,10 +380,10 @@ def test_runner_creates_missing_output_directory_for_rewrite_task(
     write_epub(source)
 
     result = run_task(TaskRequest(
-        task_id="rewrite-output-dir",
-        task_type="reformat_epub",
-        input_files=[str(source)],
-        output_dir=str(output_dir),
+        taskId="rewrite-output-dir",
+        taskType="reformat_epub",
+        inputFiles=[str(source)],
+        outputDir=str(output_dir),
         options={},
     ))
     capsys.readouterr()
@@ -401,10 +401,10 @@ def test_replace_cover_runner_skips_files_without_mapping(tmp_path: Path, capsys
     write_epub(second)
     cover.write_bytes(image_bytes("PNG"))
     result = run_task(TaskRequest(
-        task_id="cover-batch",
-        task_type="replace_cover",
-        input_files=[str(first), str(second)],
-        output_dir=None,
+        taskId="cover-batch",
+        taskType="replace_cover",
+        inputFiles=[str(first), str(second)],
+        outputDir=None,
         options={"cover_path_by_file": {str(first): str(cover)}},
     ))
     capsys.readouterr()

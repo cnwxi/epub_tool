@@ -12,6 +12,32 @@ from python_backend.services.font import decrypt_font
 
 
 class WorkerProtocolTest(unittest.TestCase):
+    def test_request_payload_uses_only_camel_case_fields(self):
+        request = cli.load_request_from_payload(
+            {
+                "taskId": "task-1",
+                "taskType": "reformat_epub",
+                "inputFiles": ["book.epub"],
+                "outputDir": "out",
+                "options": {},
+            }
+        )
+
+        self.assertEqual(request.taskId, "task-1")
+        self.assertEqual(request.taskType, "reformat_epub")
+        self.assertEqual(request.inputFiles, ["book.epub"])
+        self.assertEqual(request.outputDir, "out")
+
+    def test_request_payload_rejects_snake_case_aliases(self):
+        with self.assertRaisesRegex(ValueError, "task_type"):
+            cli.load_request_from_payload(
+                {
+                    "task_id": "task-1",
+                    "task_type": "reformat_epub",
+                    "input_files": ["book.epub"],
+                }
+            )
+
     def test_configure_stdio_uses_utf8_for_worker_protocol(self):
         stdin = Mock()
         stdout = Mock()
@@ -104,10 +130,10 @@ class WorkerProtocolTest(unittest.TestCase):
                     "request_id": "run-1",
                     "command": "run",
                     "request": {
-                        "task_id": "task-1",
-                        "task_type": "reformat_epub",
-                        "input_files": [],
-                        "output_dir": None,
+                        "taskId": "task-1",
+                        "taskType": "reformat_epub",
+                        "inputFiles": [],
+                        "outputDir": None,
                         "options": {},
                     },
                 }
