@@ -196,7 +196,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: .
-          tauriScript: npm run tauri --
+          tauriScript: npm run tauri
           args: --bundles ${{ matrix.target.bundle_targets }}
 
       - name: Build macOS app bundle
