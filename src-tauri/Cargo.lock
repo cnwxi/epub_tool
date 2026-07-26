@@ -782,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "epub_tool_newui"
-version = "26.7.26-rust"
+version = "26.7.26"
 dependencies = [
  "dom_query",
  "encoding_rs",
