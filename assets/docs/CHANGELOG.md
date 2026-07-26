@@ -9,6 +9,7 @@
 恢复 Linux ARM64 发布构建：Rust ONNX Runtime 提供 `aarch64-unknown-linux-gnu` 预编译库；该产物同样要求 glibc 2.38+，首次 Linux ARM64 CI 运行将完成端到端构建验证。<br>
 发布矩阵仅保留 Apple Silicon macOS 产物：当前 Rust ONNX Runtime 预编译库不提供 `x86_64-apple-darwin`，因此不支持 Intel Mac 构建。<br>
 恢复 Windows ARM64 发布构建：Rust ONNX Runtime 提供 `aarch64-pc-windows-msvc` 预编译库；首次 Windows ARM64 CI 运行将完成端到端构建验证。<br>
+收敛平台安装包类型：Linux 仅生成 `deb/rpm`，Windows 仅生成 NSIS `Setup.exe`，避免 Windows 构建下载 WiX/MSI 工具链时受网络中断影响。<br>
 
 ### 26.7.25
 完善 GitHub Actions 发布工作流：支持正式发布与预发布渠道选择，预发布不会更新 Homebrew Tap。<br>

@@ -82,18 +82,22 @@ jobs:
             arch: x64
             runner: ubuntu-24.04
             artifact_name: linux-x64-bundle
+            bundle_targets: deb,rpm
           - platform: linux
             arch: arm64
             runner: ubuntu-24.04-arm
             artifact_name: linux-arm64-bundle
+            bundle_targets: deb,rpm
           - platform: windows
             arch: x64
             runner: windows-2022
             artifact_name: windows-x64-bundle
+            bundle_targets: nsis
           - platform: windows
             arch: arm64
             runner: windows-11-arm
             artifact_name: windows-arm64-bundle
+            bundle_targets: nsis
           # - platform: macos
           #   arch: x64
           #   runner: macos-15-intel
@@ -192,7 +196,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: .
-          tauriScript: npm run tauri --
+          tauriScript: npm run tauri
+          args: --bundles ${{ matrix.target.bundle_targets }}
 
       - name: Build macOS app bundle
         if: matrix.target.platform == 'macos'
