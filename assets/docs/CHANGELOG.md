@@ -6,6 +6,7 @@
 统一任务请求为唯一的 camelCase 结构：`taskId`、`taskType`、`inputFiles`、`outputDir`、`options`；Rust 与 Python 黄金样本 CLI 均直接接受该结构，拒绝 snake_case 别名。<br>
 更新本地开发、构建打包、任务协议与 CLI 文档，默认 `cargo run` 运行桌面应用二进制。<br>
 调整 Linux x64 发布构建环境至 Ubuntu 24.04，以满足 Rust ONNX Runtime 预编译库对 glibc 2.38+ 符号的链接要求；该 Linux 产物的最低 glibc 运行时版本相应提高。<br>
+恢复 Linux ARM64 发布构建：Rust ONNX Runtime 提供 `aarch64-unknown-linux-gnu` 预编译库；该产物同样要求 glibc 2.38+，首次 Linux ARM64 CI 运行将完成端到端构建验证。<br>
 发布矩阵仅保留 Apple Silicon macOS 产物：当前 Rust ONNX Runtime 预编译库不提供 `x86_64-apple-darwin`，因此不支持 Intel Mac 构建。<br>
 恢复 Windows ARM64 发布构建：Rust ONNX Runtime 提供 `aarch64-pc-windows-msvc` 预编译库；首次 Windows ARM64 CI 运行将完成端到端构建验证。<br>
 

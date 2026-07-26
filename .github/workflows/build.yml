@@ -82,10 +82,10 @@ jobs:
             arch: x64
             runner: ubuntu-24.04
             artifact_name: linux-x64-bundle
-          # - platform: linux
-          #   arch: arm64
-          #   runner: ubuntu-24.04-arm
-          #   artifact_name: linux-arm64-bundle
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            artifact_name: linux-arm64-bundle
           - platform: windows
             arch: x64
             runner: windows-2022
