@@ -5,18 +5,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cnwxi/epub_tool/releases/latest">
-    <img src="https://img.shields.io/github/v/release/cnwxi/epub_tool" alt="GitHub Releases">
-  </a>
-  <a href="https://github.com/cnwxi/epub_tool/stargazers">
-    <img src="https://img.shields.io/github/stars/cnwxi/epub_tool" alt="GitHub stars">
-  </a>
-  <a href="https://github.com/cnwxi/epub_tool/network/members">
-    <img src="https://img.shields.io/github/forks/cnwxi/epub_tool" alt="GitHub forks">
-  </a>
-  <a href="https://github.com/cnwxi/homebrew-tap">
-    <img src="https://img.shields.io/badge/homebrew-cnwxi%2Ftap-FBB040" alt="Homebrew Tap">
-  </a>
+  <a href="https://github.com/cnwxi/epub_tool/releases/latest"><img src="https://img.shields.io/github/v/release/cnwxi/epub_tool" alt="GitHub Releases"></a>
+  <a href="https://github.com/cnwxi/epub_tool/stargazers"><img src="https://img.shields.io/github/stars/cnwxi/epub_tool" alt="GitHub stars"></a>
+  <a href="https://github.com/cnwxi/epub_tool/network/members"><img src="https://img.shields.io/github/forks/cnwxi/epub_tool" alt="GitHub forks"></a>
+  <a href="https://github.com/cnwxi/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-cnwxi%2Ftap-FBB040" alt="Homebrew Tap"></a>
 </p>
 
 一个面向 EPUB 批量处理的桌面工具。当前主入口已经切换到 `Tauri 2 + Vue 3 + TypeScript + Python sidecar`，围绕“批量导入、统一执行、结果回看、日志定位”组织桌面工作流。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
