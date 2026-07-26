@@ -5,6 +5,9 @@
 迁移 EPUB 基础处理、图片处理、简繁转换、EPUB 加解密、字体加密与字体 OCR 解密至 Rust，并将 OpenCC 词库和 OCR ONNX 资源纳入版本管理与打包资源。<br>
 统一任务请求为唯一的 camelCase 结构：`taskId`、`taskType`、`inputFiles`、`outputDir`、`options`；Rust 与 Python 黄金样本 CLI 均直接接受该结构，拒绝 snake_case 别名。<br>
 更新本地开发、构建打包、任务协议与 CLI 文档，默认 `cargo run` 运行桌面应用二进制。<br>
+调整 Linux x64 发布构建环境至 Ubuntu 24.04，以满足 Rust ONNX Runtime 预编译库对 glibc 2.38+ 符号的链接要求；该 Linux 产物的最低 glibc 运行时版本相应提高。<br>
+发布矩阵仅保留 Apple Silicon macOS 产物：当前 Rust ONNX Runtime 预编译库不提供 `x86_64-apple-darwin`，因此不支持 Intel Mac 构建。<br>
+恢复 Windows ARM64 发布构建：Rust ONNX Runtime 提供 `aarch64-pc-windows-msvc` 预编译库；首次 Windows ARM64 CI 运行将完成端到端构建验证。<br>
 
 ### 26.7.25
 完善 GitHub Actions 发布工作流：支持正式发布与预发布渠道选择，预发布不会更新 Homebrew Tap。<br>
