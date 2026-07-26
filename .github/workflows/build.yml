@@ -455,7 +455,7 @@ jobs:
             exit 1
           fi
 
-          printf '## 版本信息\n\n%s\n\n---\n\n' "$release_notes" > release-body.md
+          printf '## 版本信息\n%s\n' "$release_notes" > release-body.md
 
           cat >> release-body.md <<'MARKDOWN'
           ## 安装
@@ -485,10 +485,6 @@ jobs:
           ### Windows
 
           下载下方 `windows_x64_small_setup.exe` / `windows_arm64_small_setup.exe` 或对应 `.msi`，双击安装。
-
-          ---
-
-          📖 [README](https://github.com/cnwxi/epub_tool#readme) · 📝 [更新日志](https://github.com/cnwxi/epub_tool/blob/main/assets/docs/CHANGELOG.md)
           MARKDOWN
 
       - name: Publish GitHub release
