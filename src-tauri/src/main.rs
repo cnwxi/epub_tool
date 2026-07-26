@@ -1066,7 +1066,7 @@ async fn list_font_targets(
     app: AppHandle,
     file_path: String,
 ) -> Result<FontTargetResponse, String> {
-    match rust_backend::font_targets::list_font_targets(Path::new(&file_path)) {
+    match rust_backend::font::font_targets::list_font_targets(Path::new(&file_path)) {
         Ok(font_families) => Ok(FontTargetResponse {
             ok: true,
             input_file: file_path,
@@ -1249,7 +1249,7 @@ async fn list_font_targets_batch(
         let native_results = file_paths
             .iter()
             .map(|file_path| {
-                rust_backend::font_targets::list_font_targets(Path::new(file_path)).map(
+                rust_backend::font::font_targets::list_font_targets(Path::new(file_path)).map(
                     |font_families| FontTargetResponse {
                         ok: true,
                         input_file: file_path.clone(),
@@ -1447,6 +1447,16 @@ async fn run_epub_task(
 ) -> Result<Value, String> {
     let task_id = request.task_id.clone();
     let total_files = request.input_files.len();
+    if request.task_type == "chinese_convert" {
+        if let Some(resource_dir) = resolve_opencc_resource_dir(&app) {
+            rust_backend::text::configure_resource_dir(resource_dir)?;
+        }
+    }
+    if request.task_type == "decrypt_font" {
+        if let Some(resources) = resolve_rust_ocr_resources(&app) {
+            rust_backend::font::decrypt_font::configure_ocr_resources(resources)?;
+        }
+    }
     let use_rust_backend = rust_backend::supports(&request);
     on_event
         .send(json!({
@@ -1483,6 +1493,57 @@ async fn run_epub_task(
     })
     .await
     .map_err(|error| format!("异步任务失败: {error}"))?
+}
+
+fn resolve_opencc_resource_dir(app: &AppHandle) -> Option<PathBuf> {
+    workspace_root()
+        .map(|root| root.join("src-tauri").join("bundle-resources").join("opencc"))
+        .or_else(|| app.path().resource_dir().ok().map(|directory| directory.join("opencc")))
+}
+
+fn resolve_rust_ocr_resources(
+    app: &AppHandle,
+) -> Option<rust_backend::font::decrypt_font::OcrResourcePaths> {
+    let model_dir = resolve_ocr_model_dir(app)?;
+    let runtime_dirs = if let Some(root) = workspace_root() {
+        vec![root
+            .join("src-tauri")
+            .join("binaries")
+            .join(SIDECAR_DIR_NAME)
+            .join("_internal")
+            .join("onnxruntime")
+            .join("capi")]
+    } else {
+        app.path()
+            .resource_dir()
+            .ok()
+            .map_or_else(Vec::new, |resource_dir| {
+                vec![resource_dir
+                    .join("binaries")
+                    .join(SIDECAR_RESOURCE_DIR_NAME)
+                    .join("_internal")
+                    .join("onnxruntime")
+                    .join("capi")]
+            })
+    };
+    let runtime_path = runtime_dirs.into_iter().find_map(|directory| {
+        fs::read_dir(directory)
+            .ok()?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| {
+                        name.starts_with("libonnxruntime")
+                            || name.eq_ignore_ascii_case("onnxruntime.dll")
+                    })
+            })
+    })?;
+    Some(rust_backend::font::decrypt_font::OcrResourcePaths {
+        runtime_path,
+        model_dir,
+    })
 }
 
 fn setup_window_effects(app: &tauri::App) -> Result<(), String> {

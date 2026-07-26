@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON_TASK_ROOT = REPO_ROOT / "python_backend" / "services"
 RUST_TASK_ROOT = REPO_ROOT / "src-tauri" / "src" / "rust_backend"
@@ -22,10 +21,10 @@ MIGRATED_TASK_MODULES = (
 )
 
 
-def test_rust_task_modules_keep_the_original_python_task_filename() -> None:
+def test_rust_task_modules_follow_python_service_categories() -> None:
     for python_module in MIGRATED_TASK_MODULES:
         python_path = PYTHON_TASK_ROOT / f"{python_module}.py"
-        rust_path = RUST_TASK_ROOT / f"{Path(python_module).name}.rs"
+        rust_path = RUST_TASK_ROOT / f"{python_module}.rs"
 
         assert python_path.is_file(), f"缺少 Python 任务实现: {python_path}"
-        assert rust_path.is_file(), f"Rust 迁移文件必须与 {python_path.name} 同名: {rust_path}"
+        assert rust_path.is_file(), f"Rust 迁移文件必须位于对应服务分类: {rust_path}"

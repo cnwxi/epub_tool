@@ -1,8 +1,7 @@
 use super::{
-    epub::{media_type_for, resolve_reference, EpubWorkspace},
     image_processing::rewrite_references,
-    EpubTask, TaskOutcome,
 };
+use crate::rust_backend::{epub::workspace::{media_type_for, resolve_reference, EpubWorkspace}, EpubTask, TaskOutcome};
 use image::{ImageFormat, ImageReader};
 use regex::Regex;
 use serde_json::Value;

@@ -1,11 +1,167 @@
-use super::{epub::EpubWorkspace, EpubTask, TaskOutcome};
+use crate::rust_backend::{epub::EpubWorkspace, EpubTask, TaskOutcome};
 use encoding_rs::Encoding;
-use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use regex::{Captures, Regex};
 use serde_json::Value;
-use std::path::Path;
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 pub struct ChineseConvertTask;
+
+static OPENCC_RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn configure_resource_dir(directory: PathBuf) -> Result<(), String> {
+    if !directory.join("s2t.json").is_file() || !directory.join("t2s.json").is_file() {
+        return Err(format!("OpenCC 资源不完整: {}", directory.display()));
+    }
+    match OPENCC_RESOURCE_DIR.set(directory.clone()) {
+        Ok(()) => Ok(()),
+        Err(existing) if existing == directory => Ok(()),
+        Err(existing) => Err(format!(
+            "OpenCC 已使用不同资源初始化: {}",
+            existing.display()
+        )),
+    }
+}
+
+fn resource_dir() -> Option<PathBuf> {
+    OPENCC_RESOURCE_DIR.get().cloned().or_else(|| {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("bundle-resources")
+            .join("opencc");
+        directory.is_dir().then_some(directory)
+    })
+}
+
+struct OpenccDictionary {
+    entries: HashMap<String, String>,
+    min_key_length: usize,
+    max_key_length: usize,
+}
+
+struct OpenccConverter {
+    dictionaries: Vec<OpenccDictionary>,
+    separators: Regex,
+}
+
+fn converter(direction: &str) -> Result<OpenccConverter, String> {
+    let directory = resource_dir().ok_or_else(|| "未找到 Rust OpenCC 词典资源".to_string())?;
+    let dictionary_names = match direction {
+        "s2t" => ["STPhrases.txt", "STCharacters.txt"],
+        "t2s" => ["TSPhrases.txt", "TSCharacters.txt"],
+        _ => return Err("direction 必须是 s2t 或 t2s".to_string()),
+    };
+    let dictionaries = dictionary_names
+        .iter()
+        .map(|name| OpenccDictionary::load(&directory.join(name)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let separators = Regex::new(
+        r"\s+|-|,|\.|\?|!|\*|　|，|。|、|；|：|？|！|…|“|”|‘|’|『|』|「|」|﹁|﹂|—|－|（|）|《|》|〈|〉|～|．|／|＼|︒|︑|︔|︓|︿|﹀|︹|︺|︙|︐|［|﹇|］|﹈|︕|︖|︰|︳|︴|︽|︾|︵|︶|｛|︷|｝|︸|﹃|﹄|【|︻|】|︼",
+    )
+    .expect("valid OpenCC separator regex");
+    Ok(OpenccConverter {
+        dictionaries,
+        separators,
+    })
+}
+
+impl OpenccDictionary {
+    fn load(path: &Path) -> Result<Self, String> {
+        let content = fs::read_to_string(path)
+            .map_err(|error| format!("读取 OpenCC 词典失败 {}: {error}", path.display()))?;
+        let mut entries = HashMap::new();
+        let mut min_key_length = usize::MAX;
+        let mut max_key_length = 0;
+        for (line_number, line) in content.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let (key, values) = line.split_once('\t').ok_or_else(|| {
+                format!("OpenCC 词典格式无效 {}:{}", path.display(), line_number + 1)
+            })?;
+            let value = values.split_whitespace().next().ok_or_else(|| {
+                format!("OpenCC 词典缺少映射值 {}:{}", path.display(), line_number + 1)
+            })?;
+            let key_length = key.chars().count();
+            if key_length == 0 {
+                continue;
+            }
+            min_key_length = min_key_length.min(key_length);
+            max_key_length = max_key_length.max(key_length);
+            entries.insert(key.to_string(), value.to_string());
+        }
+        if entries.is_empty() {
+            return Err(format!("OpenCC 词典为空: {}", path.display()));
+        }
+        Ok(Self {
+            entries,
+            min_key_length,
+            max_key_length,
+        })
+    }
+}
+
+impl OpenccConverter {
+    fn convert(&self, text: &str) -> String {
+        let mut output = String::with_capacity(text.len());
+        let mut cursor = 0;
+        for separator in self.separators.find_iter(text) {
+            output.push_str(&self.convert_segment(&text[cursor..separator.start()]));
+            output.push_str(separator.as_str());
+            cursor = separator.end();
+        }
+        output.push_str(&self.convert_segment(&text[cursor..]));
+        output
+    }
+
+    fn convert_segment(&self, text: &str) -> String {
+        self.dictionaries.iter().fold(text.to_string(), |value, dictionary| {
+            convert_dictionary_segment(&value, dictionary, None)
+        })
+    }
+}
+
+fn convert_dictionary_segment(
+    text: &str,
+    dictionary: &OpenccDictionary,
+    maximum_length: Option<usize>,
+) -> String {
+    let boundaries: Vec<_> = text
+        .char_indices()
+        .map(|(index, _)| index)
+        .chain(std::iter::once(text.len()))
+        .collect();
+    let char_count = boundaries.len().saturating_sub(1);
+    let mut length = dictionary
+        .max_key_length
+        .min(maximum_length.unwrap_or(char_count))
+        .min(char_count);
+    while length >= dictionary.min_key_length {
+        for start in 0..=char_count - length {
+            let end = start + length;
+            let key = &text[boundaries[start]..boundaries[end]];
+            if let Some(value) = dictionary.entries.get(key) {
+                let left = convert_dictionary_segment(
+                    &text[..boundaries[start]],
+                    dictionary,
+                    Some(length),
+                );
+                let right = convert_dictionary_segment(
+                    &text[boundaries[end]..],
+                    dictionary,
+                    Some(length),
+                );
+                return format!("{left}{value}{right}");
+            }
+        }
+        length -= 1;
+    }
+    text.to_string()
+}
 
 impl EpubTask for ChineseConvertTask {
     fn task_type(&self) -> &'static str {
@@ -13,11 +169,10 @@ impl EpubTask for ChineseConvertTask {
     }
 
     fn supports_options(&self, options: &Value) -> bool {
-        // The production Python OpenCC dictionaries differ on real books
-        // (for example 游/遊 and 才/纔). Keep sidecar behavior authoritative
-        // until a Rust dictionary with approved parity is selected.
-        let _ = options;
-        false
+        matches!(options.get("direction").and_then(Value::as_str), Some("s2t" | "t2s"))
+            && resource_dir().is_some_and(|directory| {
+                directory.join("s2t.json").is_file() && directory.join("t2s.json").is_file()
+            })
     }
 
     fn output_suffix(&self, options: &Value) -> Result<String, String> {
@@ -39,12 +194,7 @@ impl EpubTask for ChineseConvertTask {
             .get("direction")
             .and_then(Value::as_str)
             .ok_or_else(|| "direction 必须是 s2t 或 t2s".to_string())?;
-        let converter = OpenCC::from_config(match direction {
-            "s2t" => BuiltinConfig::S2t,
-            "t2s" => BuiltinConfig::T2s,
-            _ => return Err("direction 必须是 s2t 或 t2s".to_string()),
-        })
-        .map_err(|error| format!("初始化 OpenCC 词典失败: {error}"))?;
+        let converter = converter(direction)?;
         let member_names: Vec<String> = workspace.members.keys().cloned().collect();
         let mut changed_files = 0;
         for name in member_names {
@@ -69,7 +219,7 @@ impl EpubTask for ChineseConvertTask {
     }
 }
 
-fn convert_xml(data: &[u8], converter: &OpenCC) -> Result<Vec<u8>, String> {
+fn convert_xml(data: &[u8], converter: &OpenccConverter) -> Result<Vec<u8>, String> {
     let text = decode_xml(data)?;
     let token =
         Regex::new(r"(?s)<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[^>]+>").expect("valid XML token regex");
@@ -207,14 +357,13 @@ fn extension_of(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{convert_xml, ChineseConvertTask};
+    use super::{convert_xml, converter, ChineseConvertTask};
     use crate::rust_backend::EpubTask;
-    use ferrous_opencc::{config::BuiltinConfig, OpenCC};
     use serde_json::json;
 
     #[test]
     fn converts_visible_text_and_attributes_without_touching_script_or_css() {
-        let converter = OpenCC::from_config(BuiltinConfig::S2t).unwrap();
+        let converter = converter("s2t").unwrap();
         let converted = convert_xml(
             r#"<?xml version="1.0" encoding="UTF-8"?><html><head><style>.简体{}</style></head><body id="简体"><p title="汉语">汉语发展</p><script>const text = '汉语';</script></body></html>"#.as_bytes(),
             &converter,
@@ -226,33 +375,23 @@ mod tests {
         assert!(converted.contains("id=\"简体\""));
         assert!(converted.contains(".简体"));
         assert!(converted.contains("const text = '汉语'"));
-        assert!(!ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
+        assert!(ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
     }
 
     #[test]
-    fn builtin_dictionary_is_not_python_opencc_s2t_compatible() {
-        // `opencc-python-reimplemented` is the current production reference.
-        // Its s2t output for this phrase set is
-        // `遊移不定 却才華洋溢 反取憀慄 其中很多只能 看成一出面對`;
-        // ferrous-opencc's bundled
-        // dictionary produces the value below. Keep this explicit regression
-        // gate so an accidental `supports_options = true` cannot silently
-        // change book text before an approved dictionary is bundled.
-        let converter = OpenCC::from_config(BuiltinConfig::S2t).unwrap();
+    fn bundled_dictionary_matches_python_opencc_s2t_phrase_vectors() {
+        let converter = converter("s2t").unwrap();
         assert_eq!(
             converter.convert("游移不定 却才华洋溢 反取憀栗 其中很多只能 看成一出面对"),
-            "游移不定 卻纔華洋溢 反取憀栗 其中很多隻能 看成一齣面對"
+            "遊移不定 卻才華洋溢 反取憀慄 其中很多隻能 看成一出面對"
         );
-        assert!(!ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
+        assert!(ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
     }
 
     #[test]
-    fn builtin_dictionary_is_not_python_opencc_t2s_compatible() {
-        // Python's production t2s dictionary converts `射覆` to `射复`,
-        // while the bundled Rust dictionary preserves `覆`. This was found by
-        // exercising every source key from Python's TS dictionaries.
-        let converter = OpenCC::from_config(BuiltinConfig::T2s).unwrap();
-        assert_eq!(converter.convert("射覆"), "射覆");
-        assert!(!ChineseConvertTask.supports_options(&json!({"direction": "t2s"})));
+    fn bundled_dictionary_matches_python_opencc_t2s_phrase_vectors() {
+        let converter = converter("t2s").unwrap();
+        assert_eq!(converter.convert("射覆"), "射复");
+        assert!(ChineseConvertTask.supports_options(&json!({"direction": "t2s"})));
     }
 }

@@ -82,6 +82,36 @@ def rewrite_rust_cmap(
     assert json.loads(completed.stdout)["ok"] is True
 
 
+def obfuscate_rust_font(font_path: Path, output_path: Path, text: str) -> dict[str, object]:
+    completed = subprocess.run(
+        [
+            "cargo",
+            "run",
+            "--quiet",
+            "--manifest-path",
+            str(RUST_MANIFEST),
+            "--bin",
+            "rust-task-runner",
+            "--",
+            "--obfuscate-font",
+            str(font_path),
+            "--font-output",
+            str(output_path),
+            "--font-text",
+            text,
+            "--rng-seed",
+            "42",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
+
+
 def test_rust_cmap_read_matches_fonttools_for_font_encrypt_fixture(tmp_path: Path) -> None:
     font_bytes = build_test_font_bytes()
     font_path = tmp_path / "test.ttf"
@@ -122,3 +152,31 @@ def test_rust_cmap_rewrite_preserves_font_metrics_and_rebinds_glyphs(
     assert rewritten["hmtx"]["uni4F60"] == (1000, 0)
     assert rewritten["hmtx"]["uni597D"] == (1000, 0)
     assert rewritten["OS/2"].usWinAscent == 950
+
+
+def test_rust_font_obfuscation_rebinds_mapped_glyphs_and_preserves_punctuation(
+    tmp_path: Path,
+) -> None:
+    font_path = tmp_path / "input.ttf"
+    output_path = tmp_path / "obfuscated.ttf"
+    font_path.write_bytes(build_test_font_bytes())
+
+    original = TTFont(font_path)
+    original_cmap = original.getBestCmap() or {}
+    result = obfuscate_rust_font(font_path, output_path, "你好吗。A0Ａ０")
+
+    assert result["obfuscated_text"] == "你好A0Ａ０"
+    assert result["passthrough_text"] == "。"
+    replacements = {
+        item["source"]: item["entity"] for item in result["replacements"]
+    }
+    assert set(replacements) == set(result["obfuscated_text"])
+
+    rewritten = TTFont(output_path)
+    rewritten_cmap = rewritten.getBestCmap() or {}
+    for source, entity in replacements.items():
+        target = int(entity[3:], 16)
+        assert ord(source) not in rewritten_cmap
+        assert rewritten_cmap[target] == original_cmap[ord(source)]
+    assert rewritten_cmap[ord("。")] == original_cmap[ord("。")]
+    assert rewritten["hmtx"]["uni4F60"] == (1000, 0)

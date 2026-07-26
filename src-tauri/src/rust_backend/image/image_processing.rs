@@ -1,4 +1,6 @@
-use super::epub::{media_type_for, resolve_reference, rewrite_reference, EpubWorkspace};
+use crate::rust_backend::epub::workspace::{
+    media_type_for, resolve_reference, rewrite_reference, EpubWorkspace,
+};
 use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageFormat, ImageReader};
 use regex::{Captures, Regex};
 use serde_json::Value;

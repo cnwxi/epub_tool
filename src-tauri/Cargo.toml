@@ -11,11 +11,15 @@ tauri-build = { version = "2.0.3", features = [] }
 [dependencies]
 encoding_rs = "0.8"
 dom_query = { version = "0.27", default-features = false }
-ferrous-opencc = "0.4"
+fontdue = "0.9"
 image = { version = "0.25.5", default-features = false, features = ["bmp", "jpeg", "png", "webp"] }
+icu_properties = "2.2"
+ndarray = "0.17"
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "api-24"] }
 percent-encoding = "2.3"
 png = "0.18"
 regex = "1.12"
+rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ttf-parser = "0.25"

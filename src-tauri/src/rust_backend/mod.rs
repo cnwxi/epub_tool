@@ -1,32 +1,13 @@
-mod chinese_convert;
-mod decrypt_epub;
-pub mod decrypt_font;
-mod encrypt_epub;
-pub mod encrypt_font;
-mod epub;
-pub mod font_cmap;
-pub mod font_cascade;
-pub mod font_selectors;
-pub mod font_stylesheet;
-pub mod font_targets;
-pub mod font_values;
-pub mod font_rule_index;
-mod image_compress;
-mod image_processing;
-mod image_to_webp;
-mod reformat_epub;
-mod replace_cover;
-mod rewrite_engine;
-mod task_base;
-mod webp_to_img;
+pub mod epub;
+pub mod font;
+pub mod image;
+pub mod text;
 
 use crate::FrontendTaskRequest;
-use chinese_convert::ChineseConvertTask;
-use decrypt_epub::DecryptEpubTask;
-use encrypt_epub::EncryptEpubTask;
-use image_processing::{ImageProcessOutcome, ImageTask};
-use reformat_epub::ReformatEpubTask;
-use replace_cover::ReplaceCoverTask;
+use epub::{DecryptEpubTask, EncryptEpubTask, ReformatEpubTask};
+use font::{DecryptFontTask, EncryptFontTask};
+use image::{ImageProcessOutcome, ImageTask, ReplaceCoverTask};
+use text::ChineseConvertTask;
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -308,9 +289,11 @@ fn task_for(task_type: &str) -> Option<Box<dyn EpubTask>> {
         "reformat_epub" => Some(Box::new(ReformatEpubTask)),
         "decrypt_epub" => Some(Box::new(DecryptEpubTask)),
         "encrypt_epub" => Some(Box::new(EncryptEpubTask)),
-        "image_compress" => Some(Box::new(image_compress::task())),
-        "image_to_webp" => Some(Box::new(image_to_webp::task())),
-        "webp_to_img" => Some(Box::new(webp_to_img::task())),
+        "encrypt_font" => Some(Box::new(EncryptFontTask)),
+        "decrypt_font" => Some(Box::new(DecryptFontTask)),
+        "image_compress" => Some(Box::new(image::image_compress::task())),
+        "image_to_webp" => Some(Box::new(image::image_to_webp::task())),
+        "webp_to_img" => Some(Box::new(image::webp_to_img::task())),
         "replace_cover" => Some(Box::new(ReplaceCoverTask)),
         "chinese_convert" => Some(Box::new(ChineseConvertTask)),
         _ => None,

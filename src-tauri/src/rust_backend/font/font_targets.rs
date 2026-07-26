@@ -1,4 +1,4 @@
-use super::epub::EpubWorkspace;
+use crate::rust_backend::epub::EpubWorkspace;
 use std::{collections::BTreeSet, path::Path};
 
 const FONT_EXTENSIONS: [&str; 4] = [".ttf", ".otf", ".woff", ".woff2"];

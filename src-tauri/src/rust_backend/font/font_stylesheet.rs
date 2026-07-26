@@ -59,6 +59,21 @@ pub fn parse_font_stylesheet(css: &str) -> Result<FontStylesheet, String> {
             }
             let keyword = css[keyword_start..keyword_end].to_ascii_lowercase();
             index = skip_ignored(bytes, keyword_end)?;
+            if keyword == "charset" {
+                let end = css[index..]
+                    .find(';')
+                    .map(|offset| index + offset)
+                    .ok_or_else(|| "@charset 缺少分号".to_string())?;
+                let value = css[index..end].trim();
+                if value.len() < 2
+                    || !matches!(value.as_bytes().first(), Some(b'\'' | b'"'))
+                    || value.as_bytes().first() != value.as_bytes().last()
+                {
+                    return Err("@charset 编码声明无效".to_string());
+                }
+                index = end + 1;
+                continue;
+            }
             if keyword != "font-face" {
                 return Err(format!("暂不支持 CSS @{keyword}，需使用 Python 兼容解析"));
             }
@@ -99,6 +114,11 @@ pub fn parse_font_stylesheet(css: &str) -> Result<FontStylesheet, String> {
     Ok(stylesheet)
 }
 
+/// Parses font-relevant declarations from an XHTML `style` attribute.
+pub fn parse_inline_font_declarations(style: &str) -> Result<Vec<CssDeclaration>, String> {
+    parse_font_declarations(style)
+}
+
 fn parse_font_face(block: &str) -> Result<FontFaceRule, String> {
     let declarations = parse_declarations(block)?;
     let mut family = None;
@@ -133,6 +153,7 @@ fn parse_font_declarations(block: &str) -> Result<Vec<CssDeclaration>, String> {
 fn parse_declarations(block: &str) -> Result<Vec<CssDeclaration>, String> {
     let mut declarations = Vec::new();
     for item in split_top_level(block, ';')? {
+        let item = strip_comments(item)?;
         let item = item.trim();
         if item.is_empty() {
             continue;
@@ -155,6 +176,31 @@ fn parse_declarations(block: &str) -> Result<Vec<CssDeclaration>, String> {
         });
     }
     Ok(declarations)
+}
+
+fn strip_comments(value: &str) -> Result<String, String> {
+    let bytes = value.as_bytes();
+    let mut result = String::with_capacity(value.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if starts_comment(bytes, index) {
+            index = skip_comment(bytes, index)?;
+            continue;
+        }
+        if let Some(quote) = quote_at(bytes, index) {
+            let end = skip_string(bytes, index, quote)?;
+            result.push_str(&value[index..end]);
+            index = end;
+            continue;
+        }
+        let character = value[index..]
+            .chars()
+            .next()
+            .ok_or_else(|| "CSS 字符串索引无效".to_string())?;
+        result.push(character);
+        index += character.len_utf8();
+    }
+    Ok(result)
 }
 
 fn strip_important(value: &str) -> Result<(&str, bool), String> {
@@ -417,6 +463,24 @@ mod tests {
         assert_eq!(parsed.rules[0].declarations.len(), 2);
         assert_eq!(parsed.rules[0].declarations[0].name, "--font");
         assert!(parsed.rules[0].declarations[1].important);
+    }
+
+    #[test]
+    fn accepts_a_top_level_charset_before_font_rules() {
+        let parsed = parse_font_stylesheet(
+            "@charset \"utf-8\"; @font-face { font-family: Obf; src: url(obf.ttf); }",
+        )
+        .expect("@charset should not affect font parsing");
+        assert_eq!(parsed.font_faces[0].family, "Obf");
+    }
+
+    #[test]
+    fn ignores_comment_only_declaration_fragments() {
+        let parsed = parse_font_stylesheet(
+            ".target { /* EPUB generator leaves empty comment declarations */ font-family: Obf; }",
+        )
+        .expect("comment-only declaration should be ignored");
+        assert_eq!(parsed.rules[0].selector, ".target");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! `services/epub/task_base.py`, while deliberately keeping parsing conservative
 //! so unsupported books can remain on the Python compatibility path.
 
-use super::epub::{resolve_reference, EpubWorkspace};
+use super::workspace::{resolve_reference, EpubWorkspace};
 use percent_encoding::percent_decode_str;
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};

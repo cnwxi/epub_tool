@@ -1,17 +1,16 @@
 use super::{
-    epub::EpubWorkspace,
-    rewrite_engine::{is_encrypted_layout, rewrite, supports_rewrite, RewriteMode},
-    task_base::ParsedBook,
-    EpubTask, TaskOutcome,
+    rewrite_engine::{rewrite, supports_rewrite, RewriteMode},
+    workspace::EpubWorkspace,
 };
+use crate::rust_backend::{EpubTask, TaskOutcome};
 use serde_json::Value;
 use std::path::Path;
 
-pub struct EncryptEpubTask;
+pub struct ReformatEpubTask;
 
-impl EpubTask for EncryptEpubTask {
+impl EpubTask for ReformatEpubTask {
     fn task_type(&self) -> &'static str {
-        "encrypt_epub"
+        "reformat_epub"
     }
 
     fn supports_options(&self, options: &Value) -> bool {
@@ -31,12 +30,7 @@ impl EpubTask for EncryptEpubTask {
         _options: &Value,
         log: &mut dyn FnMut(String),
     ) -> Result<TaskOutcome, String> {
-        let book = ParsedBook::parse(workspace)?;
-        if is_encrypted_layout(&book, workspace) {
-            log("警告: 该文件已加密，无需再次处理！".to_string());
-            return Ok(TaskOutcome::Skip);
-        }
-        rewrite(workspace, RewriteMode::Encrypt, log)?;
+        rewrite(workspace, RewriteMode::Reformat, log)?;
         Ok(TaskOutcome::Success)
     }
 }

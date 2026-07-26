@@ -1,9 +1,9 @@
 use super::{
-    epub::EpubWorkspace,
     rewrite_engine::{is_encrypted_layout, rewrite, supports_rewrite, RewriteMode},
     task_base::ParsedBook,
-    EpubTask, TaskOutcome,
+    workspace::EpubWorkspace,
 };
+use crate::rust_backend::{EpubTask, TaskOutcome};
 use serde_json::Value;
 use std::path::Path;
 

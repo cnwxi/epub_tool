@@ -1,11 +1,11 @@
 //! Shared resource rewrite engine for `encrypt_epub.rs` and `decrypt_epub.rs`.
 
 use super::{
-    epub::{resolve_reference, EpubWorkspace},
     task_base::{
         basename, md5, md5_hex, replace_tag_block, split_extension, split_slim_href, ManifestItem,
         ParsedBook, ResourceType,
     },
+    workspace::{resolve_reference, EpubWorkspace},
 };
 use regex::{Captures, Regex};
 use std::collections::{BTreeMap, BTreeSet};
@@ -527,7 +527,7 @@ fn rewrite_opf(book: &ParsedBook, plan: &RewritePlan) -> Result<String, String> 
 #[cfg(test)]
 mod tests {
     use super::{decrypted_filename, encrypted_filename};
-    use crate::rust_backend::task_base::ManifestItem;
+    use crate::rust_backend::epub::task_base::ManifestItem;
     use std::collections::BTreeMap;
 
     #[test]
@@ -538,7 +538,7 @@ mod tests {
             media_type: "image/jpeg".to_string(),
             properties: String::new(),
             source_path: String::new(),
-            resource_type: crate::rust_backend::task_base::ResourceType::Image,
+            resource_type: crate::rust_backend::epub::task_base::ResourceType::Image,
         };
         assert!(
             encrypted_filename(&item, &BTreeMap::new(), "Images/a.jpg", ".jpg", false)
