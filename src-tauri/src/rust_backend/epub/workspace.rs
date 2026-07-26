@@ -269,7 +269,16 @@ fn add_tool_metadata(opf: &str) -> Result<String, String> {
     }
     let meta = "<meta name=\"generator\" content=\"Epub Tool\" />";
     if let Some(index) = opf.find("</metadata>") {
-        return Ok(format!("{}    {meta}\n{}", &opf[..index], &opf[index..]));
+        let prefix = opf[..index].trim_end();
+        let closing_indent = opf[..index]
+            .rsplit_once('\n')
+            .map(|(_, line)| line)
+            .filter(|line| line.chars().all(|character| matches!(character, ' ' | '\t')))
+            .unwrap_or("");
+        return Ok(format!(
+            "{prefix}\n{closing_indent}  {meta}\n{closing_indent}{}",
+            &opf[index..]
+        ));
     }
     if let Some(index) = opf.find("</package>") {
         return Ok(format!(
@@ -332,7 +341,7 @@ fn temporary_output_path(output_path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_member_path, relative_member_path, resolve_reference};
+    use super::{add_tool_metadata, normalize_member_path, relative_member_path, resolve_reference};
 
     #[test]
     fn member_paths_reject_parent_traversal() {
@@ -353,6 +362,15 @@ mod tests {
         assert_eq!(
             relative_member_path("OPS/Text", "OPS/Images/a.png"),
             "../Images/a.png"
+        );
+    }
+
+    #[test]
+    fn writes_generator_metadata_with_python_whitespace_rules() {
+        let opf = "<metadata>\n    <meta name=\"cover\" content=\"cover.jpg\"/>\n  </metadata>";
+        assert_eq!(
+            add_tool_metadata(opf).unwrap(),
+            "<metadata>\n    <meta name=\"cover\" content=\"cover.jpg\"/>\n    <meta name=\"generator\" content=\"Epub Tool\" />\n  </metadata>"
         );
     }
 }

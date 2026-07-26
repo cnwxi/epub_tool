@@ -5,9 +5,8 @@ const FONT_EXTENSIONS: [&str; 4] = [".ttf", ".otf", ".woff", ".woff2"];
 
 /// Lists packaged font families declared by CSS `@font-face` rules.
 ///
-/// This deliberately accepts only a conservative subset of CSS. Callers should
-/// use the Python implementation when this function returns an error, rather
-/// than risk presenting an incomplete list of selectable font families.
+/// This deliberately accepts only a conservative subset of CSS and returns an
+/// explicit error rather than presenting an incomplete list of font families.
 pub fn list_font_targets(input: &Path) -> Result<Vec<String>, String> {
     let workspace = EpubWorkspace::load(input, |_| {})?;
     let font_files = workspace
@@ -25,9 +24,9 @@ pub fn list_font_targets(input: &Path) -> Result<Vec<String>, String> {
             continue;
         }
         let css = std::str::from_utf8(content)
-            .map_err(|_| format!("CSS 不是 UTF-8，需使用 Python 兼容扫描: {path}"))?;
+            .map_err(|_| format!("CSS 不是 UTF-8，当前 Rust 扫描器暂不支持: {path}"))?;
         scan_css(css, &font_files, &mut families)
-            .map_err(|error| format!("CSS 需要 Python 兼容扫描 ({path}): {error}"))?;
+            .map_err(|error| format!("当前 Rust 扫描器不支持该 CSS ({path}): {error}"))?;
     }
 
     Ok(families.into_iter().collect())

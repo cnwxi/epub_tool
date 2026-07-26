@@ -1,6 +1,6 @@
 //! Shared EPUB rewrite primitives.  This mirrors the role of Python's
 //! `services/epub/task_base.py`, while deliberately keeping parsing conservative
-//! so unsupported books can remain on the Python compatibility path.
+//! and reporting unsupported EPUB structures explicitly.
 
 use super::workspace::{resolve_reference, EpubWorkspace};
 use percent_encoding::percent_decode_str;
@@ -53,18 +53,12 @@ pub struct ParsedBook {
 
 impl ParsedBook {
     pub fn parse(workspace: &EpubWorkspace) -> Result<Self, String> {
-        // The Python rewriter always writes these normalized paths. Restricting
-        // native use to the same layout prevents a partial Rust rewrite from
-        // producing a broken package; other layouts use the sidecar.
-        if workspace.opf_path != "OEBPS/content.opf" {
-            return Err("Rust EPUB 重写目前仅处理 OEBPS/content.opf 布局".to_string());
-        }
         let opf = workspace
             .members
             .get(&workspace.opf_path)
             .ok_or_else(|| "EPUB 缺少 OPF 文件".to_string())?;
         let opf = std::str::from_utf8(opf)
-            .map_err(|_| "OPF 不是 UTF-8，需使用 Python 兼容实现".to_string())?
+            .map_err(|_| "OPF 不是 UTF-8，当前 Rust 实现暂不支持".to_string())?
             .to_string();
         let container = workspace
             .members
@@ -72,23 +66,23 @@ impl ParsedBook {
             .ok_or_else(|| "EPUB 缺少 META-INF/container.xml".to_string())?
             .clone();
         let manifest = extract_tag_block(&opf, "manifest")
-            .ok_or_else(|| "OPF 缺少 manifest，需使用 Python 兼容实现".to_string())?;
+            .ok_or_else(|| "OPF 缺少 manifest，当前 Rust 实现暂不支持".to_string())?;
         let item_pattern = Regex::new(r"(?is)<item\b[^>]*>").expect("valid item regex");
         let mut items = Vec::new();
         for matched in item_pattern.find_iter(manifest) {
             let attrs = parse_attributes(matched.as_str())?;
             let Some(id) = attrs.get("id").filter(|value| !value.is_empty()) else {
-                return Err("manifest item 缺少 id，需使用 Python 兼容实现".to_string());
+                return Err("manifest item 缺少 id，当前 Rust 实现暂不支持".to_string());
             };
             let Some(raw_href) = attrs.get("href") else {
-                return Err("manifest item 缺少 href，需使用 Python 兼容实现".to_string());
+                return Err("manifest item 缺少 href，当前 Rust 实现暂不支持".to_string());
             };
             let href = percent_decode_str(raw_href)
                 .decode_utf8()
-                .map_err(|_| "manifest href 不是 UTF-8，需使用 Python 兼容实现".to_string())?
+                .map_err(|_| "manifest href 不是 UTF-8，当前 Rust 实现暂不支持".to_string())?
                 .into_owned();
             let source_path = resolve_reference(&workspace.opf_path, &href)?.ok_or_else(|| {
-                "manifest href 不是 EPUB 内路径，需使用 Python 兼容实现".to_string()
+                "manifest href 不是 EPUB 内路径，当前 Rust 实现暂不支持".to_string()
             })?;
             if !workspace.members.contains_key(&source_path) {
                 return Err(format!("manifest 资源不存在: {source_path}"));
@@ -103,7 +97,7 @@ impl ParsedBook {
             });
         }
         if items.is_empty() {
-            return Err("manifest 没有资源，需使用 Python 兼容实现".to_string());
+            return Err("manifest 没有资源，当前 Rust 实现暂不支持".to_string());
         }
         let spine_open = find_open_tag(&opf, "spine");
         let toc_id = spine_open
@@ -130,13 +124,14 @@ impl ParsedBook {
             .map(|item| item.source_path.as_str())
             .collect();
         for path in workspace.members.keys() {
-            if matches!(path.as_str(), "mimetype" | "META-INF/container.xml")
+            if path == "mimetype"
+                || path.starts_with("META-INF/")
                 || path == &self.opf_path
             {
                 continue;
             }
             if !known.contains(path.as_str()) {
-                return Err(format!("存在未登记资源，需使用 Python 兼容实现: {path}"));
+                return Err(format!("存在未登记资源，当前 Rust 实现暂不支持: {path}"));
             }
         }
         Ok(())
@@ -253,13 +248,13 @@ pub fn parse_attributes(tag: &str) -> Result<BTreeMap<String, String>, String> {
         let quote = *bytes
             .get(index)
             .filter(|value| matches!(value, b'\'' | b'"'))
-            .ok_or_else(|| "OPF 属性没有引号，需使用 Python 兼容实现".to_string())?;
+            .ok_or_else(|| "OPF 属性没有引号，当前 Rust 实现暂不支持".to_string())?;
         let value_start = index + 1;
         let value_end = bytes[value_start..]
             .iter()
             .position(|value| *value == quote)
             .map(|offset| value_start + offset)
-            .ok_or_else(|| "OPF 属性引号未闭合，需使用 Python 兼容实现".to_string())?;
+            .ok_or_else(|| "OPF 属性引号未闭合，当前 Rust 实现暂不支持".to_string())?;
         if !name.is_empty() {
             attributes.insert(name, tag[value_start..value_end].to_string());
         }

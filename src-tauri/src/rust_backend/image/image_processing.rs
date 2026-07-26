@@ -49,29 +49,8 @@ impl ImageTask {
         options.get("png_to_jpg").is_none_or(Value::is_boolean)
     }
 
-    /// PNG preservation/optimization differs between Pillow and the Rust image
-    /// encoders for some palette and incorrectly-suffixed images. Keep those
-    /// books on the Python compatibility path until byte/visual parity is
-    /// established; WebP conversion remains covered by its own golden tests.
-    pub fn is_supported_input(&self, input: &Path, options: &Value) -> bool {
-        if options.get("png_quantize").and_then(Value::as_bool) == Some(true) {
-            return false;
-        }
-        if !matches!(self.mode, ImageMode::Compress) {
-            return true;
-        }
-        EpubWorkspace::load(input, |_| {})
-            .map(|workspace| {
-                !workspace.members.iter().any(|(path, member)| {
-                    let is_png = member.starts_with(b"\x89PNG\r\n\x1a\n");
-                    let palette_png = member.get(25) == Some(&3);
-                    let extension_is_png = path
-                        .rsplit_once('.')
-                        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("png"));
-                    is_png && (palette_png || !extension_is_png)
-                })
-            })
-            .unwrap_or(false)
+    pub fn is_supported_input(&self, _input: &Path, _options: &Value) -> bool {
+        true
     }
 
     pub fn process(

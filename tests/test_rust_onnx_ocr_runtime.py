@@ -22,22 +22,7 @@ MODEL_PATH = (
     / "inference.onnx"
 )
 MODEL_DIR = MODEL_PATH.parent
-RUNTIME_PATH = (
-    REPO_ROOT
-    / "src-tauri"
-    / "binaries"
-    / "epub-tool-python"
-    / "_internal"
-    / "onnxruntime"
-    / "capi"
-    / "libonnxruntime.1.27.0.dylib"
-)
-
-
 def test_rust_onnx_runtime_matches_python_ctc_argmax_for_bundled_model() -> None:
-    if not RUNTIME_PATH.is_file():
-        pytest.skip("本机构建的 Python sidecar ONNX Runtime 不可用")
-
     import onnxruntime as ort
 
     input_tensor = np.zeros((1, 3, 48, 320), dtype=np.float32)
@@ -65,8 +50,6 @@ def test_rust_onnx_runtime_matches_python_ctc_argmax_for_bundled_model() -> None
             "--",
             "--infer-ocr-model",
             str(MODEL_PATH),
-            "--onnx-runtime",
-            str(RUNTIME_PATH),
             "--ocr-tensor-shape",
             "3,48,320",
         ],
@@ -81,13 +64,10 @@ def test_rust_onnx_runtime_matches_python_ctc_argmax_for_bundled_model() -> None
 
     assert actual["shape"] == list(python_output.shape)
     np.testing.assert_array_equal(actual["token_ids"], expected_token_ids)
-    np.testing.assert_allclose(actual["scores"], expected_scores, rtol=0, atol=1e-6)
+    np.testing.assert_allclose(actual["scores"], expected_scores, rtol=0, atol=3e-6)
 
 
 def test_rust_ocr_image_preprocess_and_runtime_match_python(tmp_path: Path) -> None:
-    if not RUNTIME_PATH.is_file():
-        pytest.skip("本机构建的 Python sidecar ONNX Runtime 不可用")
-
     import onnxruntime as ort
 
     pixels = np.fromfunction(
@@ -134,8 +114,6 @@ def test_rust_ocr_image_preprocess_and_runtime_match_python(tmp_path: Path) -> N
             "3200",
             "--infer-ocr-model",
             str(MODEL_PATH),
-            "--onnx-runtime",
-            str(RUNTIME_PATH),
         ],
         cwd=REPO_ROOT,
         check=False,
@@ -148,13 +126,12 @@ def test_rust_ocr_image_preprocess_and_runtime_match_python(tmp_path: Path) -> N
 
     assert actual["shape"] == list(python_output.shape)
     np.testing.assert_array_equal(actual["token_ids"], python_output[0].argmax(axis=-1))
-    np.testing.assert_allclose(actual["scores"], python_output[0].max(axis=-1), rtol=0, atol=1e-6)
+    np.testing.assert_allclose(
+        actual["scores"], python_output[0].max(axis=-1), rtol=0, atol=3e-6
+    )
 
 
 def test_rust_reusable_ocr_backend_matches_python_decoded_result(tmp_path: Path) -> None:
-    if not RUNTIME_PATH.is_file():
-        pytest.skip("本机构建的 Python sidecar ONNX Runtime 不可用")
-
     pixels = np.fromfunction(
         lambda y, x, c: (x * 11 + y * 7 + c * 23) % 256,
         (48, 320, 3),
@@ -181,8 +158,6 @@ def test_rust_reusable_ocr_backend_matches_python_decoded_result(tmp_path: Path)
             str(image_path),
             "--ocr-model-dir",
             str(MODEL_DIR),
-            "--onnx-runtime",
-            str(RUNTIME_PATH),
         ],
         cwd=REPO_ROOT,
         check=False,

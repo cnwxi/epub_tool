@@ -1,8 +1,9 @@
 //! Conservative CSS stylesheet extraction for native font processing.
 //!
-//! The font services must know every applicable declaration.  This parser only
-//! accepts the un-nested stylesheet subset implemented below; unsupported
-//! at-rules are errors so callers can retain Python's complete CSS behaviour.
+//! The font services must know every applicable declaration.  This parser
+//! accepts top-level rules and `@media` blocks with the same EPUB media target
+//! (`screen`/`all`) as the reference implementation. Unsupported at-rules are
+//! errors instead of being guessed.
 
 use super::font_values::{parse_font_value, ParsedFontValue};
 
@@ -33,19 +34,28 @@ pub struct FontStylesheet {
     pub rules: Vec<CssFontRule>,
 }
 
-/// Parses top-level `@font-face` and qualified font-related CSS rules.
+/// Parses `@font-face` and qualified font-related CSS rules.
 ///
-/// Nested rules (`@media`, `@supports`, `@layer`, `@scope`), imports and
-/// escaped CSS are intentionally rejected until their Python-equivalent
-/// handling is available in Rust.
+/// `@media` blocks are evaluated for an EPUB reader (`screen`/`all`), while
+/// `@supports`, `@layer`, `@scope`, imports and escaped CSS are rejected until
+/// their Python-equivalent handling is available in Rust.
 pub fn parse_font_stylesheet(css: &str) -> Result<FontStylesheet, String> {
     if css.contains('\\') {
-        return Err("CSS 包含转义，需使用 Python 兼容解析".to_string());
+        return Err("CSS 包含转义，当前 Rust 解析器暂不支持".to_string());
     }
-    let bytes = css.as_bytes();
     let mut stylesheet = FontStylesheet::default();
-    let mut index = 0;
     let mut source_order = 0;
+    parse_font_rules(css, &mut stylesheet, &mut source_order)?;
+    Ok(stylesheet)
+}
+
+fn parse_font_rules(
+    css: &str,
+    stylesheet: &mut FontStylesheet,
+    source_order: &mut usize,
+) -> Result<(), String> {
+    let bytes = css.as_bytes();
+    let mut index = 0;
     while index < bytes.len() {
         index = skip_ignored(bytes, index)?;
         if index >= bytes.len() {
@@ -74,8 +84,17 @@ pub fn parse_font_stylesheet(css: &str) -> Result<FontStylesheet, String> {
                 index = end + 1;
                 continue;
             }
+            if keyword == "media" {
+                let (prelude_end, block_start) = find_rule_block_start(bytes, index)?;
+                let block_end = matching_brace(bytes, block_start)?;
+                if media_query_list_applies_to_epub(&css[index..prelude_end])? {
+                    parse_font_rules(&css[block_start + 1..block_end], stylesheet, source_order)?;
+                }
+                index = block_end + 1;
+                continue;
+            }
             if keyword != "font-face" {
-                return Err(format!("暂不支持 CSS @{keyword}，需使用 Python 兼容解析"));
+                return Err(format!("暂不支持 CSS @{keyword}，当前 Rust 解析器暂不支持"));
             }
             if bytes.get(index) != Some(&b'{') {
                 return Err("@font-face 缺少声明块".to_string());
@@ -96,7 +115,7 @@ pub fn parse_font_stylesheet(css: &str) -> Result<FontStylesheet, String> {
         let block_end = matching_brace(bytes, block_start)?;
         let declarations = parse_font_declarations(&css[block_start + 1..block_end])?;
         if !declarations.is_empty() {
-            source_order += 1;
+            *source_order += 1;
             for selector in split_top_level(selector, ',')? {
                 let selector = selector.trim();
                 if selector.is_empty() {
@@ -105,13 +124,47 @@ pub fn parse_font_stylesheet(css: &str) -> Result<FontStylesheet, String> {
                 stylesheet.rules.push(CssFontRule {
                     selector: selector.to_string(),
                     declarations: declarations.clone(),
-                    source_order,
+                    source_order: *source_order,
                 });
             }
         }
         index = block_end + 1;
     }
-    Ok(stylesheet)
+    Ok(())
+}
+
+fn media_query_list_applies_to_epub(value: &str) -> Result<bool, String> {
+    let queries = split_top_level(value, ',')?;
+    Ok(queries.into_iter().any(media_query_applies_to_epub))
+}
+
+fn media_query_applies_to_epub(value: &str) -> bool {
+    let mut query = strip_comments(value).unwrap_or_else(|_| value.to_string());
+    query = query.trim().to_ascii_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+    if let Some(remainder) = query.strip_prefix("only ") {
+        query = remainder.trim().to_string();
+    }
+    let negated = query.strip_prefix("not ").is_some();
+    if let Some(remainder) = query.strip_prefix("not ") {
+        query = remainder.trim().to_string();
+        if query.starts_with('(') {
+            return true;
+        }
+    }
+    let media_type = query
+        .split(|character: char| !(character.is_ascii_alphanumeric() || character == '-'))
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("all");
+    let applies = matches!(media_type, "all" | "screen");
+    if negated {
+        !applies
+    } else {
+        applies
+    }
 }
 
 /// Parses font-relevant declarations from an XHTML `style` attribute.
@@ -484,11 +537,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nested_rules_for_python_fallback() {
-        assert!(
-            parse_font_stylesheet("@media screen { .target { font-family: TargetFont; } }")
-                .is_err()
-        );
+    fn keeps_only_media_rules_that_apply_to_epub_readers() {
+        let parsed = parse_font_stylesheet(
+            "@media print { .print { font-family: Print; } } @media screen { .target { font-family: TargetFont; } }",
+        )
+        .expect("screen media rules should parse");
+        assert_eq!(parsed.rules.len(), 1);
+        assert_eq!(parsed.rules[0].selector, ".target");
         assert!(parse_font_stylesheet("@import url(\"font.css\");").is_err());
     }
 }

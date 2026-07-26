@@ -22,16 +22,6 @@ MODEL_DIR = (
     / "ocr-models"
     / "PP-OCRv6_small_rec_onnx"
 )
-RUNTIME_PATH = (
-    REPO_ROOT
-    / "src-tauri"
-    / "binaries"
-    / "epub-tool-python"
-    / "_internal"
-    / "onnxruntime"
-    / "capi"
-    / "libonnxruntime.1.27.0.dylib"
-)
 REAL_ENCRYPTED_SAMPLE = REPO_ROOT / "fixtures" / "解密前_reformat_decrypt_encrypt_font.epub"
 FONT_MEMBER = "OEBPS/Fonts/htt.ttf"
 # This codepoint is present in the encrypted sample's cmap and maps to the
@@ -67,8 +57,8 @@ def run_rust(*arguments: str) -> dict:
 def test_rust_renders_and_recognizes_real_encrypted_ttf_glyph_like_python(
     tmp_path: Path,
 ) -> None:
-    if not REAL_ENCRYPTED_SAMPLE.is_file() or not RUNTIME_PATH.is_file():
-        pytest.skip("本地真实 EPUB 样本或 ONNX Runtime 不可用")
+    if not REAL_ENCRYPTED_SAMPLE.is_file():
+        pytest.skip("本地真实 EPUB 样本不可用")
 
     font_path = tmp_path / "encrypted.ttf"
     with zipfile.ZipFile(REAL_ENCRYPTED_SAMPLE) as epub:
@@ -97,8 +87,6 @@ def test_rust_renders_and_recognizes_real_encrypted_ttf_glyph_like_python(
         str(rust_image_path),
         "--ocr-model-dir",
         str(MODEL_DIR),
-        "--onnx-runtime",
-        str(RUNTIME_PATH),
     )
 
     assert python_result.text == rust_result["text"] == "中"

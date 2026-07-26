@@ -8,8 +8,7 @@ use dom_query::{Document, Matcher};
 
 /// Counts the XHTML elements matched by one CSS selector.
 ///
-/// Invalid selectors are reported instead of being silently ignored so a
-/// future native font task can deliberately fall back to the Python sidecar.
+/// Invalid selectors are reported instead of being silently ignored.
 pub fn matching_element_count(xhtml: &str, selector: &str) -> Result<usize, String> {
     let matcher = Matcher::new(selector)
         .map_err(|error| format!("不支持的 CSS 选择器 {selector:?}: {error:?}"))?;

@@ -38,7 +38,6 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "bundle-resources/binaries/epub-tool-python": "binaries/epub-tool-python-runtime",
       "bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*": "ocr-models/PP-OCRv6_small_rec_onnx/",
       "bundle-resources/opencc/*": "opencc/"
     },

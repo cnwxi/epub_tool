@@ -32,9 +32,7 @@ fn run() -> Result<(), String> {
     let mut glyph_font_path = None;
     let mut glyph_character = None;
     let mut glyph_output_path = None;
-    let mut onnx_runtime_path = None;
     let mut ocr_tensor_shape = None;
-    let mut allow_experimental = false;
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -59,12 +57,10 @@ fn run() -> Result<(), String> {
             "--render-font-glyph" => glyph_font_path = arguments.next(),
             "--glyph" => glyph_character = arguments.next(),
             "--glyph-output" => glyph_output_path = arguments.next(),
-            "--onnx-runtime" => onnx_runtime_path = arguments.next(),
             "--ocr-tensor-shape" => ocr_tensor_shape = arguments.next(),
-            "--allow-experimental" => allow_experimental = true,
             "--help" | "-h" => {
                 println!(
-                    "Usage: rust-task-runner --request-json <TaskRequest JSON> [--log-path <path>] [--allow-experimental]\n       rust-task-runner --list-font-targets <book.epub>\n       rust-task-runner --read-font-cmap <font-file>\n       rust-task-runner --rewrite-font-cmap <font-file> --font-output <font-file> --cmap-replacements <JSON object> --remove-cmap-codepoints <JSON array>\n       rust-task-runner --obfuscate-font <font-file> --font-output <font-file> --font-text <text> --rng-seed <u64>\n       rust-task-runner --render-font-glyph <font.ttf> --glyph <character> --glyph-output <glyph.png>\n       rust-task-runner --preprocess-ocr-image <image> --ocr-image-shape <channels,height,width> --ocr-image-mode <RGB|BGR> --ocr-max-image-width <width> [--infer-ocr-model <model.onnx> --onnx-runtime <runtime.dylib|dll|so>]\n       rust-task-runner --recognize-ocr-image <image> --ocr-model-dir <model-dir> --onnx-runtime <runtime.dylib|dll|so>\n       rust-task-runner --infer-ocr-model <model.onnx> --onnx-runtime <runtime.dylib|dll|so> --ocr-tensor-shape <channels,height,width>"
+                    "Usage: rust-task-runner --request-json <TaskRequest JSON> [--log-path <path>]\n       rust-task-runner --list-font-targets <book.epub>\n       rust-task-runner --read-font-cmap <font-file>\n       rust-task-runner --rewrite-font-cmap <font-file> --font-output <font-file> --cmap-replacements <JSON object> --remove-cmap-codepoints <JSON array>\n       rust-task-runner --obfuscate-font <font-file> --font-output <font-file> --font-text <text> --rng-seed <u64>\n       rust-task-runner --render-font-glyph <font.ttf> --glyph <character> --glyph-output <glyph.png>\n       rust-task-runner --preprocess-ocr-image <image> --ocr-image-shape <channels,height,width> --ocr-image-mode <RGB|BGR> --ocr-max-image-width <width> [--infer-ocr-model <model.onnx>]\n       rust-task-runner --recognize-ocr-image <image> --ocr-model-dir <model-dir>\n       rust-task-runner --infer-ocr-model <model.onnx> --ocr-tensor-shape <channels,height,width>"
                 );
                 return Ok(());
             }
@@ -219,12 +215,9 @@ fn run() -> Result<(), String> {
         }
         let model_dir = ocr_model_dir
             .ok_or_else(|| "--recognize-ocr-image 需要同时提供 --ocr-model-dir".to_string())?;
-        let runtime_path = onnx_runtime_path
-            .ok_or_else(|| "--recognize-ocr-image 需要同时提供 --onnx-runtime".to_string())?;
         let image = image::open(&input_file)
             .map_err(|error| format!("读取 OCR 图像失败 {input_file}: {error}"))?;
         let mut backend = rust_backend::font::decrypt_font::OnnxGlyphOcrBackend::from_model_dir(
-            &PathBuf::from(runtime_path),
             &PathBuf::from(model_dir),
             3200,
         )?;
@@ -277,10 +270,7 @@ fn run() -> Result<(), String> {
             max_image_width,
         )?;
         if let Some(model_path) = ocr_model_path {
-            let runtime_path = onnx_runtime_path
-                .ok_or_else(|| "图片 OCR 推理需要同时提供 --onnx-runtime".to_string())?;
             let prediction = rust_backend::font::decrypt_font::infer_onnx_ctc(
-                &PathBuf::from(runtime_path),
                 &PathBuf::from(model_path),
                 &tensor,
             )?;
@@ -309,8 +299,6 @@ fn run() -> Result<(), String> {
         if request_json.is_some() {
             return Err("--infer-ocr-model 不能与 --request-json 同时使用".to_string());
         }
-        let runtime_path = onnx_runtime_path
-            .ok_or_else(|| "--infer-ocr-model 需要同时提供 --onnx-runtime".to_string())?;
         let shape_text = ocr_tensor_shape
             .ok_or_else(|| "--infer-ocr-model 需要同时提供 --ocr-tensor-shape".to_string())?;
         let shape_values: Vec<usize> = shape_text
@@ -329,7 +317,6 @@ fn run() -> Result<(), String> {
             width,
         };
         let prediction = rust_backend::font::decrypt_font::infer_onnx_ctc(
-            &PathBuf::from(runtime_path),
             &PathBuf::from(model_path),
             &tensor,
         )?;
@@ -347,7 +334,7 @@ fn run() -> Result<(), String> {
     let request_json = request_json.ok_or_else(|| "缺少 --request-json".to_string())?;
     let request: FrontendTaskRequest = serde_json::from_str(&request_json)
         .map_err(|error| format!("TaskRequest JSON 无效: {error}"))?;
-    if !allow_experimental && !rust_backend::supports(&request) {
+    if !rust_backend::supports(&request) {
         return Err(format!(
             "Rust 后端暂不支持此任务或选项: {}",
             request.task_type

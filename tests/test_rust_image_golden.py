@@ -124,8 +124,6 @@ def run_rust_task(input_file: Path, output_dir: Path, task_type: str, options: d
             "--request-json",
             json.dumps(request),
         ]
-    if task_type == "chinese_convert":
-        command.append("--allow-experimental")
     completed = subprocess.run(
         command,
         cwd=REPO_ROOT,
@@ -155,6 +153,17 @@ def image_signature(data: bytes) -> tuple[str, tuple[int, int], str]:
         return image.format or "", image.size, image.mode
 
 
+def opencc_dictionary_keys(*names: str) -> list[str]:
+    directory = REPO_ROOT / "src-tauri" / "bundle-resources" / "opencc"
+    keys: list[str] = []
+    for name in names:
+        for line in (directory / name).read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                keys.append(line.split("\t", maxsplit=1)[0])
+    return keys
+
+
 @pytest.mark.parametrize(
     ("task_type", "options", "expected_absent", "expected_references"),
     [
@@ -167,6 +176,12 @@ def image_signature(data: bytes) -> tuple[str, tuple[int, int], str]:
         (
             "webp_to_img",
             {"quality": 75, "png_quantize": False},
+            {"OPS/Images/picture.webp", "OPS/Images/opaque.webp"},
+            {"Images/picture-2.png", "Images/opaque.jpg"},
+        ),
+        (
+            "webp_to_img",
+            {"quality": 75, "png_quantize": True},
             {"OPS/Images/picture.webp", "OPS/Images/opaque.webp"},
             {"Images/picture-2.png", "Images/opaque.jpg"},
         ),
@@ -267,7 +282,7 @@ def test_rust_replace_cover_matches_python_golden_structure(tmp_path: Path) -> N
         assert b'name="generator" content="Epub Tool"' in opf
 
 
-def test_png_quantization_routes_to_python_compatibility_path(tmp_path: Path) -> None:
+def test_rust_png_quantization_matches_python_output_structure(tmp_path: Path) -> None:
     input_file = tmp_path / "book.epub"
     python_output_dir = tmp_path / "python"
     rust_output_dir = tmp_path / "rust"
@@ -293,40 +308,22 @@ def test_png_quantization_routes_to_python_compatibility_path(tmp_path: Path) ->
     }
 
     python_result = run_python_task(input_file, python_output_dir, "image_compress", options)
-    assert python_result["summary"] == {
+    rust_result = run_rust_task(input_file, rust_output_dir, "image_compress", options)
+    assert python_result["summary"] == rust_result["summary"] == {
         "total": 1,
         "success": 1,
         "failed": 0,
         "skipped": 0,
     }
-    request = {
-        "taskId": "rust-quantize-fallback",
-        "taskType": "image_compress",
-        "inputFiles": [str(input_file)],
-        "outputDir": str(rust_output_dir),
-        "options": options,
-    }
-    completed = subprocess.run(
-        [
-            "cargo",
-            "run",
-            "--quiet",
-            "--manifest-path",
-            str(RUST_MANIFEST),
-            "--bin",
-            "rust-task-runner",
-            "--",
-            "--request-json",
-            json.dumps(request),
-        ],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert completed.returncode != 0
-    assert "Rust 后端暂不支持此任务或选项" in completed.stderr
+    python_members = epub_members(Path(python_result["outputs"][0]))
+    rust_members = epub_members(Path(rust_result["outputs"][0]))
+    assert set(python_members) == set(rust_members)
+    assert image_signature(python_members["OPS/Images/picture.png"]) == image_signature(
+        rust_members["OPS/Images/picture.png"]
+    ) == ("PNG", (80, 80), "P")
+    assert len(rust_members["OPS/Images/picture.png"]) < len(image_output.getvalue())
+    assert python_members["OPS/chapter.xhtml"] == rust_members["OPS/chapter.xhtml"]
+    assert python_members["OPS/style.css"] == rust_members["OPS/style.css"]
 
 
 @pytest.mark.parametrize(
@@ -400,3 +397,36 @@ def test_rust_chinese_conversion_matches_python_for_utf16_xhtml(tmp_path: Path) 
         b'<?xml version="1.0" encoding="UTF-8"?>'
     )
     assert "漢語發展" in rust_members["OPS/chapter.xhtml"].decode("utf-8")
+
+
+@pytest.mark.parametrize(
+    ("direction", "dictionary_names"),
+    [
+        ("s2t", ("STPhrases.txt", "STCharacters.txt")),
+        ("t2s", ("TSPhrases.txt", "TSCharacters.txt")),
+    ],
+)
+def test_rust_chinese_conversion_matches_python_for_bundled_opencc_dictionary_keys(
+    tmp_path: Path, direction: str, dictionary_names: tuple[str, str]
+) -> None:
+    input_file = tmp_path / f"opencc-{direction}.epub"
+    python_output_dir = tmp_path / "python"
+    rust_output_dir = tmp_path / "rust"
+    python_output_dir.mkdir()
+    rust_output_dir.mkdir()
+    write_golden_input(input_file)
+    keys = opencc_dictionary_keys(*dictionary_names)
+    source_text = "\n".join(keys)
+    replace_epub_member(
+        input_file,
+        "OPS/chapter.xhtml",
+        f"<html><body><p>{source_text}</p></body></html>".encode(),
+    )
+
+    options = {"direction": direction}
+    python_result = run_python_task(input_file, python_output_dir, "chinese_convert", options)
+    rust_result = run_rust_task(input_file, rust_output_dir, "chinese_convert", options)
+    python_members = epub_members(Path(python_result["outputs"][0]))
+    rust_members = epub_members(Path(rust_result["outputs"][0]))
+
+    assert python_members["OPS/chapter.xhtml"] == rust_members["OPS/chapter.xhtml"]

@@ -1,8 +1,7 @@
 //! CSS font declaration value parsing for the native font-task migration.
 //!
-//! The parser deliberately returns an error for syntax it cannot preserve.
-//! Future task dispatch can use that signal to keep the Python sidecar as the
-//! compatibility path rather than guessing which packaged font applies.
+//! The parser deliberately returns an error for syntax it cannot preserve
+//! rather than guessing which packaged font applies.
 
 use std::collections::{BTreeMap, BTreeSet};
 

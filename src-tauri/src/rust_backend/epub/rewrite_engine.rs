@@ -41,7 +41,7 @@ pub fn supports_rewrite(workspace: &EpubWorkspace) -> Result<(), String> {
     for item in &book.items {
         if !source_paths.insert(&item.source_path) {
             return Err(format!(
-                "manifest 重复引用资源，需使用 Python 兼容实现: {}",
+                "manifest 重复引用资源，当前 Rust 实现暂不支持: {}",
                 item.source_path
             ));
         }
@@ -80,7 +80,10 @@ pub fn rewrite(
     let plan = RewritePlan::build(&book, mode, log)?;
     let mut output = BTreeMap::new();
     output.insert("mimetype".to_string(), b"application/epub+zip".to_vec());
-    output.insert("META-INF/container.xml".to_string(), book.container.clone());
+    output.insert(
+        "META-INF/container.xml".to_string(),
+        rewrite_container_rootfile(&book.container)?,
+    );
 
     for item in &book.items {
         if Some(item.id.as_str()) == book.toc_id.as_deref() {
@@ -90,7 +93,7 @@ pub fn rewrite(
                 .ok_or_else(|| format!("EPUB 缺少目录文件: {}", item.source_path))?;
             let toc = std::str::from_utf8(toc).map_err(|_| {
                 format!(
-                    "目录不是 UTF-8，需使用 Python 兼容实现: {}",
+                    "目录不是 UTF-8，当前 Rust 实现暂不支持: {}",
                     item.source_path
                 )
             })?;
@@ -138,6 +141,23 @@ pub fn rewrite(
     workspace.opf_path = "OEBPS/content.opf".to_string();
     log("已使用 Rust EPUB 重写引擎完成资源路径重构。".to_string());
     Ok(())
+}
+
+fn rewrite_container_rootfile(container: &[u8]) -> Result<Vec<u8>, String> {
+    let container = std::str::from_utf8(container)
+        .map_err(|_| "container.xml 不是 UTF-8，无法更新 OPF 根文件".to_string())?;
+    let rootfile = Regex::new(r"(?is)<rootfile\b[^>]*?/?>").expect("valid rootfile regex");
+    if !rootfile.is_match(container) {
+        return Err("container.xml 缺少 OPF rootfile".to_string());
+    }
+    Ok(rootfile
+        .replacen(
+            container,
+            1,
+            r#"<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>"#,
+        )
+        .into_owned()
+        .into_bytes())
 }
 
 struct RewritePlan {
@@ -321,7 +341,7 @@ fn has_unsafe_basename(value: &str) -> bool {
 
 fn read_utf8<'a>(data: &'a [u8], label: &str, path: &str) -> Result<&'a str, String> {
     std::str::from_utf8(data)
-        .map_err(|_| format!("{label}资源无法按 UTF-8 读取，需使用 Python 兼容实现: {path}"))
+        .map_err(|_| format!("{label}资源无法按 UTF-8 读取，当前 Rust 实现暂不支持: {path}"))
 }
 
 fn split_reference(reference: &str) -> (&str, &str) {
@@ -526,7 +546,7 @@ fn rewrite_opf(book: &ParsedBook, plan: &RewritePlan) -> Result<String, String> 
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypted_filename, encrypted_filename};
+    use super::{decrypted_filename, encrypted_filename, rewrite_container_rootfile};
     use crate::rust_backend::epub::task_base::ManifestItem;
     use std::collections::BTreeMap;
 
@@ -545,5 +565,17 @@ mod tests {
                 .ends_with(".jpg")
         );
         assert_eq!(decrypted_filename("f2~slim", ".jpg", true), "f2~slim.jpg");
+    }
+
+    #[test]
+    fn rewrites_nonstandard_container_rootfile_to_normalized_opf_path() {
+        let rewritten = rewrite_container_rootfile(
+            br#"<?xml version="1.0"?><container><rootfiles><rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#,
+        )
+        .unwrap();
+        assert_eq!(
+            std::str::from_utf8(&rewritten).unwrap(),
+            r#"<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#
+        );
     }
 }

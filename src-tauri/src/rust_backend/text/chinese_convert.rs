@@ -119,17 +119,49 @@ impl OpenccConverter {
     }
 
     fn convert_segment(&self, text: &str) -> String {
-        self.dictionaries.iter().fold(text.to_string(), |value, dictionary| {
-            convert_dictionary_segment(&value, dictionary, None)
-        })
+        let mut segments = vec![OpenccSegment::unmatched(text)];
+        for dictionary in &self.dictionaries {
+            let mut next = Vec::new();
+            for segment in segments {
+                if segment.matched {
+                    next.push(segment);
+                } else {
+                    match_dictionary_segment(&segment.text, dictionary, None, &mut next);
+                }
+            }
+            segments = next;
+        }
+        segments.into_iter().map(|segment| segment.text).collect()
     }
 }
 
-fn convert_dictionary_segment(
+struct OpenccSegment {
+    text: String,
+    matched: bool,
+}
+
+impl OpenccSegment {
+    fn unmatched(text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            matched: false,
+        }
+    }
+
+    fn matched(text: String) -> Self {
+        Self {
+            text,
+            matched: true,
+        }
+    }
+}
+
+fn match_dictionary_segment(
     text: &str,
     dictionary: &OpenccDictionary,
     maximum_length: Option<usize>,
-) -> String {
+    output: &mut Vec<OpenccSegment>,
+) {
     let boundaries: Vec<_> = text
         .char_indices()
         .map(|(index, _)| index)
@@ -145,22 +177,25 @@ fn convert_dictionary_segment(
             let end = start + length;
             let key = &text[boundaries[start]..boundaries[end]];
             if let Some(value) = dictionary.entries.get(key) {
-                let left = convert_dictionary_segment(
+                match_dictionary_segment(
                     &text[..boundaries[start]],
                     dictionary,
                     Some(length),
+                    output,
                 );
-                let right = convert_dictionary_segment(
+                output.push(OpenccSegment::matched(value.clone()));
+                match_dictionary_segment(
                     &text[boundaries[end]..],
                     dictionary,
                     Some(length),
+                    output,
                 );
-                return format!("{left}{value}{right}");
+                return;
             }
         }
         length -= 1;
     }
-    text.to_string()
+    output.push(OpenccSegment::unmatched(text));
 }
 
 impl EpubTask for ChineseConvertTask {
@@ -392,6 +427,7 @@ mod tests {
     fn bundled_dictionary_matches_python_opencc_t2s_phrase_vectors() {
         let converter = converter("t2s").unwrap();
         assert_eq!(converter.convert("射覆"), "射复");
+        assert_eq!(converter.convert("於戲曲 乾隆御用"), "於戏曲 乾隆御用");
         assert!(ChineseConvertTask.supports_options(&json!({"direction": "t2s"})));
     }
 }

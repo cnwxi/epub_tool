@@ -258,7 +258,7 @@ fn select_font_declaration(
             continue;
         }
         if declaration.name == "all" {
-            return Err("all 属性需要完整 CSS reset 语义，需使用 Python 兼容实现".to_string());
+            return Err("all 属性需要完整 CSS reset 语义，当前 Rust 实现暂不支持".to_string());
         }
         let priority = (declaration.important, declaration.declaration_order);
         if selected.is_none_or(|current: &CssDeclaration| {
@@ -294,10 +294,10 @@ fn declaration_to_rule(
         ParsedFontValue::Inherit => (FontRuleValue::Inherit, None),
         ParsedFontValue::RevertLayer => (FontRuleValue::RevertLayer, None),
         ParsedFontValue::Reset => {
-            return Err("CSS reset 字体值需要 Python 兼容实现".to_string());
+            return Err("CSS reset 字体值当前 Rust 实现暂不支持".to_string());
         }
         ParsedFontValue::NeedsCustomPropertyResolution => {
-            return Err("CSS 自定义属性尚未索引到 XHTML 元素，需使用 Python 兼容实现".to_string());
+            return Err("CSS 自定义属性尚未索引到 XHTML 元素，当前 Rust 实现暂不支持".to_string());
         }
     };
     Ok(CascadedFontRule {

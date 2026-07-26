@@ -85,6 +85,27 @@ def write_slim_epub(path: Path, *, encrypted: bool) -> None:
         archive.writestr(slim_member, b"slim-image")
 
 
+def write_nonstandard_layout_epub(path: Path, *, encrypted: bool) -> None:
+    write_epub(path, encrypted=encrypted)
+    source_members = members(path)
+    rewritten = path.with_suffix(".nonstandard.epub")
+    with zipfile.ZipFile(rewritten, "w") as archive:
+        for source, data in source_members.items():
+            target = source
+            if source == "META-INF/container.xml":
+                data = data.replace(b"OEBPS/content.opf", b"OPS/package.opf")
+            elif source == "OEBPS/content.opf":
+                target = "OPS/package.opf"
+            elif source.startswith("OEBPS/"):
+                target = "OPS/" + source.removeprefix("OEBPS/")
+            archive.writestr(
+                target,
+                data,
+                zipfile.ZIP_STORED if target == "mimetype" else zipfile.ZIP_DEFLATED,
+            )
+    rewritten.replace(path)
+
+
 def run_task(backend: str, input_file: Path, output_dir: Path, task_type: str) -> dict[str, object]:
     if backend == "python":
         command = [
@@ -175,6 +196,24 @@ def test_rust_reformat_epub_matches_python_member_layout_and_references(tmp_path
     assert b"../Images/base.jpg#cover" in rust["OEBPS/Text/chapter.xhtml"]
     assert b"../Fonts/font.ttf#font" in rust["OEBPS/Styles/style.css"]
     assert b'../Text/chapter.xhtml#guide' in rust["OEBPS/content.opf"]
+
+
+def test_rust_reformat_epub_normalizes_nonstandard_opf_layout_like_python(tmp_path: Path) -> None:
+    input_file = tmp_path / "book.epub"
+    python_dir = tmp_path / "python"
+    rust_dir = tmp_path / "rust"
+    python_dir.mkdir()
+    rust_dir.mkdir()
+    write_nonstandard_layout_epub(input_file, encrypted=False)
+
+    python = members(Path(run_task("python", input_file, python_dir, "reformat_epub")["outputs"][0]))
+    rust = members(Path(run_task("rust", input_file, rust_dir, "reformat_epub")["outputs"][0]))
+
+    assert set(python) == set(rust)
+    assert "OEBPS/content.opf" in rust
+    assert b'full-path="OEBPS/content.opf"' in rust["META-INF/container.xml"]
+    assert rust["META-INF/container.xml"] == python["META-INF/container.xml"]
+    assert b"../Images/base.jpg#cover" in rust["OEBPS/Text/chapter.xhtml"]
 
 
 def test_rust_decrypt_epub_matches_python_member_layout_and_references(tmp_path: Path) -> None:

@@ -1,9 +1,7 @@
 //! OCR building blocks for `decrypt_font`.
 //!
 //! This module keeps the renderer and ONNX runtime independent from EPUB
-//! rewrite policy so each stage can be compared against the Python sidecar.
-//! Production dispatch remains Python-backed until the EPUB-level regression
-//! suite covers a complete strict subset.
+//! rewrite policy so each stage can be compared against Python golden outputs.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -175,24 +173,16 @@ fn opf_target_hrefs(opf_path: &str, font_paths: &BTreeSet<String>) -> BTreeSet<S
         .collect()
 }
 
-/// Application-owned locations for the bundled OCR model and the ONNX Runtime
-/// carried by the Python sidecar. They are never accepted from frontend task
-/// options, so a task cannot load an arbitrary dynamic library.
+/// Application-owned location for the bundled OCR model. ONNX Runtime is linked
+/// by the Rust application and is never selected from frontend task options.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OcrResourcePaths {
-    pub runtime_path: PathBuf,
     pub model_dir: PathBuf,
 }
 
 static OCR_RESOURCE_PATHS: OnceLock<OcrResourcePaths> = OnceLock::new();
 
 pub fn configure_ocr_resources(resources: OcrResourcePaths) -> Result<(), String> {
-    if !resources.runtime_path.is_file() {
-        return Err(format!(
-            "ONNX Runtime 不存在: {}",
-            resources.runtime_path.display()
-        ));
-    }
     if !resources.model_dir.join("inference.onnx").is_file()
         || !resources.model_dir.join("inference.yml").is_file()
     {
@@ -205,8 +195,8 @@ pub fn configure_ocr_resources(resources: OcrResourcePaths) -> Result<(), String
         Ok(()) => Ok(()),
         Err(existing) if existing == resources => Ok(()),
         Err(existing) => Err(format!(
-            "ONNX Runtime 已使用不同资源初始化: {}",
-            existing.runtime_path.display()
+            "OCR 模型已使用不同资源初始化: {}",
+            existing.model_dir.display()
         )),
     }
 }
@@ -222,32 +212,8 @@ fn dev_ocr_resources() -> Option<OcrResourcePaths> {
         .join("bundle-resources")
         .join("ocr-models")
         .join("PP-OCRv6_small_rec_onnx");
-    let runtime_dir = root
-        .join("src-tauri")
-        .join("binaries")
-        .join("epub-tool-python")
-        .join("_internal")
-        .join("onnxruntime")
-        .join("capi");
-    let runtime_path = fs::read_dir(runtime_dir)
-        .ok()?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| {
-                    name.starts_with("libonnxruntime")
-                        || name.eq_ignore_ascii_case("onnxruntime.dll")
-                })
-        })?;
-    (runtime_path.is_file()
-        && model_dir.join("inference.onnx").is_file()
-        && model_dir.join("inference.yml").is_file())
-    .then_some(OcrResourcePaths {
-        runtime_path,
-        model_dir,
-    })
+    (model_dir.join("inference.onnx").is_file() && model_dir.join("inference.yml").is_file())
+        .then_some(OcrResourcePaths { model_dir })
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -290,19 +256,17 @@ pub struct OcrModelConfig {
 
 /// Reusable ONNX OCR session for one fixed bundled model.
 ///
-/// `ort` keeps its dynamic runtime process-global.  The application resolves
-/// the runtime once from its bundled Python sidecar, then one instance of this
-/// backend can recognize every glyph in a book without reloading the model.
+/// `ort` links its build-owned runtime once, then one instance of this backend
+/// can recognize every glyph in a book without reloading the model.
 pub struct OnnxGlyphOcrBackend {
     session: Session,
     pub config: OcrModelConfig,
     max_image_width: usize,
 }
 
-/// Rasterizes a single glyph before it is sent to PaddleOCR.  The production
-/// task will only use this for embedded TrueType fonts; unsupported outlines
-/// deliberately cause a Python-sidecar fallback rather than emitting a
-/// visually different EPUB.
+/// Rasterizes a single glyph before it is sent to PaddleOCR. The production
+/// task only supports embedded TrueType fonts and returns a task error for
+/// unsupported outlines rather than emitting a visually different EPUB.
 pub struct FontGlyphRenderer {
     font: fontdue::Font,
     font_size: f32,
@@ -391,8 +355,8 @@ pub fn is_period_like_image(image: &DynamicImage) -> bool {
 
 /// Builds the complete per-font replacement tables needed by EPUB rewriting.
 /// The caller must not use a partial result: any unrenderable glyph, missing
-/// cmap entry, low-confidence prediction or multi-character OCR result means
-/// the entire EPUB must remain on the Python compatibility backend.
+/// cmap entry, low-confidence prediction or multi-character OCR result aborts
+/// the EPUB task without writing a partial result.
 pub fn build_strict_ocr_replacements(
     font_data_by_path: &BTreeMap<String, Vec<u8>>,
     text_by_font: &BTreeMap<String, String>,
@@ -403,7 +367,6 @@ pub fn build_strict_ocr_replacements(
         return Err("OCR 最低置信度必须在 0 到 1 之间".to_string());
     }
     let mut backend = OnnxGlyphOcrBackend::from_model_dir(
-        &resources.runtime_path,
         &resources.model_dir,
         DEFAULT_OCR_MAX_IMAGE_WIDTH,
     )?;
@@ -454,7 +417,7 @@ pub fn clean_strict_css_font_references(
     target_families: &std::collections::BTreeSet<String>,
 ) -> Result<String, String> {
     if css.to_ascii_lowercase().contains("font:") || css.to_ascii_lowercase().contains("all:") {
-        return Err("font/all 简写清理需使用 Python 兼容实现".to_string());
+        return Err("font/all 简写清理当前 Rust 实现暂不支持".to_string());
     }
     let face = Regex::new(r"(?is)\s*@font-face\s*\{[^{}]*\}").expect("literal regex");
     let family = Regex::new(r"(?is)font-family\s*:\s*([^;{}]+);?").expect("literal regex");
@@ -482,6 +445,9 @@ pub fn clean_strict_css_font_references(
                     !target_families.contains(&normalized)
                 })
                 .collect();
+            if kept.len() == captures[1].split(',').count() {
+                return captures[0].to_string();
+            }
             if kept.is_empty() {
                 String::new()
             } else {
@@ -509,18 +475,16 @@ pub fn clean_strict_opf_font_manifest(
 
 impl OnnxGlyphOcrBackend {
     pub fn from_model_dir(
-        runtime_path: &Path,
         model_dir: &Path,
         max_image_width: usize,
     ) -> Result<Self, String> {
         let model_path = model_dir.join("inference.onnx");
         let config_path = model_dir.join("inference.yml");
         let config = load_ocr_model_config(&config_path)?;
-        Self::new(runtime_path, &model_path, config, max_image_width)
+        Self::new(&model_path, config, max_image_width)
     }
 
     pub fn new(
-        runtime_path: &Path,
         model_path: &Path,
         config: OcrModelConfig,
         max_image_width: usize,
@@ -528,7 +492,7 @@ impl OnnxGlyphOcrBackend {
         if max_image_width == 0 {
             return Err("OCR 最大图像宽度必须大于零".to_string());
         }
-        initialize_onnx_runtime(runtime_path)?;
+        initialize_onnx_runtime()?;
         let session = Session::builder()
             .map_err(|error| format!("创建 ONNX OCR Session 失败: {error}"))?
             .commit_from_file(model_path)
@@ -654,22 +618,18 @@ fn parse_yaml_scalar(value: &str) -> String {
     value.to_string()
 }
 
-fn initialize_onnx_runtime(runtime_path: &Path) -> Result<(), String> {
-    ort::init_from(runtime_path)
-        .map_err(|error| format!("加载 ONNX Runtime 失败 {}: {error}", runtime_path.display()))?
+fn initialize_onnx_runtime() -> Result<(), String> {
+    ort::init()
         .commit();
     Ok(())
 }
 
-/// Runs one OCR tensor through ONNX Runtime loaded from an explicit bundled
-/// dynamic library. The caller owns runtime-path resolution so this library
-/// code remains usable both by Tauri and the standalone regression runner.
+/// Runs one OCR tensor through the ONNX Runtime linked with the Rust binary.
 pub fn infer_onnx_ctc(
-    runtime_path: &Path,
     model_path: &Path,
     tensor: &OcrImageTensor,
 ) -> Result<OcrCtcPrediction, String> {
-    initialize_onnx_runtime(runtime_path)?;
+    initialize_onnx_runtime()?;
     let mut session = Session::builder()
         .map_err(|error| format!("创建 ONNX OCR Session 失败: {error}"))?
         .commit_from_file(model_path)

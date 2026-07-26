@@ -2,15 +2,18 @@
 //!
 //! Full font encryption still depends on CSS cascade resolution and XHTML text
 //! rewriting. Production dispatch therefore accepts only the conservative
-//! subset implemented below and retains the Python sidecar for all others.
+//! subset implemented below and reports unsupported CSS explicitly.
 
 use super::{
     font_cmap::{rewrite_unicode_cmap, unicode_cmap},
     font_obfuscation::{build_obfuscation_mapping, html_entity_mapping, split_obfuscation_text},
-    font_stylesheet::parse_font_stylesheet,
-    font_values::{normalize_font_family, parse_font_value, ParsedFontValue},
+    font_stylesheet::{parse_font_stylesheet, parse_inline_font_declarations, CssDeclaration},
+    font_values::{normalize_font_family, resolve_font_value, ParsedFontValue},
 };
-use crate::rust_backend::{epub::{workspace::resolve_reference, EpubWorkspace}, EpubTask, TaskOutcome};
+use crate::rust_backend::{
+    epub::{workspace::resolve_reference, EpubWorkspace},
+    EpubTask, TaskOutcome,
+};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use regex::Regex;
 use serde_json::Value;
@@ -32,14 +35,14 @@ pub struct ObfuscatedFont {
 }
 
 /// Native `encrypt_font` implementation for the EPUB subset whose complete
-/// cascade and XHTML write-back semantics are covered below. Any feature not
-/// represented here makes `supports_input()` return false, so Tauri retains
-/// the Python sidecar instead of applying a partial font mapping.
+/// cascade and XHTML write-back semantics are covered below. Unsupported
+/// inputs are rejected before a partial font mapping can be written.
 pub struct EncryptFontTask;
 
 #[derive(Debug, Clone)]
 pub(crate) struct FontEncryptionPlan {
     selector_rules: Vec<StrictFontRule>,
+    font_by_family: BTreeMap<String, String>,
     target_fonts: BTreeSet<String>,
     target_families: BTreeSet<String>,
     xhtml_members: Vec<String>,
@@ -52,45 +55,130 @@ enum FontRuleEffect {
     Font(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum StrictSelector {
-    Class(String),
-    Tag(String),
-    TagClass { tag: String, class: String },
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StrictSelector {
+    compounds: Vec<CompoundSelector>,
+    combinators: Vec<SelectorCombinator>,
 }
 
-impl StrictSelector {
-    fn matches(&self, tag: &str, classes: Option<&str>) -> bool {
-        match self {
-            Self::Class(class) => has_class(classes, class),
-            Self::Tag(expected) => expected == tag,
-            Self::TagClass {
-                tag: expected_tag,
-                class,
-            } => expected_tag == tag && has_class(classes, class),
-        }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SelectorCombinator {
+    Descendant,
+    Child,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompoundSelector {
+    tag: Option<String>,
+    id: Option<String>,
+    classes: Vec<String>,
+}
+
+impl CompoundSelector {
+    fn matches(&self, tag: &str, id: Option<&str>, classes: Option<&str>) -> bool {
+        self.tag.as_deref().is_none_or(|expected| expected == tag)
+            && self
+                .id
+                .as_deref()
+                .is_none_or(|expected| id == Some(expected))
+            && self.classes.iter().all(|class| has_class(classes, class))
     }
 
     fn specificity(&self) -> [u8; 3] {
-        match self {
-            Self::Class(_) => [0, 1, 0],
-            Self::Tag(_) => [0, 0, 1],
-            Self::TagClass { .. } => [0, 1, 1],
+        [
+            self.id.is_some() as u8,
+            u8::try_from(self.classes.len()).unwrap_or(u8::MAX),
+            self.tag.is_some() as u8,
+        ]
+    }
+}
+
+impl StrictSelector {
+    fn matches(
+        &self,
+        tag: &str,
+        id: Option<&str>,
+        classes: Option<&str>,
+        ancestors: &[ElementContext],
+    ) -> bool {
+        let Some(last) = self.compounds.last() else {
+            return false;
+        };
+        if !last.matches(tag, id, classes) {
+            return false;
         }
+        let mut ancestor_end = ancestors.len();
+        for index in (0..self.combinators.len()).rev() {
+            let compound = &self.compounds[index];
+            match self.combinators[index] {
+                SelectorCombinator::Child => {
+                    let Some(parent_index) = ancestor_end.checked_sub(1) else {
+                        return false;
+                    };
+                    if !compound.matches_context(&ancestors[parent_index]) {
+                        return false;
+                    }
+                    ancestor_end = parent_index;
+                }
+                SelectorCombinator::Descendant => {
+                    let Some(parent_index) = (0..ancestor_end)
+                        .rev()
+                        .find(|index| compound.matches_context(&ancestors[*index]))
+                    else {
+                        return false;
+                    };
+                    ancestor_end = parent_index;
+                }
+            }
+        }
+        true
+    }
+
+    fn specificity(&self) -> [u8; 3] {
+        self.compounds
+            .iter()
+            .fold([0, 0, 0], |mut total, compound| {
+                let specificity = compound.specificity();
+                total[0] = total[0].saturating_add(specificity[0]);
+                total[1] = total[1].saturating_add(specificity[1]);
+                total[2] = total[2].saturating_add(specificity[2]);
+                total
+            })
     }
 }
 
 #[derive(Debug, Clone)]
 struct StrictFontRule {
     selector: StrictSelector,
-    effect: FontRuleEffect,
+    declarations: Vec<CssDeclaration>,
     source_order: usize,
 }
 
 #[derive(Debug, Clone)]
 struct ElementContext {
     name: String,
+    id: Option<String>,
+    classes: Option<String>,
     font: Option<String>,
+    custom_properties: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+struct FontDeclarationCandidate {
+    declaration: CssDeclaration,
+    /// CSS priority, in ascending order. The last two components retain the
+    /// declaration's position after selector/source precedence has tied.
+    precedence: (bool, bool, [u8; 3], usize, usize),
+}
+
+impl CompoundSelector {
+    fn matches_context(&self, context: &ElementContext) -> bool {
+        self.matches(
+            &context.name,
+            context.id.as_deref(),
+            context.classes.as_deref(),
+        )
+    }
 }
 
 impl EpubTask for EncryptFontTask {
@@ -196,12 +284,19 @@ impl FontEncryptionPlan {
                 continue;
             }
             let css = std::str::from_utf8(data)
-                .map_err(|_| format!("CSS 不是 UTF-8，需使用 Python 兼容实现: {member}"))?;
+                .map_err(|_| format!("CSS 不是 UTF-8，当前 Rust 实现暂不支持: {member}"))?;
             let stylesheet = parse_font_stylesheet(css)?;
             for face in stylesheet.font_faces {
+                let family = normalize_font_family(&face.family);
+                let is_requested = requested_families
+                    .as_ref()
+                    .is_none_or(|requested| requested.contains(&family));
                 if face.sources.len() != 1 {
+                    if !is_requested {
+                        continue;
+                    }
                     return Err(format!(
-                        "@font-face 需要多个 src，需使用 Python 兼容实现: {member}"
+                        "@font-face 需要多个 src，当前 Rust 实现暂不支持: {member}"
                     ));
                 }
                 let font_path = resolve_reference(member, &face.sources[0])?
@@ -209,88 +304,58 @@ impl FontEncryptionPlan {
                 let lower_path = font_path.to_ascii_lowercase();
                 if !lower_path.ends_with(".ttf")
                     && !(allow_opentype && lower_path.ends_with(".otf"))
+                    && is_requested
                 {
                     return Err(format!("Rust 字体任务暂不支持该格式: {font_path}"));
                 }
                 if !workspace.members.contains_key(&font_path) {
-                    if tolerate_missing_fonts {
+                    if tolerate_missing_fonts || !is_requested {
                         continue;
                     }
                     return Err(format!("@font-face 引用的字体不存在: {font_path}"));
                 }
-                let family = normalize_font_family(&face.family);
                 if font_by_family
                     .insert(family.clone(), font_path.clone())
-                    .is_some_and(|previous| previous != font_path)
+                    .is_some_and(|previous| previous != font_path && is_requested)
                 {
                     return Err(format!(
-                        "字体 family 重复声明，需使用 Python 兼容实现: {family}"
+                        "字体 family 重复声明，当前 Rust 实现暂不支持: {family}"
                     ));
                 }
             }
             raw_rules.extend(stylesheet.rules);
         }
         let mut selector_rules = Vec::new();
-        let mut seen_selectors = BTreeSet::new();
         for (source_order, rule) in raw_rules.into_iter().enumerate() {
             let selector = strict_selector(&rule.selector)?;
-            if rule
-                .declarations
-                .iter()
-                .any(|item| item.name.starts_with("--"))
-            {
-                return Err("CSS 自定义属性需使用 Python 兼容实现".to_string());
-            }
-            let font_declarations: Vec<_> = rule
-                .declarations
-                .iter()
-                .filter(|item| matches!(item.name.as_str(), "font-family" | "font" | "all"))
-                .collect();
-            if font_declarations.len() != 1 {
-                return Err(format!("CSS 规则的字体声明不唯一: {}", rule.selector));
-            }
-            let declaration = font_declarations[0];
-            let effect = match parse_font_value(&declaration.name, &declaration.value)? {
-                ParsedFontValue::Candidates(candidates) => {
-                    let font = candidates
-                        .iter()
-                        .find_map(|candidate| font_by_family.get(&normalize_font_family(candidate)))
-                        .cloned();
-                    font.map_or(FontRuleEffect::Reset, FontRuleEffect::Font)
-                }
-                ParsedFontValue::Inherit => FontRuleEffect::Inherit,
-                ParsedFontValue::Reset => FontRuleEffect::Reset,
-                ParsedFontValue::RevertLayer | ParsedFontValue::NeedsCustomPropertyResolution => {
-                    return Err("CSS 级联语义需使用 Python 兼容实现".to_string());
-                }
-            };
-            if !seen_selectors.insert(selector.clone()) {
-                return Err(format!(
-                    "CSS 字体选择器重复，需使用 Python 兼容实现: {}",
-                    rule.selector
-                ));
+            if !rule.declarations.iter().any(|declaration| {
+                declaration.name.starts_with("--")
+                    || matches!(declaration.name.as_str(), "font-family" | "font" | "all")
+            }) {
+                continue;
             }
             selector_rules.push(StrictFontRule {
                 selector,
-                effect,
+                declarations: rule.declarations,
                 source_order,
             });
         }
         let target_pairs: Vec<_> = font_by_family
-            .into_iter()
+            .iter()
             .filter(|(family, _)| {
                 requested_families
                     .as_ref()
-                    .is_none_or(|requested| requested.contains(family))
+                    .is_none_or(|requested| requested.contains(*family))
             })
-            .collect();
-        let target_families = target_pairs
-            .iter()
-            .map(|(family, _)| family.clone())
             .collect();
         let target_fonts = target_pairs
             .into_iter()
-            .map(|(_, font)| font)
+            .map(|(_, font)| font.clone())
+            .collect::<BTreeSet<_>>();
+        let target_families = font_by_family
+            .iter()
+            .filter(|(_, font)| target_fonts.contains(*font))
+            .map(|(family, _)| family.clone())
             .collect();
         let xhtml_members: Vec<_> = workspace
             .members
@@ -302,14 +367,15 @@ impl FontEncryptionPlan {
             .cloned()
             .collect();
         if xhtml_members.is_empty() {
-            return Err("EPUB 没有 XHTML 文件，需使用 Python 兼容实现".to_string());
+            return Err("EPUB 没有 XHTML 文件，当前 Rust 实现暂不支持".to_string());
         }
         for member in &xhtml_members {
             let source = utf8_member(workspace, member, "XHTML")?;
-            validate_xhtml_subset(&source, &selector_rules)?;
+            validate_xhtml_subset(&source, &selector_rules, &font_by_family)?;
         }
         Ok(Self {
             selector_rules,
+            font_by_family,
             target_fonts,
             target_families,
             xhtml_members,
@@ -326,6 +392,7 @@ impl FontEncryptionPlan {
             transform_xhtml(
                 &source,
                 &self.selector_rules,
+                &self.font_by_family,
                 &BTreeMap::new(),
                 |font, text| {
                     if self.target_fonts.contains(font) {
@@ -357,7 +424,13 @@ impl FontEncryptionPlan {
         source: &str,
         replacements: &BTreeMap<String, BTreeMap<char, char>>,
     ) -> Result<String, String> {
-        transform_xhtml(source, &self.selector_rules, replacements, |_, _| {})
+        transform_xhtml(
+            source,
+            &self.selector_rules,
+            &self.font_by_family,
+            replacements,
+            |_, _| {},
+        )
     }
 
     /// Runs all font-table writes in memory before native dispatch is selected.
@@ -413,24 +486,254 @@ fn selected_families(input: &Path, options: &Value) -> Result<Option<BTreeSet<St
         .map(Some)
 }
 
+fn select_font_effect(
+    candidates: &[FontDeclarationCandidate],
+    font_by_family: &BTreeMap<String, String>,
+    custom_properties: &BTreeMap<String, String>,
+) -> Result<Option<FontRuleEffect>, String> {
+    let Some(candidate) = candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.declaration.name.as_str(),
+                "font-family" | "font" | "all"
+            )
+        })
+        .max_by_key(|candidate| candidate.precedence)
+    else {
+        return Ok(None);
+    };
+    let value = match resolve_font_value(
+        &candidate.declaration.name,
+        &candidate.declaration.value,
+        custom_properties,
+    ) {
+        Ok(value) => value,
+        // A missing/cyclic `var()` makes this inherited CSS property invalid
+        // at computed-value time. It therefore behaves as `unset`, rather
+        // than exposing the parent rule that it had overridden.
+        Err(error) if error == "未定义或循环的 CSS 自定义属性" => {
+            return Ok(Some(FontRuleEffect::Inherit));
+        }
+        Err(error) => return Err(error),
+    };
+    let effect = match value {
+        ParsedFontValue::Candidates(candidates) => candidates
+            .iter()
+            .find_map(|candidate| font_by_family.get(&normalize_font_family(candidate)))
+            .cloned()
+            .map_or(FontRuleEffect::Reset, FontRuleEffect::Font),
+        ParsedFontValue::Inherit => FontRuleEffect::Inherit,
+        ParsedFontValue::Reset => FontRuleEffect::Reset,
+        ParsedFontValue::RevertLayer | ParsedFontValue::NeedsCustomPropertyResolution => {
+            return Err("CSS 级联语义当前 Rust 实现暂不支持".to_string());
+        }
+    };
+    Ok(Some(effect))
+}
+
+fn declaration_candidates(
+    name: &str,
+    id: Option<&str>,
+    classes: Option<&str>,
+    ancestors: &[ElementContext],
+    selector_rules: &[StrictFontRule],
+    inline_style: Option<&str>,
+) -> Result<Vec<FontDeclarationCandidate>, String> {
+    let mut candidates = Vec::new();
+    for rule in selector_rules {
+        if !rule.selector.matches(name, id, classes, ancestors) {
+            continue;
+        }
+        let specificity = rule.selector.specificity();
+        candidates.extend(
+            rule.declarations
+                .iter()
+                .filter(|declaration| {
+                    declaration.name.starts_with("--")
+                        || matches!(declaration.name.as_str(), "font-family" | "font" | "all")
+                })
+                .cloned()
+                .map(|declaration| FontDeclarationCandidate {
+                    precedence: (
+                        declaration.important,
+                        false,
+                        specificity,
+                        rule.source_order,
+                        declaration.declaration_order,
+                    ),
+                    declaration,
+                }),
+        );
+    }
+    if let Some(style) = inline_style {
+        candidates.extend(
+            parse_inline_font_declarations(style)?
+                .into_iter()
+                .filter(|declaration| {
+                    declaration.name.starts_with("--")
+                        || matches!(declaration.name.as_str(), "font-family" | "font" | "all")
+                })
+                .map(|declaration| FontDeclarationCandidate {
+                    precedence: (
+                        declaration.important,
+                        true,
+                        [0, 0, 0],
+                        usize::MAX,
+                        declaration.declaration_order,
+                    ),
+                    declaration,
+                }),
+        );
+    }
+    Ok(candidates)
+}
+
+fn computed_custom_properties(
+    inherited: Option<&BTreeMap<String, String>>,
+    candidates: &[FontDeclarationCandidate],
+) -> Result<BTreeMap<String, String>, String> {
+    let mut properties = inherited.cloned().unwrap_or_default();
+    let mut selected = BTreeMap::<&str, &FontDeclarationCandidate>::new();
+    for candidate in candidates
+        .iter()
+        .filter(|candidate| candidate.declaration.name.starts_with("--"))
+    {
+        let name = candidate.declaration.name.as_str();
+        if selected
+            .get(name)
+            .is_none_or(|current| candidate.precedence >= current.precedence)
+        {
+            selected.insert(name, candidate);
+        }
+    }
+    for (name, candidate) in selected {
+        match custom_property_keyword(&candidate.declaration.value) {
+            Some("inherit") | Some("unset") => {}
+            Some("initial") | Some("revert") => {
+                properties.remove(name);
+            }
+            Some("revert-layer") => {
+                return Err("自定义属性 revert-layer 需要 CSS layer 兼容实现".to_string());
+            }
+            _ => {
+                properties.insert(name.to_string(), candidate.declaration.value.clone());
+            }
+        }
+    }
+    Ok(properties)
+}
+
+fn custom_property_keyword(value: &str) -> Option<&'static str> {
+    let value = value.trim();
+    if value.contains(char::is_whitespace) {
+        return None;
+    }
+    match value.to_ascii_lowercase().as_str() {
+        "inherit" => Some("inherit"),
+        "initial" => Some("initial"),
+        "unset" => Some("unset"),
+        "revert" => Some("revert"),
+        "revert-layer" => Some("revert-layer"),
+        _ => None,
+    }
+}
+
 fn strict_selector(selector: &str) -> Result<StrictSelector, String> {
     let selector = selector.trim();
-    if let Some(class) = selector.strip_prefix('.') {
-        return valid_css_identifier(class)
-            .then(|| StrictSelector::Class(class.to_string()))
-            .ok_or_else(|| format!("Rust 字体加密不支持该 CSS 选择器: {selector}"));
+    if selector.is_empty() || selector.contains(['+', '~', ':', '[', ']', '*']) {
+        return Err(format!("Rust 字体加密不支持该 CSS 选择器: {selector}"));
     }
-    if let Some((tag, class)) = selector.split_once('.') {
-        return (valid_css_identifier(tag) && valid_css_identifier(class))
-            .then(|| StrictSelector::TagClass {
-                tag: tag.to_ascii_lowercase(),
-                class: class.to_string(),
-            })
-            .ok_or_else(|| format!("Rust 字体加密不支持该 CSS 选择器: {selector}"));
+    let mut compounds = Vec::new();
+    let mut combinators = Vec::new();
+    let mut pending_combinator = None;
+    let mut current = String::new();
+    let mut characters = selector.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character.is_whitespace() {
+            if !current.is_empty() {
+                compounds.push(compound_selector(&current, selector)?);
+                current.clear();
+                pending_combinator = Some(SelectorCombinator::Descendant);
+            }
+            while characters.peek().is_some_and(|next| next.is_whitespace()) {
+                characters.next();
+            }
+            continue;
+        }
+        if character == '>' {
+            if !current.is_empty() {
+                compounds.push(compound_selector(&current, selector)?);
+                current.clear();
+            }
+            if compounds.is_empty()
+                || pending_combinator.is_some_and(|value| value == SelectorCombinator::Child)
+            {
+                return Err(format!("Rust 字体加密不支持该 CSS 选择器: {selector}"));
+            }
+            pending_combinator = Some(SelectorCombinator::Child);
+            while characters.peek().is_some_and(|next| next.is_whitespace()) {
+                characters.next();
+            }
+            continue;
+        }
+        if current.is_empty() && !compounds.is_empty() {
+            let Some(combinator) = pending_combinator.take() else {
+                return Err(format!("Rust 字体加密不支持该 CSS 选择器: {selector}"));
+            };
+            combinators.push(combinator);
+        }
+        current.push(character);
     }
-    valid_css_identifier(selector)
-        .then(|| StrictSelector::Tag(selector.to_ascii_lowercase()))
-        .ok_or_else(|| format!("Rust 字体加密不支持该 CSS 选择器: {selector}"))
+    if current.is_empty() {
+        return Err(format!("Rust 字体加密不支持该 CSS 选择器: {selector}"));
+    }
+    if !compounds.is_empty() && combinators.len() != compounds.len() {
+        return Err(format!("Rust 字体加密不支持该 CSS 选择器: {selector}"));
+    }
+    compounds.push(compound_selector(&current, selector)?);
+    if combinators.len() + 1 != compounds.len() {
+        return Err(format!("Rust 字体加密不支持该 CSS 选择器: {selector}"));
+    }
+    Ok(StrictSelector {
+        compounds,
+        combinators,
+    })
+}
+
+fn compound_selector(value: &str, full_selector: &str) -> Result<CompoundSelector, String> {
+    let mut tag = None;
+    let mut id = None;
+    let mut classes = Vec::new();
+    let tag_end = value.find(['.', '#']).unwrap_or(value.len());
+    if tag_end > 0 {
+        let candidate = &value[..tag_end];
+        if !valid_css_identifier(candidate) {
+            return Err(format!("Rust 字体加密不支持该 CSS 选择器: {full_selector}"));
+        }
+        tag = Some(candidate.to_ascii_lowercase());
+    }
+    let mut cursor = tag_end;
+    while cursor < value.len() {
+        let marker = value.as_bytes()[cursor];
+        cursor += 1;
+        let suffix = &value[cursor..];
+        let end = suffix.find(['.', '#']).unwrap_or(suffix.len());
+        let value = &suffix[..end];
+        if !valid_css_identifier(value) {
+            return Err(format!("Rust 字体加密不支持该 CSS 选择器: {full_selector}"));
+        }
+        match marker {
+            b'.' => classes.push(value.to_string()),
+            b'#' if id.replace(value.to_string()).is_none() => {}
+            _ => return Err(format!("Rust 字体加密不支持该 CSS 选择器: {full_selector}")),
+        }
+        cursor += end;
+    }
+    if tag.is_none() && id.is_none() && classes.is_empty() {
+        return Err(format!("Rust 字体加密不支持该 CSS 选择器: {full_selector}"));
+    }
+    Ok(CompoundSelector { tag, id, classes })
 }
 
 fn valid_css_identifier(value: &str) -> bool {
@@ -450,7 +753,7 @@ fn utf8_member<'a>(
         .get(member)
         .ok_or_else(|| format!("EPUB 缺少 {label} 文件: {member}"))?;
     std::str::from_utf8(data)
-        .map_err(|_| format!("{label} 不是 UTF-8，需使用 Python 兼容实现: {member}"))
+        .map_err(|_| format!("{label} 不是 UTF-8，当前 Rust 实现暂不支持: {member}"))
 }
 
 fn entity_target_char(entity: &str) -> Result<char, String> {
@@ -461,13 +764,25 @@ fn entity_target_char(entity: &str) -> Result<char, String> {
     char::from_u32(codepoint).ok_or_else(|| format!("无效 HTML 混淆码位: {entity}"))
 }
 
-fn validate_xhtml_subset(source: &str, selector_rules: &[StrictFontRule]) -> Result<(), String> {
-    transform_xhtml(source, selector_rules, &BTreeMap::new(), |_, _| {}).map(|_| ())
+fn validate_xhtml_subset(
+    source: &str,
+    selector_rules: &[StrictFontRule],
+    font_by_family: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    transform_xhtml(
+        source,
+        selector_rules,
+        font_by_family,
+        &BTreeMap::new(),
+        |_, _| {},
+    )
+    .map(|_| ())
 }
 
 fn transform_xhtml(
     source: &str,
     selector_rules: &[StrictFontRule],
+    font_by_family: &BTreeMap<String, String>,
     replacements: &BTreeMap<String, BTreeMap<char, char>>,
     mut visit_text: impl FnMut(&str, &str),
 ) -> Result<String, String> {
@@ -497,7 +812,7 @@ fn transform_xhtml(
         let end = tag_end(source, text_end)?;
         let tag = &source[text_end..=end];
         if tag.starts_with("<!--") || tag.starts_with("<![CDATA[") {
-            return Err("XHTML 注释或 CDATA 需使用 Python 兼容实现".to_string());
+            return Err("XHTML 注释或 CDATA 当前 Rust 实现暂不支持".to_string());
         }
         if tag.starts_with("<?") || tag.starts_with("<!") {
             result.push_str(tag);
@@ -520,28 +835,36 @@ fn transform_xhtml(
         let empty = inner.trim_end().ends_with('/');
         let name = tag_name(inner.trim_end_matches('/').trim_end())?;
         if matches!(name.as_str(), "script" | "style") {
-            return Err(format!("XHTML <{name}> 需使用 Python 兼容实现"));
+            return Err(format!("XHTML <{name}> 当前 Rust 实现暂不支持"));
         }
         let classes = tag_attribute(inner, "class")?;
-        if let Some(style) = tag_attribute(inner, "style")? {
-            let style = style.to_ascii_lowercase();
-            if style.contains("font-family") || style.contains("font:") || style.contains("all:") {
-                return Err("XHTML 内联字体样式需使用 Python 兼容实现".to_string());
-            }
-        }
-        let matching_effect = selector_rules
-            .iter()
-            .filter(|rule| rule.selector.matches(&name, classes.as_deref()))
-            .max_by_key(|rule| (rule.selector.specificity(), rule.source_order))
-            .map(|rule| &rule.effect);
+        let id = tag_attribute(inner, "id")?;
+        let inline_style = tag_attribute(inner, "style")?;
+        let candidates = declaration_candidates(
+            &name,
+            id.as_deref(),
+            classes.as_deref(),
+            &stack,
+            selector_rules,
+            inline_style.as_deref(),
+        )?;
+        let inherited_properties = stack.last().map(|context| &context.custom_properties);
+        let custom_properties = computed_custom_properties(inherited_properties, &candidates)?;
+        let matching_effect = select_font_effect(&candidates, font_by_family, &custom_properties)?;
         let inherited = stack.last().and_then(|context| context.font.clone());
         let font = match matching_effect {
-            Some(FontRuleEffect::Font(font)) => Some(font.clone()),
+            Some(FontRuleEffect::Font(font)) => Some(font),
             Some(FontRuleEffect::Reset) => None,
             Some(FontRuleEffect::Inherit) | None => inherited,
         };
         if !empty {
-            stack.push(ElementContext { name, font });
+            stack.push(ElementContext {
+                name,
+                id,
+                classes,
+                font,
+                custom_properties,
+            });
         }
         result.push_str(tag);
         cursor = end + 1;

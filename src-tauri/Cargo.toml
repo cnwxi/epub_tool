@@ -15,7 +15,7 @@ fontdue = "0.9"
 image = { version = "0.25.5", default-features = false, features = ["bmp", "jpeg", "png", "webp"] }
 icu_properties = "2.2"
 ndarray = "0.17"
-ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "api-24"] }
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-native", "copy-dylibs", "api-24"] }
 percent-encoding = "2.3"
 png = "0.18"
 regex = "1.12"
@@ -28,9 +28,6 @@ tauri = { version = "2.2.5", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2.2.0"
 webp = "0.3"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.6"
