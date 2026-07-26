@@ -56,6 +56,10 @@ Tauri IPC 与 Python Worker 都直接传递完整的 `EngineEvent` 和 `EngineRe
 包含稳定的 `code` 和面向用户的 `message`。字体扫描事件为 `fontScanProgress`，
 包含 `currentIndex`、`totalFiles` 和 `result`。
 
+当前错误码包括：参数或协议错误 `INVALID_ARGUMENT`、文件系统错误 `IO_ERROR`、
+缺少处理依赖 `DEPENDENCY_ERROR`，以及未预期的内部错误 `INTERNAL`。每一种错误都
+会返回关联的 `EngineResponse`，不会让常驻 Worker 因单个请求退出。
+
 ## Options oneof
 
 - 无参数任务：`{ "empty": {} }`

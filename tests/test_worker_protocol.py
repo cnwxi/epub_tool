@@ -165,6 +165,54 @@ class WorkerProtocolTest(unittest.TestCase):
         self.assertEqual(response["requestId"], "invalid-request")
         self.assertEqual(response["error"]["code"], "INVALID_ARGUMENT")
 
+    def test_serve_returns_io_error_and_processes_the_next_request(self):
+        request = {
+            "protocolVersion": "PROTOCOL_VERSION_V1",
+            "requestId": "io-error-1",
+            "runTask": {
+                "taskId": "task-1",
+                "taskType": "TASK_TYPE_REFORMAT_EPUB",
+                "inputFiles": [],
+                "options": {"empty": {}},
+            },
+        }
+        next_request = {
+            **request,
+            "requestId": "run-2",
+            "runTask": {**request["runTask"], "taskId": "task-2"},
+        }
+        original_stdin = sys.stdin
+        original_stdout = sys.stdout
+        sys.stdin = io.StringIO(json.dumps(request) + "\n" + json.dumps(next_request) + "\n")
+        output = io.StringIO()
+        sys.stdout = output
+        try:
+            with (
+                patch.object(
+                    cli,
+                    "run_task",
+                    side_effect=[
+                        OSError("output is read-only"),
+                        TaskResult(
+                            ok=True,
+                            status="success",
+                            summary={"total": 0, "success": 0, "failed": 0, "skipped": 0},
+                        ),
+                    ],
+                ),
+                patch.object(cli, "start_parent_monitor"),
+            ):
+                self.assertEqual(cli.cmd_serve(None), 0)
+        finally:
+            sys.stdin = original_stdin
+            sys.stdout = original_stdout
+
+        responses = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(responses[0]["requestId"], "io-error-1")
+        self.assertEqual(responses[0]["error"]["code"], "IO_ERROR")
+        self.assertEqual(responses[1]["requestId"], "run-2")
+        self.assertTrue(responses[1]["taskResult"]["ok"])
+
     def test_engine_event_emitter_uses_request_envelope_and_camel_case(self):
         output = io.StringIO()
         original_stdout = sys.stdout

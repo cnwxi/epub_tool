@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import socket
 import sys
@@ -26,6 +27,12 @@ from python_backend.task_runner import iter_font_targets, run_task
 
 PARENT_LIVENESS_ADDR_ENV = "EPUB_TOOL_PARENT_LIVENESS_ADDR"
 PARENT_LIVENESS_TOKEN_ENV = "EPUB_TOOL_PARENT_LIVENESS_TOKEN"
+LOGGER = logging.getLogger(__name__)
+
+ERROR_CODE_INVALID_ARGUMENT = "INVALID_ARGUMENT"
+ERROR_CODE_IO = "IO_ERROR"
+ERROR_CODE_DEPENDENCY = "DEPENDENCY_ERROR"
+ERROR_CODE_INTERNAL = "INTERNAL"
 
 
 def configure_stdio() -> None:
@@ -109,11 +116,39 @@ def emit_json_message(message: Any) -> None:
     sys.stdout.flush()
 
 
-def engine_error_response(request_id: str, code: str, message: str) -> engine_pb2.EngineResponse:
+def engine_error_response(
+    request_id: str,
+    code: str,
+    message: str,
+) -> engine_pb2.EngineResponse:
     return engine_pb2.EngineResponse(
         protocol_version=PROTOCOL_VERSION,
         request_id=request_id,
         error=engine_pb2.EngineError(code=code, message=message),
+    )
+
+
+def engine_error_from_exception(
+    request_id: str,
+    error: Exception,
+) -> engine_pb2.EngineResponse:
+    """Convert a request failure into a stable response without killing the worker."""
+    if isinstance(error, (EngineProtocolError, TypeError, ValueError)):
+        return engine_error_response(request_id, ERROR_CODE_INVALID_ARGUMENT, str(error))
+    if isinstance(error, OSError):
+        return engine_error_response(request_id, ERROR_CODE_IO, str(error))
+    if isinstance(error, ImportError):
+        return engine_error_response(request_id, ERROR_CODE_DEPENDENCY, str(error))
+
+    LOGGER.error(
+        "Engine request %s failed unexpectedly",
+        request_id,
+        exc_info=(type(error), error, error.__traceback__),
+    )
+    return engine_error_response(
+        request_id,
+        ERROR_CODE_INTERNAL,
+        "处理引擎发生未预期错误，请查看日志。",
     )
 
 
@@ -155,14 +190,30 @@ def process_engine_request(
     raise EngineProtocolError("不支持的 operation")
 
 
+def execute_engine_request(request: engine_pb2.EngineRequest) -> engine_pb2.EngineResponse:
+    """Contain execution failures at the worker protocol boundary.
+
+    Service code is extensible and may raise exceptions outside per-file handling
+    (for example while preparing an output directory or importing a task module).
+    The persistent worker must answer the request and remain usable in those cases.
+    """
+    try:
+        return process_engine_request(request)
+    except (EngineProtocolError, OSError, ImportError, TypeError, ValueError) as exc:
+        return engine_error_from_exception(request.request_id, exc)
+    except Exception as exc:  # Protocol boundary: preserve worker availability for plugin failures.
+        return engine_error_from_exception(request.request_id, exc)
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     request_id = "invalid-request"
     try:
         request = load_engine_request_from_args(args)
         request_id = request.request_id
-        response = process_engine_request(request)
     except (EngineProtocolError, OSError, TypeError, ValueError) as exc:
-        response = engine_error_response(request_id, "INVALID_ARGUMENT", str(exc))
+        response = engine_error_from_exception(request_id, exc)
+    else:
+        response = execute_engine_request(request)
     emit_json_message(response)
     if response.WhichOneof("payload") == "task_result":
         return 0 if response.task_result.ok else 1
@@ -183,9 +234,11 @@ def cmd_serve(_args: argparse.Namespace) -> int:
             if not isinstance(payload, dict):
                 raise EngineProtocolError("引擎请求必须是 JSON 对象")
             request_id = str(payload.get("requestId") or request_id)
-            response = process_engine_request(parse_engine_request(payload))
+            request = parse_engine_request(payload)
         except (EngineProtocolError, TypeError, ValueError) as exc:
-            response = engine_error_response(request_id, "INVALID_ARGUMENT", str(exc))
+            response = engine_error_from_exception(request_id, exc)
+        else:
+            response = execute_engine_request(request)
         emit_json_message(response)
 
     return 0
