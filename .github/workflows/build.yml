@@ -82,22 +82,22 @@ jobs:
             arch: x64
             runner: ubuntu-22.04
             artifact_name: linux-x64-bundle
-          - platform: linux
-            arch: arm64
-            runner: ubuntu-24.04-arm
-            artifact_name: linux-arm64-bundle
+          # - platform: linux
+          #   arch: arm64
+          #   runner: ubuntu-24.04-arm
+          #   artifact_name: linux-arm64-bundle
           - platform: windows
             arch: x64
             runner: windows-2022
             artifact_name: windows-x64-bundle
-          - platform: windows
-            arch: arm64
-            runner: windows-11-arm
-            artifact_name: windows-arm64-bundle
-          - platform: macos
-            arch: x64
-            runner: macos-15-intel
-            artifact_name: macos-x64-bundle
+          # - platform: windows
+          #   arch: arm64
+          #   runner: windows-11-arm
+          #   artifact_name: windows-arm64-bundle
+          # - platform: macos
+          #   arch: x64
+          #   runner: macos-15-intel
+          #   artifact_name: macos-x64-bundle
           - platform: macos
             arch: arm64
             runner: macos-14
