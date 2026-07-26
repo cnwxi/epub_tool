@@ -213,6 +213,18 @@ class WorkerProtocolTest(unittest.TestCase):
         self.assertEqual(responses[1]["requestId"], "run-2")
         self.assertTrue(responses[1]["taskResult"]["ok"])
 
+    def test_wrapped_import_error_uses_dependency_error_code(self):
+        try:
+            try:
+                raise ModuleNotFoundError("No module named 'missing_dependency'")
+            except ModuleNotFoundError as cause:
+                raise RuntimeError("Python 依赖未安装完整") from cause
+        except RuntimeError as error:
+            response = cli.engine_error_from_exception("dependency-error-1", error)
+
+        self.assertEqual(response.request_id, "dependency-error-1")
+        self.assertEqual(response.error.code, cli.ERROR_CODE_DEPENDENCY)
+
     def test_engine_event_emitter_uses_request_envelope_and_camel_case(self):
         output = io.StringIO()
         original_stdout = sys.stdout

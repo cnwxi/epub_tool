@@ -128,6 +128,18 @@ def engine_error_response(
     )
 
 
+def is_dependency_error(error: Exception) -> bool:
+    """Return whether an exception was caused by a missing Python dependency."""
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        if isinstance(current, ImportError):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def engine_error_from_exception(
     request_id: str,
     error: Exception,
@@ -137,7 +149,7 @@ def engine_error_from_exception(
         return engine_error_response(request_id, ERROR_CODE_INVALID_ARGUMENT, str(error))
     if isinstance(error, OSError):
         return engine_error_response(request_id, ERROR_CODE_IO, str(error))
-    if isinstance(error, ImportError):
+    if is_dependency_error(error):
         return engine_error_response(request_id, ERROR_CODE_DEPENDENCY, str(error))
 
     LOGGER.error(
