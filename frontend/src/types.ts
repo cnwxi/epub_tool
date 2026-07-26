@@ -48,56 +48,50 @@ export interface NewTaskSettings {
   chineseDirection: "s2t" | "t2s";
 }
 
-export interface FontTargetResult {
-  ok: boolean;
-  input_file: string;
-  font_families: string[];
-  error?: string | null;
-}
+export type FontTargetResult = Required<FontTargetResultJson>;
 
-export interface FontTargetProgressEvent {
-  event: "font-targets.progress";
-  current_index: number;
-  total_files: number;
+export type FontTargetProgressEvent = Required<FontScanProgressJson> & {
   result: FontTargetResult;
-}
+};
 
-export interface TaskRequest {
-  taskId: string;
-  taskType: TaskType;
-  inputFiles: string[];
-  outputDir?: string | null;
-  options?: Record<string, unknown>;
-}
+export type TaskRequest = EngineRequestJson;
+type EngineError = Required<EngineErrorJson>;
+type FontScanResult = Required<Omit<FontScanResultJson, "results">> & {
+  results: FontTargetResult[];
+};
 
-export interface TaskResult {
-  ok: boolean;
-  status: string;
-  outputs: string[];
-  errors: Array<{ input_file: string; message: string }>;
-  skipped: Array<{ input_file: string; message: string }>;
-  summary: {
-    total: number;
-    success: number;
-    failed: number;
-    skipped: number;
-  };
-  log_path?: string | null;
-}
+type FileIssue = Required<FileIssueJson>;
+type TaskSummary = Required<TaskSummaryJson>;
 
-export interface TaskEvent {
+export type TaskResult = Omit<Required<TaskResultJson>, "errors" | "skipped" | "summary"> & {
+  errors: FileIssue[];
+  skipped: FileIssue[];
+  summary: TaskSummary;
+};
+
+export type TaskEvent = Omit<TaskEventJson, "progress" | "result"> & {
   event: string;
-  task_id: string;
+  taskId: string;
   status: string;
   progress: number;
   message: string;
-  current_file?: string | null;
-  current_index?: number | null;
-  total_files?: number | null;
-  output_path?: string | null;
-  level?: string;
+  level: string;
   result?: TaskResult;
-}
+};
+
+export type EngineEvent = Omit<Required<EngineEventJson>, "taskEvent" | "fontScanProgress"> & {
+  taskEvent?: TaskEvent;
+  fontScanProgress?: FontTargetProgressEvent;
+};
+
+export type EngineResponse = Omit<
+  Required<EngineResponseJson>,
+  "taskResult" | "fontScanResult" | "error"
+> & {
+  taskResult?: TaskResult;
+  fontScanResult?: FontScanResult;
+  error?: EngineError;
+};
 
 export interface AppSettings {
   autoOpenOutputFolder: boolean;
@@ -144,3 +138,16 @@ export interface TaskHistoryEntry {
   summary: TaskResult["summary"];
   firstOutput?: string | null;
 }
+import type {
+  EngineErrorJson,
+  EngineEventJson,
+  EngineRequestJson,
+  EngineResponseJson,
+  FileIssueJson,
+  FontScanResultJson,
+  FontScanProgressJson,
+  FontTargetResultJson,
+  TaskEventJson,
+  TaskResultJson,
+  TaskSummaryJson,
+} from "./generated/epub_tool/v1/engine_pb";

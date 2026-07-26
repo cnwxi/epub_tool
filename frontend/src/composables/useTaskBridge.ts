@@ -1,13 +1,11 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type {
-  FontTargetProgressEvent,
-  FontTargetResult,
+  EngineEvent,
+  EngineResponse,
   ImagePreviewResponse,
   PythonWorkerStatus,
-  TaskEvent,
   TaskRequest,
-  TaskResult,
 } from "../types";
 
 const isTauriRuntime = (): boolean =>
@@ -17,17 +15,17 @@ const isTauriRuntime = (): boolean =>
 export function useTaskBridge() {
   const runTask = async (
     request: TaskRequest,
-    onEvent: (event: TaskEvent) => void,
-  ): Promise<TaskResult> => {
+    onEvent: (event: EngineEvent) => void,
+  ): Promise<EngineResponse> => {
     if (!isTauriRuntime()) {
       throw new Error("当前环境不支持该功能，请在桌面应用中使用。");
     }
 
-    const channel = new Channel<TaskEvent>((event) => {
+    const channel = new Channel<EngineEvent>((event) => {
       onEvent(event);
     });
 
-    return invoke<TaskResult>("run_epub_task", {
+    return invoke<EngineResponse>("run_epub_task", {
       request,
       onEvent: channel,
     });
@@ -35,16 +33,20 @@ export function useTaskBridge() {
 
   const listFontTargetsBatch = async (
     filePaths: string[],
-    onEvent: (event: FontTargetProgressEvent) => void,
-  ): Promise<FontTargetResult[]> => {
+    onEvent: (event: EngineEvent) => void,
+  ): Promise<EngineResponse> => {
     if (!isTauriRuntime()) {
-      return [];
+      throw new Error("当前环境不支持该功能，请在桌面应用中使用。");
     }
-    const channel = new Channel<FontTargetProgressEvent>((event) => {
+    const channel = new Channel<EngineEvent>((event) => {
       onEvent(event);
     });
-    return invoke<FontTargetResult[]>("list_font_targets_batch", {
-      filePaths,
+    return invoke<EngineResponse>("list_font_targets_batch", {
+      request: {
+        protocolVersion: "PROTOCOL_VERSION_V1",
+        requestId: crypto.randomUUID(),
+        scanFonts: { inputFiles: filePaths },
+      },
       onEvent: channel,
     });
   };

@@ -7,10 +7,9 @@ from importlib import import_module
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from python_backend.epub_metadata import mark_epub_generated_by_tool
-from python_backend.json_output import dumps_json_line
 from python_backend.protocol import TaskEvent, TaskRequest, TaskResult
 
 
@@ -67,16 +66,19 @@ MODULE_PATHS = {
 _LOADED_MODULES: dict[str, Any] = {}
 
 
-class JsonLineEmitter:
+class TaskEventEmitter(Protocol):
+    def emit(self, event: TaskEvent) -> None: ...
+
+
+class NullEventEmitter:
     def emit(self, event: TaskEvent) -> None:
-        sys.stdout.write(dumps_json_line(event.to_dict()) + "\n")
-        sys.stdout.flush()
+        """Discard events for direct internal calls without exposing a wire format."""
 
 
 class BroadcastLogger:
     def __init__(
         self,
-        emitter: JsonLineEmitter,
+        emitter: TaskEventEmitter,
         task_id: str,
         context_provider: Callable[[], dict[str, Any]],
     ):
@@ -305,7 +307,7 @@ def execute_task(
     return func(input_file, output_dir)
 
 
-def run_task(request: TaskRequest) -> TaskResult:
+def run_task(request: TaskRequest, emitter: TaskEventEmitter | None = None) -> TaskResult:
     if request.task_type not in MODULE_PATHS:
         raise ValueError(f"不支持的任务类型: {request.task_type}")
     validate_task_options(request.task_type, request.options)
@@ -314,7 +316,7 @@ def run_task(request: TaskRequest) -> TaskResult:
         if output_dir.exists() and not output_dir.is_dir():
             raise ValueError(f"输出路径不是目录: {output_dir}")
         output_dir.mkdir(parents=True, exist_ok=True)
-    emitter = JsonLineEmitter()
+    emitter = emitter or NullEventEmitter()
     total_files = len(request.input_files)
     context = {
         "current_file": None,

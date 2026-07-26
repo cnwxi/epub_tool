@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from python_backend import cli
 from python_backend.json_output import dumps_json_line
-from python_backend.protocol import TaskResult
+from python_backend.protocol import TaskEvent, TaskResult
 from python_backend.services.font import decrypt_font
 
 
@@ -101,14 +101,13 @@ class WorkerProtocolTest(unittest.TestCase):
         sys.stdin = io.StringIO(
             json.dumps(
                 {
-                    "request_id": "run-1",
-                    "command": "run",
-                    "request": {
-                        "task_id": "task-1",
-                        "task_type": "reformat_epub",
-                        "input_files": [],
-                        "output_dir": None,
-                        "options": {},
+                    "protocolVersion": "PROTOCOL_VERSION_V1",
+                    "requestId": "run-1",
+                    "runTask": {
+                        "taskId": "task-1",
+                        "taskType": "TASK_TYPE_REFORMAT_EPUB",
+                        "inputFiles": [],
+                        "options": {"empty": {}},
                     },
                 }
             )
@@ -136,10 +135,59 @@ class WorkerProtocolTest(unittest.TestCase):
             sys.stdout = original_stdout
 
         response = json.loads(output.getvalue())
-        self.assertEqual(response["event"], "worker.response")
-        self.assertEqual(response["request_id"], "run-1")
-        self.assertTrue(response["ok"])
-        self.assertEqual(response["result"]["status"], "success")
+        self.assertEqual(response["requestId"], "run-1")
+        self.assertEqual(response["protocolVersion"], "PROTOCOL_VERSION_V1")
+        self.assertTrue(response["taskResult"]["ok"])
+        self.assertEqual(response["taskResult"]["status"], "success")
+
+    def test_serve_rejects_legacy_snake_case_request(self):
+        original_stdin = sys.stdin
+        original_stdout = sys.stdout
+        sys.stdin = io.StringIO(
+            json.dumps(
+                {
+                    "protocol_version": "PROTOCOL_VERSION_V1",
+                    "request_id": "legacy-1",
+                }
+            )
+            + "\n"
+        )
+        output = io.StringIO()
+        sys.stdout = output
+        try:
+            with patch.object(cli, "start_parent_monitor"):
+                self.assertEqual(cli.cmd_serve(None), 0)
+        finally:
+            sys.stdin = original_stdin
+            sys.stdout = original_stdout
+
+        response = json.loads(output.getvalue())
+        self.assertEqual(response["requestId"], "invalid-request")
+        self.assertEqual(response["error"]["code"], "INVALID_ARGUMENT")
+
+    def test_engine_event_emitter_uses_request_envelope_and_camel_case(self):
+        output = io.StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = output
+        try:
+            cli.EngineEventEmitter("event-1").emit(
+                TaskEvent(
+                    event="task.started",
+                    task_id="task-1",
+                    status="started",
+                    progress=0,
+                    message="starting",
+                    total_files=1,
+                )
+            )
+        finally:
+            sys.stdout = original_stdout
+
+        event = json.loads(output.getvalue())
+        self.assertEqual(event["requestId"], "event-1")
+        self.assertEqual(event["taskEvent"]["taskId"], "task-1")
+        self.assertEqual(event["taskEvent"]["totalFiles"], 1)
+        self.assertNotIn("task_id", event["taskEvent"])
 
     def test_ocr_backend_is_reused_for_same_model_configuration(self):
         decrypt_font._OCR_BACKEND_CACHE.clear()

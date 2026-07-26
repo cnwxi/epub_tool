@@ -1,5 +1,11 @@
 # 更新日志
 
+### 26.7.26
+将 Vue、Tauri 与 Python engine 的任务执行、事件流、任务结果和字体扫描统一为版本化的 schema-first 协议；新增 Protobuf + Buf 定义与三端生成类型，所有外部 JSON 字段统一为 camelCase。<br>
+重构 Python Worker 与 CLI：统一使用带 `requestId` 的 `EngineRequest`、`EngineEvent`、`EngineResponse` 信封，移除旧 snake_case 请求解析与重复的字体扫描协议路径。<br>
+补充 CLI 与任务协议文档，并新增 Worker 契约测试。<br>
+修复 Protobuf 代码生成接入后遗漏 `tauri_build::build()` 导致 capabilities 未加载的问题，恢复 Tauri capability 构建流程。<br>
+
 ### 26.7.25
 完善 GitHub Actions 发布工作流：支持正式发布与预发布渠道选择，预发布不会更新 Homebrew Tap。<br>
 发布正文留空时自动提取对应版本的更新日志，并附加默认安装说明；找不到版本记录时主动终止发布。<br>

@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package epub_tool.v1;
+
+// The version of the JSON/protobuf contract carried by the desktop IPC and
+// Python worker JSON Lines transport. A new incompatible protocol uses a new
+// package version rather than changing this value in place.
+enum ProtocolVersion {
+  PROTOCOL_VERSION_UNSPECIFIED = 0;
+  PROTOCOL_VERSION_V1 = 1;
+}
+
+enum TaskType {
+  TASK_TYPE_UNSPECIFIED = 0;
+  TASK_TYPE_REFORMAT_EPUB = 1;
+  TASK_TYPE_DECRYPT_EPUB = 2;
+  TASK_TYPE_ENCRYPT_EPUB = 3;
+  TASK_TYPE_ENCRYPT_FONT = 4;
+  TASK_TYPE_DECRYPT_FONT = 5;
+  TASK_TYPE_WEBP_TO_IMG = 6;
+  TASK_TYPE_IMAGE_COMPRESS = 7;
+  TASK_TYPE_IMAGE_TO_WEBP = 8;
+  TASK_TYPE_CHINESE_CONVERT = 9;
+  TASK_TYPE_REPLACE_COVER = 10;
+}
+
+message EmptyOptions {}
+
+message FontFamilies {
+  repeated string values = 1;
+}
+
+message FontOptions {
+  map<string, FontFamilies> target_font_families_by_file = 1;
+  repeated string target_font_families = 2;
+  optional string ocr_char_policy = 3;
+  optional double min_ocr_confidence = 4;
+}
+
+message ImageCompressOptions {
+  optional uint32 jpeg_quality = 1;
+  optional uint32 webp_quality = 2;
+  optional bool png_to_jpg = 3;
+  optional bool png_quantize = 4;
+}
+
+message ImageConversionOptions {
+  optional uint32 quality = 1;
+  optional bool png_quantize = 2;
+}
+
+message ChineseConvertOptions {
+  optional string direction = 1;
+}
+
+message ReplaceCoverOptions {
+  map<string, string> cover_path_by_file = 1;
+}
+
+message TaskOptions {
+  oneof kind {
+    EmptyOptions empty = 1;
+    FontOptions font = 2;
+    ImageCompressOptions image_compress = 3;
+    ImageConversionOptions image_conversion = 4;
+    ChineseConvertOptions chinese_convert = 5;
+    ReplaceCoverOptions replace_cover = 6;
+  }
+}
+
+message RunTaskRequest {
+  string task_id = 1;
+  TaskType task_type = 2;
+  repeated string input_files = 3;
+  optional string output_dir = 4;
+  TaskOptions options = 5;
+}
+
+message FontScanRequest {
+  repeated string input_files = 1;
+}
+
+message EngineRequest {
+  ProtocolVersion protocol_version = 1;
+  string request_id = 2;
+  oneof operation {
+    RunTaskRequest run_task = 3;
+    FontScanRequest scan_fonts = 4;
+  }
+}
+
+message FileIssue {
+  string input_file = 1;
+  string message = 2;
+}
+
+message TaskSummary {
+  uint32 total = 1;
+  uint32 success = 2;
+  uint32 failed = 3;
+  uint32 skipped = 4;
+}
+
+message TaskResult {
+  bool ok = 1;
+  string status = 2;
+  repeated string outputs = 3;
+  repeated FileIssue errors = 4;
+  repeated FileIssue skipped = 5;
+  TaskSummary summary = 6;
+  optional string log_path = 7;
+}
+
+message TaskEvent {
+  string event = 1;
+  string task_id = 2;
+  string status = 3;
+  double progress = 4;
+  string message = 5;
+  optional string current_file = 6;
+  optional uint32 current_index = 7;
+  optional uint32 total_files = 8;
+  optional string output_path = 9;
+  string level = 10;
+  TaskResult result = 11;
+}
+
+message FontTargetResult {
+  bool ok = 1;
+  string input_file = 2;
+  repeated string font_families = 3;
+  optional string error = 4;
+}
+
+message FontScanProgress {
+  uint32 current_index = 1;
+  uint32 total_files = 2;
+  FontTargetResult result = 3;
+}
+
+message EngineEvent {
+  ProtocolVersion protocol_version = 1;
+  string request_id = 2;
+  oneof payload {
+    TaskEvent task_event = 3;
+    FontScanProgress font_scan_progress = 4;
+  }
+}
+
+message EngineError {
+  string code = 1;
+  string message = 2;
+  optional string details = 3;
+}
+
+message EngineResponse {
+  ProtocolVersion protocol_version = 1;
+  string request_id = 2;
+  oneof payload {
+    TaskResult task_result = 3;
+    FontScanResult font_scan_result = 4;
+    EngineError error = 5;
+  }
+}
+
+message FontScanResult {
+  repeated FontTargetResult results = 1;
+}

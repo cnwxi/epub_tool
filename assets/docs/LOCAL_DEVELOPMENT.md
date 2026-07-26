@@ -224,19 +224,21 @@ npm run dev
 所有任务都必须通过统一后端入口调试；不要直接执行 `python_backend/services/` 下的模块。统一入口会保留包内导入的原始异常，便于定位依赖或实现问题。
 
 ```bash
-conda run -n epub_tool python -m python_backend.cli run --task-type reformat_epub --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_epub --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_epub --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_font --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_font --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type webp_to_img --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type image_compress --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type image_to_webp --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type replace_cover --input-file ./book.epub --options-json '{"cover_path_by_file":{"./book.epub":"./cover.jpg"}}'
-conda run -n epub_tool python -m python_backend.cli run --task-type chinese_convert --input-file ./book.epub --options-json '{"direction":"s2t"}'
-conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
+conda run -n epub_tool python -m python_backend.cli run \
+  --requestId debug-request \
+  --taskId debug-task \
+  --taskType TASK_TYPE_REFORMAT_EPUB \
+  --inputFile ./book.epub
+
+conda run -n epub_tool python -m python_backend.cli run \
+  --requestId convert-request \
+  --taskId convert-task \
+  --taskType TASK_TYPE_CHINESE_CONVERT \
+  --inputFile ./book.epub \
+  --optionsJson '{"chineseConvert":{"direction":"s2t"}}'
 ```
 
+参数和 JSON 字段均使用 camelCase；字体扫描须通过 `serve` 的 `scanFonts` operation。
 这些入口适合排障、协议验证和单功能调试，不是默认使用方式。
 
 ## 本地打包与二进制编译
