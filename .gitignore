@@ -34,8 +34,6 @@ src-tauri/binaries/*
 src-tauri/bundle-resources/
 !src-tauri/bundle-resources/
 src-tauri/bundle-resources/*
-!src-tauri/bundle-resources/opencc/
-!src-tauri/bundle-resources/opencc/*
 !src-tauri/bundle-resources/binaries/
 src-tauri/bundle-resources/binaries/*
 !src-tauri/bundle-resources/binaries/.gitkeep

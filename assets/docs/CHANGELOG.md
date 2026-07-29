@@ -1,15 +1,13 @@
 # 更新日志
 
 ### 26.7.29
-桌面应用任务执行、构建、打包与发布链路切换为纯 Rust 后端；Python 仅保留为黄金样本回归、问题定位与 OCR 模型维护工具，不再作为运行时 sidecar。<br>
-迁移 EPUB 基础处理、图片处理、简繁转换、EPUB 加解密、字体加密与字体 OCR 解密至 Rust，并将 OpenCC 词库和 OCR ONNX 资源纳入版本管理与打包资源。<br>
-保留 Protobuf + Buf 作为 Vue、Tauri 与 Python 黄金样本之间唯一的版本化协议源；Rust 任务引擎新增适配层，将 `EngineRequest` 的任务与 options oneof 转为内部任务输入，并将事件与结果重新包装为 `EngineEvent` / `EngineResponse`。<br>
-更新本地开发、构建打包、任务协议与 CLI 文档，默认 `cargo run` 运行桌面应用二进制。<br>
-调整 Linux x64 发布构建环境至 Ubuntu 24.04，以满足 Rust ONNX Runtime 预编译库对 glibc 2.38+ 符号的链接要求；该 Linux 产物的最低 glibc 运行时版本相应提高。<br>
-恢复 Linux ARM64 发布构建：Rust ONNX Runtime 提供 `aarch64-unknown-linux-gnu` 预编译库；该产物同样要求 glibc 2.38+，首次 Linux ARM64 CI 运行将完成端到端构建验证。<br>
-保留 macOS Intel 与 Apple Silicon 的发布矩阵，并由 CI 在各目标平台实际验证 Rust ONNX Runtime 的打包兼容性。<br>
-恢复 Windows ARM64 发布构建：Rust ONNX Runtime 提供 `aarch64-pc-windows-msvc` 预编译库；首次 Windows ARM64 CI 运行将完成端到端构建验证。<br>
-收敛平台安装包类型：Linux 仅生成 `deb/rpm`，Windows 仅生成 NSIS `Setup.exe`，避免 Windows 构建下载 WiX/MSI 工具链时受网络中断影响。<br>
+将 Vue、Tauri 与 Python engine 的任务执行、事件流、任务结果和字体扫描统一为版本化的 schema-first 协议；新增 Protobuf + Buf 定义与三端生成类型，所有外部 JSON 字段统一为 camelCase。<br>
+重构 Python Worker 与 CLI：统一使用带 `requestId` 的 `EngineRequest`、`EngineEvent`、`EngineResponse` 信封，移除旧 snake_case 请求解析与重复的字体扫描协议路径。<br>
+完善常驻 Python Worker 的错误边界：文件系统、依赖加载和未预期执行错误均返回关联请求的结构化错误响应，不再因单个请求退出；新增稳定错误码与连续请求回归测试。<br>
+修复任务模块的依赖缺失被包装后误报为内部错误的问题，现会沿异常链返回 `DEPENDENCY_ERROR`。<br>
+补充 CLI 与任务协议文档，并新增 Worker 契约测试。<br>
+修复 Protobuf 代码生成接入后遗漏 `tauri_build::build()` 导致 capabilities 未加载的问题，恢复 Tauri capability 构建流程。<br>
+调整发布二进制：Linux 仅生成 deb、rpm，Windows 仅生成 NSIS 安装包，macOS 仅发布最终 DMG。<br>
 
 ### 26.7.25
 完善 GitHub Actions 发布工作流：支持正式发布与预发布渠道选择，预发布不会更新 Homebrew Tap。<br>

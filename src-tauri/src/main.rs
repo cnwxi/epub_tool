@@ -1,25 +1,31 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use epub_tool_newui::{
-    engine_adapter,
-    engine_protocol::v1::{
-        engine_event, engine_request, engine_response, EngineEvent, EngineRequest,
-        EngineResponse, FontScanProgress, FontScanResult, ProtocolVersion,
-    },
-    rust_backend,
+mod engine_protocol;
+
+use engine_protocol::v1::{
+    engine_request, engine_response, EngineEvent, EngineRequest, EngineResponse,
+    ProtocolVersion,
 };
 use serde::Serialize;
 use serde_json::Value;
 use std::{
     collections::BTreeMap,
     fs,
+    io::{BufRead, BufReader, Read, Write},
+    net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     path::{Path, PathBuf},
-    process::Command,
-    sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 
+#[cfg(unix)]
+use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -29,6 +35,16 @@ use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 #[cfg(target_os = "windows")]
 use window_vibrancy::{apply_blur, apply_mica};
 
+const SIDECAR_NAME: &str = if cfg!(target_os = "windows") {
+    "epub-tool-python.exe"
+} else {
+    "epub-tool-python"
+};
+const SIDECAR_DIR_NAME: &str = "epub-tool-python";
+const SIDECAR_RESOURCE_DIR_NAME: &str = "epub-tool-python-runtime";
+const FALLBACK_OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec";
+const WORKER_STDERR_MAX_LINES: usize = 100;
+const PARENT_LIVENESS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
 const COVER_PREVIEW_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
 #[cfg(target_os = "windows")]
@@ -59,13 +75,27 @@ struct PersistedStore {
     data: Mutex<BTreeMap<String, Value>>,
 }
 
-struct RustBackendState {
-    auto_restart_limit: Mutex<u8>,
+struct PythonWorker {
+    child: Arc<Mutex<Child>>,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+    stderr_lines: Arc<Mutex<Vec<String>>>,
+    _parent_liveness_stream: TcpStream,
+}
+
+struct PythonWorkerStore {
+    worker: Mutex<Option<PythonWorker>>,
+    // The active child stays separately accessible while stdout is being read under `worker`.
+    active_child: Mutex<Option<Arc<Mutex<Child>>>>,
+    manual_restart_requested: AtomicBool,
+    // Invalidates queued automatic recoveries whenever a newer start or restart begins.
+    recovery_epoch: AtomicU64,
+    status: Mutex<PythonWorkerStatus>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EngineStatus {
+struct PythonWorkerStatus {
     state: String,
     message: String,
     last_error: Option<String>,
@@ -74,14 +104,16 @@ struct EngineStatus {
     auto_restart_limit: u8,
 }
 
-fn rust_backend_status(auto_restart_limit: u8) -> EngineStatus {
-    EngineStatus {
-        state: "ready".to_string(),
-        message: "Rust 处理引擎已就绪".to_string(),
-        last_error: None,
-        pid: None,
-        recovery_attempts: 0,
-        auto_restart_limit,
+impl Default for PythonWorkerStatus {
+    fn default() -> Self {
+        Self {
+            state: "stopped".to_string(),
+            message: "处理引擎尚未启动".to_string(),
+            last_error: None,
+            pid: None,
+            recovery_attempts: 0,
+            auto_restart_limit: 2,
+        }
     }
 }
 
@@ -329,32 +361,178 @@ fn collect_epubs_recursive(directory: &Path, result: &mut Vec<String>) -> Result
     Ok(())
 }
 
+fn sidecar_candidates(app: &AppHandle) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(explicit_path) = std::env::var("EPUB_TOOL_PYTHON_SIDECAR") {
+        if !explicit_path.is_empty() {
+            let explicit_path = PathBuf::from(explicit_path);
+            candidates.push(explicit_path.clone());
+            candidates.push(explicit_path.join(SIDECAR_NAME));
+        }
+    }
+
+    if let Some(root) = workspace_root() {
+        let binaries_dir = root.join("src-tauri").join("binaries");
+        candidates.push(binaries_dir.join(SIDECAR_NAME));
+        candidates.push(binaries_dir.join(SIDECAR_DIR_NAME).join(SIDECAR_NAME));
+    }
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let binaries_dir = resource_dir.join("binaries");
+        candidates.push(binaries_dir.join(SIDECAR_NAME));
+        candidates.push(
+            binaries_dir
+                .join(SIDECAR_RESOURCE_DIR_NAME)
+                .join(SIDECAR_NAME),
+        );
+    }
+
+    candidates
+}
+
+#[cfg(unix)]
+fn ensure_executable_permission(path: &Path) -> Result<(), String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("读取 sidecar 权限失败 {}: {error}", path.display()))?;
+    let current_mode = metadata.permissions().mode();
+    if current_mode & 0o111 != 0 {
+        return Ok(());
+    }
+
+    let mut permissions = metadata.permissions();
+    permissions.set_mode(current_mode | 0o755);
+    fs::set_permissions(path, permissions)
+        .map_err(|error| format!("修复 sidecar 可执行权限失败 {}: {error}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn ensure_executable_permission(_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+fn resolve_sidecar(app: &AppHandle) -> Result<Option<PathBuf>, String> {
+    for path in sidecar_candidates(app) {
+        if path.is_file() {
+            ensure_executable_permission(&path)?;
+            return Ok(Some(path));
+        }
+    }
+
+    Ok(None)
+}
+
+fn system_python_candidates() -> Vec<(String, Vec<String>)> {
+    let mut candidates = vec![
+        ("python3".to_string(), vec![]),
+        ("python".to_string(), vec![]),
+    ];
+
+    if cfg!(target_os = "windows") {
+        candidates.insert(0, ("py".to_string(), vec!["-3".to_string()]));
+    }
+
+    candidates
+}
+
+fn resolve_system_python() -> Result<(String, Vec<String>), String> {
+    for (bin, prefix) in system_python_candidates() {
+        let status = Command::new(&bin)
+            .args(prefix.iter())
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        if let Ok(status) = status {
+            if status.success() {
+                return Ok((bin, prefix));
+            }
+        }
+    }
+
+    Err("未找到可用的系统 Python 运行时，请先安装 python3 或 python。".into())
+}
+
+fn build_backend_command(app: &AppHandle, subcommand: &str) -> Result<Command, String> {
+    let log_path = resolve_log_path(app)?;
+    let work_dir = resolve_runtime_root(app)?;
+    let ocr_model_dir = resolve_ocr_model_dir(app);
+
+    if let Some(sidecar_path) = resolve_sidecar(app)? {
+        let mut command = Command::new(sidecar_path);
+        command.current_dir(&work_dir);
+        command.arg(subcommand);
+        configure_backend_command(&mut command, &log_path, ocr_model_dir.as_deref());
+        return Ok(command);
+    }
+
+    let workspace = workspace_root().ok_or_else(|| {
+        "未找到内置 Python sidecar，且当前运行环境也不是开发工作区，无法回退系统 Python。"
+            .to_string()
+    })?;
+    let (bin, mut prefix) = resolve_system_python()?;
+    prefix.extend([
+        "-m".to_string(),
+        "python_backend.cli".to_string(),
+        subcommand.to_string(),
+    ]);
+
+    let mut command = Command::new(bin);
+    command.current_dir(workspace);
+    command.args(prefix);
+    configure_backend_command(&mut command, &log_path, ocr_model_dir.as_deref());
+    Ok(command)
+}
+
 fn resolve_ocr_model_dir(app: &AppHandle) -> Option<PathBuf> {
     if let Ok(explicit_path) = std::env::var("EPUB_TOOL_OCR_ONNX_MODEL_DIR") {
         if !explicit_path.is_empty() {
             return Some(PathBuf::from(explicit_path));
         }
     }
-    let model_dir_name = std::env::var("EPUB_TOOL_OCR_MODEL_NAME")
+    let onnx_model_name = std::env::var("EPUB_TOOL_OCR_MODEL_NAME")
         .ok()
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "PP-OCRv6_small_rec".to_string())
+        .unwrap_or_else(|| default_ocr_model_name().to_string())
         + "_onnx";
+
     if let Some(root) = workspace_root() {
-        let model_dir = root
+        let dev_model_dir = root
             .join("src-tauri")
             .join("bundle-resources")
             .join("ocr-models")
-            .join(&model_dir_name);
-        if model_dir.is_dir() {
-            return Some(model_dir);
+            .join(&onnx_model_name);
+        if dev_model_dir.is_dir() {
+            return Some(dev_model_dir);
         }
     }
-    app.path()
-        .resource_dir()
-        .ok()
-        .map(|resource_dir| resource_dir.join("ocr-models").join(model_dir_name))
-        .filter(|model_dir| model_dir.is_dir())
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled_model_dir = resource_dir.join("ocr-models").join(&onnx_model_name);
+        if bundled_model_dir.is_dir() {
+            return Some(bundled_model_dir);
+        }
+    }
+
+    None
+}
+
+fn default_ocr_model_name() -> &'static str {
+    option_env!("EPUB_TOOL_DEFAULT_OCR_MODEL_NAME")
+        .filter(|value| !value.is_empty())
+        .unwrap_or(FALLBACK_OCR_MODEL_NAME)
+}
+
+fn configure_backend_command(command: &mut Command, log_path: &Path, ocr_model_dir: Option<&Path>) {
+    command.env("EPUB_TOOL_LOG_PATH", log_path);
+    if let Some(ocr_model_dir) = ocr_model_dir {
+        command.env("EPUB_TOOL_OCR_ONNX_MODEL_DIR", ocr_model_dir);
+    }
+    command.env("PYTHONUTF8", "1");
+    command.env("PYTHONIOENCODING", "utf-8");
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
 }
 
 fn configure_system_open_command(_command: &mut Command) {
@@ -362,6 +540,513 @@ fn configure_system_open_command(_command: &mut Command) {
     _command.creation_flags(CREATE_NO_WINDOW);
 }
 
+fn create_parent_liveness_listener() -> Result<(TcpListener, String, String), String> {
+    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .map_err(|error| format!("创建 worker liveness socket 失败: {error}"))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|error| format!("配置 worker liveness socket 失败: {error}"))?;
+    let address = listener
+        .local_addr()
+        .map_err(|error| format!("读取 worker liveness socket 地址失败: {error}"))?
+        .to_string();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_nanos())
+        .unwrap_or_default();
+    let token = format!("{}-{nonce}", std::process::id());
+    Ok((listener, address, token))
+}
+
+fn accept_parent_liveness_stream(listener: &TcpListener, token: &str) -> Result<TcpStream, String> {
+    let expected = format!("{token}\n").into_bytes();
+    let deadline = Instant::now() + PARENT_LIVENESS_ACCEPT_TIMEOUT;
+    loop {
+        if Instant::now() >= deadline {
+            return Err("等待 Python worker liveness 握手超时".to_string());
+        }
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                let mut received = Vec::with_capacity(expected.len());
+                while received.len() < expected.len() {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        break;
+                    }
+                    stream
+                        .set_read_timeout(Some(remaining.min(Duration::from_secs(1))))
+                        .map_err(|error| format!("配置 worker liveness 握手失败: {error}"))?;
+                    let mut buffer = [0_u8; 64];
+                    match stream.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(length) => received.extend_from_slice(&buffer[..length]),
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => continue,
+                        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => continue,
+                        Err(error) => {
+                            return Err(format!("读取 worker liveness 握手失败: {error}"));
+                        }
+                    }
+                }
+                if received == expected {
+                    stream.set_read_timeout(None).map_err(|error| {
+                        format!("恢复 worker liveness socket 配置失败: {error}")
+                    })?;
+                    return Ok(stream);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => return Err(format!("接收 worker liveness 连接失败: {error}")),
+        }
+    }
+}
+
+fn terminate_worker_process_tree(child: &mut Child) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let result = unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
+        if result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            return Ok(());
+        }
+        Err(format!(
+            "终止 Python worker 进程组失败: {}",
+            std::io::Error::last_os_error()
+        ))
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &child.id().to_string(), "/T", "/F"]);
+        command.creation_flags(CREATE_NO_WINDOW);
+        let status = command
+            .status()
+            .map_err(|error| format!("终止 Python worker 进程树失败: {error}"))?;
+        if status.success() || matches!(child.try_wait(), Ok(Some(_))) {
+            return Ok(());
+        }
+        return child
+            .kill()
+            .map_err(|error| format!("终止 Python worker 失败: {error}"));
+    }
+
+    #[cfg(not(any(unix, target_os = "windows")))]
+    child
+        .kill()
+        .map_err(|error| format!("终止 Python worker 失败: {error}"))
+}
+
+fn start_python_worker(app: &AppHandle) -> Result<PythonWorker, String> {
+    let mut command = build_backend_command(app, "serve")?;
+    let (liveness_listener, liveness_address, liveness_token) = create_parent_liveness_listener()?;
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    command.env("EPUB_TOOL_PARENT_LIVENESS_ADDR", liveness_address);
+    command.env("EPUB_TOOL_PARENT_LIVENESS_TOKEN", liveness_token.clone());
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("启动常驻 Python worker 失败: {error}"))?;
+    let parent_liveness_stream =
+        match accept_parent_liveness_stream(&liveness_listener, &liveness_token) {
+            Ok(stream) => stream,
+            Err(error) => {
+                let _ = terminate_worker_process_tree(&mut child);
+                return Err(error);
+            }
+        };
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "无法读取 Python worker stdin".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "无法读取 Python worker stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法读取 Python worker stderr".to_string())?;
+    let stderr_lines = Arc::new(Mutex::new(Vec::new()));
+    let stderr_lines_for_thread = Arc::clone(&stderr_lines);
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if let Ok(mut lines) = stderr_lines_for_thread.lock() {
+                lines.push(line);
+                if lines.len() > WORKER_STDERR_MAX_LINES {
+                    let overflow = lines.len() - WORKER_STDERR_MAX_LINES;
+                    lines.drain(..overflow);
+                }
+            }
+        }
+    });
+
+    Ok(PythonWorker {
+        child: Arc::new(Mutex::new(child)),
+        stdin,
+        stdout: BufReader::new(stdout),
+        stderr_lines,
+        _parent_liveness_stream: parent_liveness_stream,
+    })
+}
+
+fn worker_pid(worker: &PythonWorker) -> Option<u32> {
+    worker.child.lock().ok().map(|child| child.id())
+}
+
+fn set_active_worker_child(store: &PythonWorkerStore, child: Option<Arc<Mutex<Child>>>) {
+    if let Ok(mut active_child) = store.active_child.lock() {
+        *active_child = child;
+    }
+}
+
+fn ensure_python_worker(
+    app: &AppHandle,
+    store: &PythonWorkerStore,
+    worker_slot: &mut Option<PythonWorker>,
+) -> Result<(), String> {
+    if let Some(worker) = worker_slot.as_mut() {
+        if worker
+            .child
+            .lock()
+            .map_err(|_| "Python worker 子进程锁已损坏".to_string())?
+            .try_wait()
+            .map_err(|error| format!("检查 Python worker 状态失败: {error}"))?
+            .is_none()
+        {
+            return Ok(());
+        }
+    }
+
+    // The liveness handshake below may take up to 30 seconds.  Keep the
+    // status mutex available so frontend polling can show this transition.
+    {
+        let mut status = store
+            .status
+            .lock()
+            .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+        status.state = "starting".to_string();
+        status.message = "正在启动处理引擎…".to_string();
+        status.pid = None;
+    }
+    store.recovery_epoch.fetch_add(1, Ordering::AcqRel);
+    match start_python_worker(app) {
+        Ok(worker) => {
+            let pid = worker_pid(&worker);
+            *worker_slot = Some(worker);
+            let mut status = store
+                .status
+                .lock()
+                .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+            status.state = "ready".to_string();
+            status.message = "处理引擎已就绪".to_string();
+            status.last_error = None;
+            status.pid = pid;
+            Ok(())
+        }
+        Err(error) => {
+            let mut status = store
+                .status
+                .lock()
+                .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+            status.state = "unavailable".to_string();
+            status.message = "处理引擎启动失败".to_string();
+            status.last_error = Some(error.clone());
+            status.pid = None;
+            Err(error)
+        }
+    }
+}
+
+fn prewarm_python_worker(app: &AppHandle, store: &PythonWorkerStore) -> Result<(), String> {
+    let mut worker_slot = store
+        .worker
+        .lock()
+        .map_err(|_| "Python worker 锁已损坏".to_string())?;
+    ensure_python_worker(app, store, &mut worker_slot)
+}
+
+fn stop_python_worker(worker: &mut PythonWorker) -> Result<(), String> {
+    let mut child = worker
+        .child
+        .lock()
+        .map_err(|_| "Python worker 子进程锁已损坏".to_string())?;
+    if child
+        .try_wait()
+        .map_err(|error| format!("检查 Python worker 退出状态失败: {error}"))?
+        .is_none()
+    {
+        terminate_worker_process_tree(&mut child)?;
+    }
+    child
+        .wait()
+        .map_err(|error| format!("等待 Python worker 退出失败: {error}"))?;
+    Ok(())
+}
+
+fn shutdown_python_worker(store: &PythonWorkerStore) {
+    if let Ok(mut worker_slot) = store.worker.try_lock() {
+        if let Some(worker) = worker_slot.as_mut() {
+            let _ = stop_python_worker(worker);
+        }
+        *worker_slot = None;
+        set_active_worker_child(store, None);
+        return;
+    }
+
+    let active_child = store
+        .active_child
+        .lock()
+        .ok()
+        .and_then(|child| child.clone());
+    if let Some(active_child) = active_child {
+        if let Ok(mut child) = active_child.lock() {
+            if matches!(child.try_wait(), Ok(None)) {
+                let _ = terminate_worker_process_tree(&mut child);
+            }
+        }
+    }
+}
+
+fn recover_python_worker(
+    app: &AppHandle,
+    store: &PythonWorkerStore,
+    error: &str,
+    force_restart: bool,
+    expected_recovery_epoch: Option<u64>,
+) {
+    let mut worker_slot = match store.worker.lock() {
+        Ok(worker_slot) => worker_slot,
+        Err(_) => return,
+    };
+    if let Some(expected_epoch) = expected_recovery_epoch {
+        if store.recovery_epoch.load(Ordering::Acquire) != expected_epoch {
+            return;
+        }
+    }
+    if let Some(worker) = worker_slot.as_mut() {
+        let _ = stop_python_worker(worker);
+    }
+    *worker_slot = None;
+
+    let should_restart = {
+        let mut status = match store.status.lock() {
+            Ok(status) => status,
+            Err(_) => return,
+        };
+        status.last_error = Some(error.to_string());
+        status.pid = None;
+        if !force_restart && status.recovery_attempts >= status.auto_restart_limit {
+            status.state = "unavailable".to_string();
+            status.message = format!(
+                "自动恢复已达到上限（{}/{}）",
+                status.recovery_attempts, status.auto_restart_limit
+            );
+            false
+        } else {
+            if force_restart {
+                status.recovery_attempts = 0;
+            } else {
+                status.recovery_attempts += 1;
+            }
+            status.state = "recovering".to_string();
+            status.message = if force_restart {
+                "正在重新启动处理引擎…".to_string()
+            } else {
+                format!(
+                    "正在自动恢复处理引擎（{}/{}）…",
+                    status.recovery_attempts, status.auto_restart_limit
+                )
+            };
+            true
+        }
+    };
+    if !should_restart {
+        return;
+    }
+
+    if let Err(start_error) = ensure_python_worker(app, store, &mut worker_slot) {
+        if let Ok(mut status) = store.status.lock() {
+            status.last_error = Some(format!("{error}\n自动恢复失败：{start_error}"));
+        }
+    } else if let Ok(mut status) = store.status.lock() {
+        status.last_error = Some(error.to_string());
+        status.message = if force_restart {
+            "处理引擎已手动重启".to_string()
+        } else {
+            format!(
+                "处理引擎已恢复（{}/{}）",
+                status.recovery_attempts, status.auto_restart_limit
+            )
+        };
+    }
+}
+
+fn worker_stderr_tail(worker: &PythonWorker) -> String {
+    worker
+        .stderr_lines
+        .lock()
+        .map(|lines| lines.join("\n"))
+        .unwrap_or_else(|_| "无法读取 Python worker stderr".to_string())
+}
+
+fn terminate_active_worker(store: &PythonWorkerStore) -> Result<PythonWorkerStatus, String> {
+    let active_child = store
+        .active_child
+        .lock()
+        .map_err(|_| "Python worker 活动子进程锁已损坏".to_string())?
+        .clone()
+        .ok_or_else(|| "处理引擎没有正在执行的请求。".to_string())?;
+    let mut child = active_child
+        .lock()
+        .map_err(|_| "Python worker 子进程锁已损坏".to_string())?;
+    if child
+        .try_wait()
+        .map_err(|error| format!("检查 Python worker 状态失败: {error}"))?
+        .is_some()
+    {
+        return Err("当前请求正在结束，请稍后再尝试重启处理引擎。".to_string());
+    }
+    terminate_worker_process_tree(&mut child)?;
+    drop(child);
+    store
+        .manual_restart_requested
+        .store(true, Ordering::Release);
+
+    let mut status = store
+        .status
+        .lock()
+        .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+    status.state = "recovering".to_string();
+    status.message = "正在终止当前请求并重启处理引擎…".to_string();
+    status.last_error = Some("用户手动重启处理引擎。".to_string());
+    status.pid = None;
+    status.recovery_attempts = 0;
+    Ok(status.clone())
+}
+
+fn execute_worker_request(
+    app: &AppHandle,
+    store: &PythonWorkerStore,
+    request: EngineRequest,
+    on_event: &Channel<Value>,
+) -> Result<(EngineResponse, Value), String> {
+    validate_engine_request(&request)?;
+    let request_id = request.request_id.clone();
+    let request_line = serde_json::to_string(&request)
+        .map_err(|error| format!("序列化 worker 请求失败: {error}"))?;
+    let mut worker_slot = store
+        .worker
+        .lock()
+        .map_err(|_| "Python worker 锁已损坏".to_string())?;
+    ensure_python_worker(app, store, &mut worker_slot)?;
+    {
+        let mut status = store
+            .status
+            .lock()
+            .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+        status.state = "busy".to_string();
+        status.message = "处理引擎正在执行请求".to_string();
+    }
+    let active_child = worker_slot
+        .as_ref()
+        .map(|worker| Arc::clone(&worker.child))
+        .ok_or_else(|| "Python worker 未初始化".to_string())?;
+    set_active_worker_child(store, Some(active_child));
+
+    let result = (|| -> Result<(EngineResponse, Value), String> {
+        let worker = worker_slot
+            .as_mut()
+            .ok_or_else(|| "Python worker 未初始化".to_string())?;
+        worker
+            .stdin
+            .write_all(request_line.as_bytes())
+            .and_then(|_| worker.stdin.write_all(b"\n"))
+            .and_then(|_| worker.stdin.flush())
+            .map_err(|error| format!("发送 Python worker 请求失败: {error}"))?;
+
+        loop {
+            let mut line = String::new();
+            let bytes_read = worker
+                .stdout
+                .read_line(&mut line)
+                .map_err(|error| format!("读取 Python worker 输出失败: {error}"))?;
+            if bytes_read == 0 {
+                let stderr = worker_stderr_tail(worker);
+                return Err(format!("Python worker 意外退出。{stderr}"));
+            }
+
+            let payload: Value = serde_json::from_str(line.trim_end())
+                .map_err(|error| format!("解析 Python worker 事件失败: {error}"))?;
+            if payload.get("taskEvent").is_some() || payload.get("fontScanProgress").is_some() {
+                let event: EngineEvent = serde_json::from_value(payload.clone())
+                    .map_err(|error| format!("解析 Python worker 事件信封失败: {error}"))?;
+                if event.protocol_version != ProtocolVersion::V1 as i32 {
+                    return Err("Python worker 事件使用了不支持的 protocolVersion".to_string());
+                }
+                if event.request_id != request_id {
+                    return Err(format!(
+                        "Python worker 事件 ID 不匹配，期望 {request_id}，收到 {}",
+                        event.request_id
+                    ));
+                }
+                if event.payload.is_none() {
+                    return Err("Python worker 事件缺少 payload".to_string());
+                }
+                on_event
+                    .send(payload)
+                    .map_err(|error| format!("推送 Python worker 事件失败: {error}"))?;
+                continue;
+            }
+
+            let response: EngineResponse = serde_json::from_value(payload.clone())
+                .map_err(|error| format!("解析 Python worker 响应信封失败: {error}"))?;
+            if response.protocol_version != ProtocolVersion::V1 as i32 {
+                return Err("Python worker 响应使用了不支持的 protocolVersion".to_string());
+            }
+            let response_id = &response.request_id;
+            if response_id != &request_id {
+                return Err(format!(
+                    "Python worker 响应 ID 不匹配，期望 {request_id}，收到 {response_id}"
+                ));
+            }
+            return Ok((response, payload));
+        }
+    })();
+    set_active_worker_child(store, None);
+
+    if let Err(error) = &result {
+        if let Some(worker) = worker_slot.as_mut() {
+            let _ = stop_python_worker(worker);
+        }
+        *worker_slot = None;
+        drop(worker_slot);
+        let force_restart = store.manual_restart_requested.swap(false, Ordering::AcqRel);
+        recover_python_worker(app, store, error, force_restart, None);
+    } else if let Ok(mut status) = store.status.lock() {
+        status.state = "ready".to_string();
+        status.message = "处理引擎已就绪".to_string();
+        status.pid = worker_slot.as_ref().and_then(worker_pid);
+    }
+    result
+}
+
+fn validate_engine_request(request: &EngineRequest) -> Result<(), String> {
+    if request.protocol_version != ProtocolVersion::V1 as i32 {
+        return Err("请求使用了不支持的 protocolVersion".to_string());
+    }
+    if request.request_id.is_empty() {
+        return Err("请求缺少 requestId".to_string());
+    }
+    if request.operation.is_none() {
+        return Err("请求缺少 operation".to_string());
+    }
+    Ok(())
+}
 
 fn append_input_source(path: &Path, result: &mut Vec<String>) -> Result<(), String> {
     if path.is_dir() {
@@ -381,81 +1066,170 @@ fn append_input_source(path: &Path, result: &mut Vec<String>) -> Result<(), Stri
     Ok(())
 }
 
+fn get_python_worker_status_blocking(
+    app: &AppHandle,
+    store: &PythonWorkerStore,
+) -> Result<PythonWorkerStatus, String> {
+    let exit_error = if let Ok(mut worker_slot) = store.worker.try_lock() {
+        if let Some(worker) = worker_slot.as_mut() {
+            let worker_status = worker
+                .child
+                .lock()
+                .map_err(|_| "Python worker 子进程锁已损坏".to_string())?
+                .try_wait();
+            match worker_status {
+                Ok(Some(exit_status)) => {
+                    *worker_slot = None;
+                    let recovery_epoch = store.recovery_epoch.fetch_add(1, Ordering::AcqRel) + 1;
+                    Some((
+                        format!("检测到处理引擎意外退出：{exit_status}"),
+                        recovery_epoch,
+                    ))
+                }
+                Ok(None) | Err(_) => None,
+            }
+        } else {
+            None
+        }
+    } else {
+        // 正在执行请求时由执行链路负责检测 stdout EOF，避免与任务线程争用 child。
+        None
+    };
+
+    if let Some((error, recovery_epoch)) = exit_error {
+        let (status_snapshot, should_recover) = {
+            let mut status = store
+                .status
+                .lock()
+                .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+            status.last_error = Some(error.clone());
+            status.pid = None;
+            if status.recovery_attempts >= status.auto_restart_limit {
+                status.state = "unavailable".to_string();
+                status.message = format!(
+                    "自动恢复已达到上限（{}/{}）",
+                    status.recovery_attempts, status.auto_restart_limit
+                );
+                (status.clone(), false)
+            } else {
+                status.state = "recovering".to_string();
+                status.message = "检测到处理引擎退出，正在自动恢复…".to_string();
+                (status.clone(), true)
+            }
+        };
+        if should_recover {
+            let recovery_app = app.clone();
+            std::thread::spawn(move || {
+                let recovery_store = recovery_app.state::<PythonWorkerStore>();
+                recover_python_worker(
+                    &recovery_app,
+                    recovery_store.inner(),
+                    &error,
+                    false,
+                    Some(recovery_epoch),
+                );
+            });
+        }
+        return Ok(status_snapshot);
+    }
+
+    store
+        .status
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "Python worker 状态锁已损坏".to_string())
+}
 
 #[tauri::command]
-fn get_python_worker_status(
-    state: State<'_, RustBackendState>,
-) -> Result<EngineStatus, String> {
-    state
-        .auto_restart_limit
-        .lock()
-        .map(|limit| rust_backend_status(*limit))
-        .map_err(|_| "Rust 后端状态锁已损坏".to_string())
+async fn get_python_worker_status(app: AppHandle) -> Result<PythonWorkerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<PythonWorkerStore>();
+        get_python_worker_status_blocking(&app, store.inner())
+    })
+    .await
+    .map_err(|error| format!("异步获取 Python worker 状态失败: {error}"))?
 }
 
 #[tauri::command]
 fn set_python_worker_auto_restart_limit(
-    state: State<'_, RustBackendState>,
+    store: State<'_, PythonWorkerStore>,
     limit: u8,
-) -> Result<EngineStatus, String> {
-    let mut current_limit = state
-        .auto_restart_limit
+) -> Result<PythonWorkerStatus, String> {
+    let mut status = store
+        .status
         .lock()
-        .map_err(|_| "Rust 后端状态锁已损坏".to_string())?;
-    *current_limit = limit.min(5);
-    Ok(rust_backend_status(*current_limit))
+        .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+    status.auto_restart_limit = limit.min(5);
+    Ok(status.clone())
+}
+
+fn restart_python_worker_blocking(
+    app: &AppHandle,
+    store: &PythonWorkerStore,
+) -> Result<PythonWorkerStatus, String> {
+    store.recovery_epoch.fetch_add(1, Ordering::AcqRel);
+    let mut worker_slot = match store.worker.try_lock() {
+        Ok(worker_slot) => worker_slot,
+        Err(_) => return terminate_active_worker(store),
+    };
+    {
+        let mut status = store
+            .status
+            .lock()
+            .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+        status.recovery_attempts = 0;
+        status.last_error = None;
+        status.state = "recovering".to_string();
+        status.message = "正在重新启动处理引擎…".to_string();
+        status.pid = None;
+    }
+    if let Some(worker) = worker_slot.as_mut() {
+        stop_python_worker(worker)?;
+    }
+    *worker_slot = None;
+    ensure_python_worker(app, store, &mut worker_slot)?;
+    let mut status = store
+        .status
+        .lock()
+        .map_err(|_| "Python worker 状态锁已损坏".to_string())?;
+    status.message = "处理引擎已手动重启".to_string();
+    Ok(status.clone())
 }
 
 #[tauri::command]
-fn restart_python_worker(state: State<'_, RustBackendState>) -> Result<EngineStatus, String> {
-    state
-        .auto_restart_limit
-        .lock()
-        .map(|limit| rust_backend_status(*limit))
-        .map_err(|_| "Rust 后端状态锁已损坏".to_string())
+async fn restart_python_worker(app: AppHandle) -> Result<PythonWorkerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<PythonWorkerStore>();
+        restart_python_worker_blocking(&app, store.inner())
+    })
+    .await
+    .map_err(|error| format!("异步重启 Python worker 失败: {error}"))?
 }
 
 #[tauri::command]
 async fn list_font_targets_batch(
+    app: AppHandle,
     request: EngineRequest,
-    on_event: Channel<EngineEvent>,
-) -> Result<EngineResponse, String> {
+    on_event: Channel<Value>,
+) -> Result<Value, String> {
     validate_engine_request(&request)?;
-    let request_id = request.request_id.clone();
-    let Some(engine_request::Operation::ScanFonts(scan_request)) = request.operation else {
+    if !matches!(request.operation, Some(engine_request::Operation::ScanFonts(_))) {
         return Err("字体扫描命令只接受 scanFonts operation".to_string());
-    };
+    }
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<EngineResponse, String> {
-        let total_files = u32::try_from(scan_request.input_files.len())
-            .map_err(|_| "字体扫描文件数超出 Protobuf uint32 范围".to_string())?;
-        let mut results = Vec::with_capacity(scan_request.input_files.len());
-        for (position, input_file) in scan_request.input_files.into_iter().enumerate() {
-            let result = engine_adapter::font_target_result(
-                input_file.clone(),
-                rust_backend::font::font_targets::list_font_targets(Path::new(&input_file)),
-            );
-            on_event
-                .send(EngineEvent {
-                    protocol_version: ProtocolVersion::V1 as i32,
-                    request_id: request_id.clone(),
-                    payload: Some(engine_event::Payload::FontScanProgress(FontScanProgress {
-                        current_index: u32::try_from(position + 1)
-                            .map_err(|_| "字体扫描索引超出 Protobuf uint32 范围".to_string())?,
-                        total_files,
-                        result: Some(result.clone()),
-                    })),
-                })
-                .map_err(|error| format!("推送 Rust 字体扫描事件失败: {error}"))?;
-            results.push(result);
+    tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+        let store = app.state::<PythonWorkerStore>();
+        let (response, response_json) = execute_worker_request(
+            &app,
+            store.inner(),
+            request,
+            &on_event,
+        )?;
+        match response.payload {
+            Some(engine_response::Payload::FontScanResult(_))
+            | Some(engine_response::Payload::Error(_)) => Ok(response_json),
+            _ => Err("Python worker 字体扫描响应缺少 fontScanResult".to_string()),
         }
-        Ok(EngineResponse {
-            protocol_version: ProtocolVersion::V1 as i32,
-            request_id,
-            payload: Some(engine_response::Payload::FontScanResult(FontScanResult {
-                results,
-            })),
-        })
     })
     .await
     .map_err(|error| format!("异步字体扫描失败: {error}"))?
@@ -523,8 +1297,8 @@ async fn get_persisted_store_path(store: State<'_, PersistedStore>) -> Result<St
 #[tauri::command]
 async fn read_image_preview(path: String) -> Result<ImagePreviewResponse, String> {
     let image_path = PathBuf::from(path);
-    let metadata =
-        fs::metadata(&image_path).map_err(|error| format!("读取封面文件信息失败: {error}"))?;
+    let metadata = fs::metadata(&image_path)
+        .map_err(|error| format!("读取封面文件信息失败: {error}"))?;
     if !metadata.is_file() {
         return Err("选择的封面路径不是文件。".to_string());
     }
@@ -614,75 +1388,29 @@ async fn resolve_input_sources(
 async fn run_epub_task(
     app: AppHandle,
     request: EngineRequest,
-    on_event: Channel<EngineEvent>,
-) -> Result<EngineResponse, String> {
+    on_event: Channel<Value>,
+) -> Result<Value, String> {
     validate_engine_request(&request)?;
-    let request_id = request.request_id.clone();
-    let Some(engine_request::Operation::RunTask(run_request)) = request.operation else {
+    if !matches!(request.operation, Some(engine_request::Operation::RunTask(_))) {
         return Err("任务命令只接受 runTask operation".to_string());
-    };
-    let frontend_request = engine_adapter::frontend_task_request(&run_request)?;
-    if frontend_request.taskType == "chinese_convert" {
-        if let Some(resource_dir) = resolve_opencc_resource_dir(&app) {
-            rust_backend::text::configure_resource_dir(resource_dir)?;
-        }
-    }
-    if frontend_request.taskType == "decrypt_font" {
-        if let Some(resources) = resolve_rust_ocr_resources(&app) {
-            rust_backend::font::decrypt_font::configure_ocr_resources(resources)?;
-        }
     }
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<EngineResponse, String> {
-        let log_path = resolve_log_path(&app)?;
-        let result = rust_backend::run(&frontend_request, &log_path, &mut |event| {
-            let task_event = engine_adapter::task_event_from_value(event)?;
-            on_event
-                .send(EngineEvent {
-                    protocol_version: ProtocolVersion::V1 as i32,
-                    request_id: request_id.clone(),
-                    payload: Some(engine_event::Payload::TaskEvent(task_event)),
-                })
-                .map_err(|error| format!("推送 Rust 后端事件失败: {error}"))
-        })?;
-        Ok(EngineResponse {
-            protocol_version: ProtocolVersion::V1 as i32,
-            request_id,
-            payload: Some(engine_adapter::task_result_response(
-                engine_adapter::task_result_from_value(result)?,
-            )),
-        })
+    tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+        let store = app.state::<PythonWorkerStore>();
+        let (response, response_json) = execute_worker_request(
+            &app,
+            store.inner(),
+            request,
+            &on_event,
+        )?;
+        match response.payload {
+            Some(engine_response::Payload::TaskResult(_))
+            | Some(engine_response::Payload::Error(_)) => Ok(response_json),
+            _ => Err("Python worker 任务响应缺少 taskResult".to_string()),
+        }
     })
     .await
     .map_err(|error| format!("异步任务失败: {error}"))?
-}
-
-fn validate_engine_request(request: &EngineRequest) -> Result<(), String> {
-    if request.protocol_version != ProtocolVersion::V1 as i32 {
-        return Err("请求使用了不支持的 protocolVersion".to_string());
-    }
-    if request.request_id.trim().is_empty() {
-        return Err("请求缺少 requestId".to_string());
-    }
-    if request.operation.is_none() {
-        return Err("请求缺少 operation".to_string());
-    }
-    Ok(())
-}
-
-fn resolve_opencc_resource_dir(app: &AppHandle) -> Option<PathBuf> {
-    workspace_root()
-        .map(|root| root.join("src-tauri").join("bundle-resources").join("opencc"))
-        .or_else(|| app.path().resource_dir().ok().map(|directory| directory.join("opencc")))
-}
-
-fn resolve_rust_ocr_resources(
-    app: &AppHandle,
-) -> Option<rust_backend::font::decrypt_font::OcrResourcePaths> {
-    let model_dir = resolve_ocr_model_dir(app)?;
-    Some(rust_backend::font::decrypt_font::OcrResourcePaths {
-        model_dir,
-    })
 }
 
 fn setup_window_effects(app: &tauri::App) -> Result<(), String> {
@@ -720,10 +1448,21 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(PersistedStore::load(app.handle()));
-            app.manage(RustBackendState {
-                auto_restart_limit: Mutex::new(2),
+            app.manage(PythonWorkerStore {
+                worker: Mutex::new(None),
+                active_child: Mutex::new(None),
+                manual_restart_requested: AtomicBool::new(false),
+                recovery_epoch: AtomicU64::new(0),
+                status: Mutex::new(PythonWorkerStatus::default()),
             });
             setup_window_effects(app)?;
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let worker_store = app_handle.state::<PythonWorkerStore>();
+                if let Err(error) = prewarm_python_worker(&app_handle, worker_store.inner()) {
+                    eprintln!("Python worker 预热失败，将在首次任务时重试：{error}");
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -745,5 +1484,155 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_, _| {});
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let worker_store = app_handle.state::<PythonWorkerStore>();
+            shutdown_python_worker(worker_store.inner());
+        }
+    });
+}
+
+#[cfg(test)]
+mod protocol_contract_tests {
+    use super::{
+        engine_request, engine_response, EngineEvent, EngineRequest, EngineResponse,
+        ProtocolVersion,
+    };
+    use crate::engine_protocol::v1::{
+        task_options, EmptyOptions, FontScanRequest, RunTaskRequest, TaskOptions, TaskType,
+    };
+    use serde_json::Value;
+    use std::{
+        io::{BufRead, BufReader, Write},
+        path::PathBuf,
+        process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    };
+
+    const PROTOCOL_TEST_PYTHON_ENV: &str = "EPUB_TOOL_TEST_PYTHON";
+
+    fn protocol_test_python() -> String {
+        std::env::var(PROTOCOL_TEST_PYTHON_ENV).unwrap_or_else(|_| "python3".to_string())
+    }
+
+    fn start_worker() -> (Child, ChildStdin, BufReader<ChildStdout>) {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri 应位于工作区根目录下")
+            .to_path_buf();
+        let mut child = Command::new(protocol_test_python())
+            .args(["-m", "python_backend.cli", "serve"])
+            .current_dir(workspace_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("启动 Python worker 失败；请设置 EPUB_TOOL_TEST_PYTHON");
+        let stdin = child.stdin.take().expect("Python worker stdin 不可用");
+        let stdout = child.stdout.take().expect("Python worker stdout 不可用");
+        (child, stdin, BufReader::new(stdout))
+    }
+
+    fn write_request(stdin: &mut ChildStdin, request: &EngineRequest) {
+        serde_json::to_writer(&mut *stdin, request).expect("序列化 EngineRequest 失败");
+        stdin.write_all(b"\n").expect("写入 Python worker 请求失败");
+        stdin.flush().expect("刷新 Python worker 请求失败");
+    }
+
+    fn read_response(
+        stdout: &mut BufReader<ChildStdout>,
+        expected_request_id: &str,
+    ) -> (Vec<EngineEvent>, EngineResponse) {
+        let mut events = Vec::new();
+        loop {
+            let mut line = String::new();
+            let bytes_read = stdout
+                .read_line(&mut line)
+                .expect("读取 Python worker 输出失败");
+            assert!(bytes_read > 0, "Python worker 在返回响应前退出");
+            let payload: Value =
+                serde_json::from_str(line.trim_end()).expect("Python worker 输出不是 JSON");
+            if payload.get("taskEvent").is_some() || payload.get("fontScanProgress").is_some() {
+                let event: EngineEvent =
+                    serde_json::from_value(payload).expect("Python worker 事件不符合 EngineEvent");
+                assert_eq!(event.protocol_version, ProtocolVersion::V1 as i32);
+                assert_eq!(event.request_id, expected_request_id);
+                assert!(event.payload.is_some(), "Python worker 事件缺少 payload");
+                events.push(event);
+                continue;
+            }
+
+            let response: EngineResponse =
+                serde_json::from_value(payload).expect("Python worker 响应不符合 EngineResponse");
+            assert_eq!(response.protocol_version, ProtocolVersion::V1 as i32);
+            assert_eq!(response.request_id, expected_request_id);
+            assert!(response.payload.is_some(), "Python worker 响应缺少 payload");
+            return (events, response);
+        }
+    }
+
+    #[test]
+    fn rust_and_python_worker_share_the_engine_json_contract() {
+        let (mut child, mut stdin, mut stdout) = start_worker();
+
+        let request = EngineRequest {
+            protocol_version: ProtocolVersion::V1 as i32,
+            request_id: "scan-fonts-contract".to_string(),
+            operation: Some(engine_request::Operation::ScanFonts(FontScanRequest {
+                input_files: Vec::new(),
+            })),
+        };
+        write_request(&mut stdin, &request);
+        let (events, response) = read_response(&mut stdout, &request.request_id);
+        assert!(events.is_empty());
+        match response.payload {
+            Some(engine_response::Payload::FontScanResult(result)) => {
+                assert!(result.results.is_empty());
+            }
+            _ => panic!("scanFonts 响应应包含 fontScanResult"),
+        }
+
+        let request = EngineRequest {
+            protocol_version: ProtocolVersion::V1 as i32,
+            request_id: "run-task-contract".to_string(),
+            operation: Some(engine_request::Operation::RunTask(RunTaskRequest {
+                task_id: "run-task-contract".to_string(),
+                task_type: TaskType::ReformatEpub as i32,
+                input_files: Vec::new(),
+                output_dir: None,
+                options: Some(TaskOptions {
+                    kind: Some(task_options::Kind::Empty(EmptyOptions {})),
+                }),
+            })),
+        };
+        write_request(&mut stdin, &request);
+        let (events, response) = read_response(&mut stdout, &request.request_id);
+        assert!(!events.is_empty(), "runTask 应至少返回一个 EngineEvent");
+        match response.payload {
+            Some(engine_response::Payload::TaskResult(result)) => assert!(result.ok),
+            _ => panic!("runTask 响应应包含 taskResult"),
+        }
+
+        let request = EngineRequest {
+            protocol_version: ProtocolVersion::V1 as i32,
+            request_id: "invalid-options-contract".to_string(),
+            operation: Some(engine_request::Operation::RunTask(RunTaskRequest {
+                task_id: "invalid-options-contract".to_string(),
+                task_type: TaskType::ReformatEpub as i32,
+                input_files: Vec::new(),
+                output_dir: None,
+                options: None,
+            })),
+        };
+        write_request(&mut stdin, &request);
+        let (_, response) = read_response(&mut stdout, &request.request_id);
+        match response.payload {
+            Some(engine_response::Payload::Error(error)) => {
+                assert_eq!(error.code, "INVALID_ARGUMENT");
+            }
+            _ => panic!("无效 options 响应应包含 error"),
+        }
+
+        drop(stdin);
+        let status = child.wait().expect("等待 Python worker 退出失败");
+        assert!(status.success(), "Python worker 退出失败：{status}");
+    }
 }

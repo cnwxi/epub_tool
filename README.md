@@ -11,7 +11,7 @@
   <a href="https://github.com/cnwxi/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-cnwxi%2Ftap-FBB040" alt="Homebrew Tap"></a>
 </p>
 
-一个面向 EPUB 批量处理的桌面工具。桌面端采用 `Tauri 2 + Vue 3 + TypeScript + Rust`，围绕“批量导入、统一执行、结果回看、日志定位”组织工作流。所有发布任务均由 Rust 后端执行；Python 实现仅用于黄金回归与维护工具。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
+一个面向 EPUB 批量处理的桌面工具。当前主入口已经切换到 `Tauri 2 + Vue 3 + TypeScript + Python sidecar`，围绕“批量导入、统一执行、结果回看、日志定位”组织桌面工作流。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
 
 ![Epub Tool 桌面端界面预览](./assets/img/epub_tool_newui.png)
 
@@ -76,16 +76,16 @@ brew upgrade --cask epub-tool-newui
 ## 本地开发与编译
 
 详见 [本地开发指南](./assets/docs/LOCAL_DEVELOPMENT.md)。其中包括 macOS、Windows、Linux 的
-系统依赖，Node.js 与 Rust 环境配置、桌面端启动、Rust 测试、安装包构建、OCR 资源校验及
-`cargo metadata` 报错排查。Python/Conda 只在黄金回归与 OCR 模型维护时需要。
+系统依赖，Python/Node.js 环境配置、桌面端启动、单独调试、打包依赖准备、Python sidecar
+二进制编译、OCR 模型维护以及 `cargo metadata` 报错排查。
 
 ## 仓库结构
 
 - `frontend/`：Vue 3 桌面前端
-- `src-tauri/`：Tauri 壳层、Rust 任务引擎、ONNX/OpenCC 资源与打包配置
-- `src-tauri/src/rust_backend/`：按 `epub`、`image`、`text`、`font` 分类的任务实现
-- `python_backend/`：黄金回归参照实现与维护工具，不参与桌面运行或发布
-- `scripts/`：OCR 资源校验与模型维护脚本
+- `src-tauri/`：Tauri 壳层、命令桥接与打包配置
+- `python_backend/`：统一 CLI、任务协议、运行器与 EPUB 处理服务
+- `python_backend/services/`：各类底层 EPUB 处理实现与共享日志工具
+- `scripts/`：sidecar 构建、资源准备与维护脚本
 - `assets/docs/`：构建、协议与桥接说明
 - `assets/img/`：README、前端与应用打包共用图像资源
 - `tests/`：自动化测试
@@ -95,9 +95,9 @@ brew upgrade --cask epub-tool-newui
 
 - [`assets/docs/README.md`](./assets/docs/README.md)：文档总览
 - [`assets/docs/LOCAL_DEVELOPMENT.md`](./assets/docs/LOCAL_DEVELOPMENT.md)：本地开发环境、启动、打包与排查
-- [`assets/docs/CLI_USAGE.md`](./assets/docs/CLI_USAGE.md)：Python 黄金样本 CLI 用法
-- [`assets/docs/TASK_PROTOCOL.md`](./assets/docs/TASK_PROTOCOL.md)：前端与 Rust 任务协议
-- [`assets/docs/TAURI_PYTHON_BRIDGE.md`](./assets/docs/TAURI_PYTHON_BRIDGE.md)：Tauri Rust 任务桥接说明（保留旧路径）
+- [`assets/docs/CLI_USAGE.md`](./assets/docs/CLI_USAGE.md)：Python 后端 CLI 用法
+- [`assets/docs/TASK_PROTOCOL.md`](./assets/docs/TASK_PROTOCOL.md)：前后端任务协议
+- [`assets/docs/TAURI_PYTHON_BRIDGE.md`](./assets/docs/TAURI_PYTHON_BRIDGE.md)：Tauri 与 Python 桥接说明
 - [`assets/docs/BUILD_AND_BUNDLE.md`](./assets/docs/BUILD_AND_BUNDLE.md)：本地构建、打包与发布说明
 
 ## 常见排查
