@@ -554,6 +554,7 @@ const pythonWorkerStatus = ref<PythonWorkerStatus>({
   pid: null,
   recoveryAttempts: 0,
   autoRestartLimit: defaultSettings.pythonWorkerAutoRestartLimit,
+  manualRestartCount: 0,
 });
 const pythonWorkerRestarting = ref(false);
 let pythonWorkerStatusTimer = 0;
@@ -3186,6 +3187,9 @@ activeSection.value = normalizeSectionKey(activeSection.value);
               </div>
               <p v-if="pythonWorkerStatus.recoveryAttempts > 0" class="worker-recovery-note">
                 本次会话已自动恢复 {{ pythonWorkerStatus.recoveryAttempts }}/{{ pythonWorkerStatus.autoRestartLimit }} 次。
+              </p>
+              <p v-if="pythonWorkerStatus.manualRestartCount > 0" class="worker-recovery-note">
+                本次会话已手动重启 {{ pythonWorkerStatus.manualRestartCount }} 次。
               </p>
               <p v-if="pythonWorkerStatus.lastError" class="worker-error-message">
                 最近错误：{{ pythonWorkerStatus.lastError }}

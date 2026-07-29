@@ -108,6 +108,7 @@ export interface PythonWorkerStatus {
   pid?: number | null;
   recoveryAttempts: number;
   autoRestartLimit: number;
+  manualRestartCount: number;
 }
 
 export interface FontDecryptSettings {

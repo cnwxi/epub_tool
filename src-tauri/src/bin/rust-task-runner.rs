@@ -1,7 +1,35 @@
 use epub_tool_newui::{rust_backend, FrontendTaskRequest};
 use rand::{rngs::StdRng, SeedableRng};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, env, path::PathBuf, process};
+use std::{
+    collections::BTreeMap,
+    env,
+    io::{self, BufRead, Write},
+    path::PathBuf,
+    process,
+};
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerRequest {
+    request_id: String,
+    request: FrontendTaskRequest,
+    log_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerEnvelope {
+    kind: &'static str,
+    request_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
 
 fn main() {
     if let Err(error) = run() {
@@ -11,6 +39,9 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    if env::args().skip(1).any(|argument| argument == "serve") {
+        return serve();
+    }
     let mut request_json = None;
     let mut log_path = None;
     let mut font_target_path = None;
@@ -60,7 +91,7 @@ fn run() -> Result<(), String> {
             "--ocr-tensor-shape" => ocr_tensor_shape = arguments.next(),
             "--help" | "-h" => {
                 println!(
-                    "Usage: rust-task-runner --request-json <TaskRequest JSON> [--log-path <path>]\n       rust-task-runner --list-font-targets <book.epub>\n       rust-task-runner --read-font-cmap <font-file>\n       rust-task-runner --rewrite-font-cmap <font-file> --font-output <font-file> --cmap-replacements <JSON object> --remove-cmap-codepoints <JSON array>\n       rust-task-runner --obfuscate-font <font-file> --font-output <font-file> --font-text <text> --rng-seed <u64>\n       rust-task-runner --render-font-glyph <font-file> --glyph <character> --glyph-output <glyph.png>\n       rust-task-runner --preprocess-ocr-image <image> --ocr-image-shape <channels,height,width> --ocr-image-mode <RGB|BGR> --ocr-max-image-width <width> [--infer-ocr-model <model.onnx>]\n       rust-task-runner --recognize-ocr-image <image> --ocr-model-dir <model-dir>\n       rust-task-runner --infer-ocr-model <model.onnx> --ocr-tensor-shape <channels,height,width>"
+                    "Usage: rust-task-runner serve\n       rust-task-runner --request-json <TaskRequest JSON> [--log-path <path>]\n       rust-task-runner --list-font-targets <book.epub>\n       rust-task-runner --read-font-cmap <font-file>\n       rust-task-runner --rewrite-font-cmap <font-file> --font-output <font-file> --cmap-replacements <JSON object> --remove-cmap-codepoints <JSON array>\n       rust-task-runner --obfuscate-font <font-file> --font-output <font-file> --font-text <text> --rng-seed <u64>\n       rust-task-runner --render-font-glyph <font-file> --glyph <character> --glyph-output <glyph.png>\n       rust-task-runner --preprocess-ocr-image <image> --ocr-image-shape <channels,height,width> --ocr-image-mode <RGB|BGR> --ocr-max-image-width <width> [--infer-ocr-model <model.onnx>]\n       rust-task-runner --recognize-ocr-image <image> --ocr-model-dir <model-dir>\n       rust-task-runner --infer-ocr-model <model.onnx> --ocr-tensor-shape <channels,height,width>"
                 );
                 return Ok(());
             }
@@ -357,6 +388,97 @@ fn run() -> Result<(), String> {
     } else {
         Err("Rust 任务执行失败".to_string())
     }
+}
+
+fn serve() -> Result<(), String> {
+    configure_runtime_resources()?;
+    let stdin = io::stdin();
+    for line in stdin.lock().lines() {
+        let line = line.map_err(|error| format!("读取 Worker 请求失败: {error}"))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let worker_request: WorkerRequest = match serde_json::from_str(&line) {
+            Ok(request) => request,
+            Err(error) => {
+                eprintln!("Worker 请求 JSON 无效: {error}");
+                continue;
+            }
+        };
+        let request_id = worker_request.request_id.clone();
+        let result = run_worker_request(worker_request, |event| {
+            write_worker_envelope(WorkerEnvelope {
+                kind: "event",
+                request_id: request_id.clone(),
+                event: Some(event),
+                result: None,
+                error: None,
+            })
+        });
+        match result {
+            Ok(result) => write_worker_envelope(WorkerEnvelope {
+                kind: "result",
+                request_id,
+                event: None,
+                result: Some(result),
+                error: None,
+            })?,
+            Err(error) => write_worker_envelope(WorkerEnvelope {
+                kind: "error",
+                request_id,
+                event: None,
+                result: None,
+                error: Some(error),
+            })?,
+        }
+    }
+    Ok(())
+}
+
+fn configure_runtime_resources() -> Result<(), String> {
+    if let Ok(resource_dir) = env::var("EPUB_TOOL_OPENCC_RESOURCE_DIR") {
+        if !resource_dir.is_empty() {
+            rust_backend::text::configure_resource_dir(PathBuf::from(resource_dir))?;
+        }
+    }
+    if let Ok(model_dir) = env::var("EPUB_TOOL_OCR_ONNX_MODEL_DIR") {
+        if !model_dir.is_empty() {
+            rust_backend::font::decrypt_font::configure_ocr_resources(
+                rust_backend::font::decrypt_font::OcrResourcePaths {
+                    model_dir: PathBuf::from(model_dir),
+                },
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn run_worker_request(
+    worker_request: WorkerRequest,
+    emit: impl FnMut(Value) -> Result<(), String>,
+) -> Result<Value, String> {
+    if !rust_backend::supports(&worker_request.request) {
+        return Err(format!(
+            "Rust 后端暂不支持此任务或选项: {}",
+            worker_request.request.taskType
+        ));
+    }
+    let mut emit = emit;
+    rust_backend::run(
+        &worker_request.request,
+        &PathBuf::from(worker_request.log_path),
+        &mut emit,
+    )
+}
+
+fn write_worker_envelope(envelope: WorkerEnvelope) -> Result<(), String> {
+    let line = serde_json::to_string(&envelope)
+        .map_err(|error| format!("序列化 Worker 响应失败: {error}"))?;
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "{line}").map_err(|error| format!("写入 Worker 响应失败: {error}"))?;
+    stdout
+        .flush()
+        .map_err(|error| format!("刷新 Worker 输出失败: {error}"))
 }
 
 fn emit_json_line(event: Value) -> Result<(), String> {

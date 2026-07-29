@@ -8,20 +8,27 @@ use epub_tool_newui::{
     },
     rust_backend,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::BTreeMap,
     fs,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::Command,
-    sync::Mutex,
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
@@ -30,6 +37,12 @@ use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 use window_vibrancy::{apply_blur, apply_mica};
 
 const COVER_PREVIEW_MAX_BYTES: u64 = 20 * 1024 * 1024;
+const RUST_TASK_RUNNER_NAME: &str = if cfg!(target_os = "windows") {
+    "rust-task-runner.exe"
+} else {
+    "rust-task-runner"
+};
+const WORKER_STDERR_MAX_LINES: usize = 100;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -59,8 +72,19 @@ struct PersistedStore {
     data: Mutex<BTreeMap<String, Value>>,
 }
 
+struct RustWorker {
+    child: Arc<Mutex<Child>>,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+    stderr_lines: Arc<Mutex<Vec<String>>>,
+}
+
 struct RustBackendState {
-    auto_restart_limit: Mutex<u8>,
+    worker: Mutex<Option<RustWorker>>,
+    active_child: Mutex<Option<Arc<Mutex<Child>>>>,
+    manual_restart_requested: AtomicBool,
+    recovery_epoch: AtomicU64,
+    status: Mutex<EngineStatus>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,16 +96,36 @@ struct EngineStatus {
     pid: Option<u32>,
     recovery_attempts: u8,
     auto_restart_limit: u8,
+    manual_restart_count: u32,
 }
 
-fn rust_backend_status(auto_restart_limit: u8) -> EngineStatus {
+impl Default for EngineStatus {
+    fn default() -> Self {
+        Self {
+            state: "stopped".to_string(),
+            message: "Rust 处理引擎尚未启动".to_string(),
+            last_error: None,
+            pid: None,
+            recovery_attempts: 0,
+            auto_restart_limit: 2,
+            manual_restart_count: 0,
+        }
+    }
+}
+
+fn ready_rust_backend_status(
+    auto_restart_limit: u8,
+    manual_restart_count: u32,
+    pid: u32,
+) -> EngineStatus {
     EngineStatus {
         state: "ready".to_string(),
-        message: "Rust 处理引擎已就绪".to_string(),
+        message: "Rust Worker 已就绪".to_string(),
         last_error: None,
-        pid: None,
+        pid: Some(pid),
         recovery_attempts: 0,
         auto_restart_limit,
+        manual_restart_count,
     }
 }
 
@@ -362,6 +406,301 @@ fn configure_system_open_command(_command: &mut Command) {
     _command.creation_flags(CREATE_NO_WINDOW);
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RustWorkerRequest<'a> {
+    request_id: &'a str,
+    request: &'a epub_tool_newui::FrontendTaskRequest,
+    log_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RustWorkerEnvelope {
+    kind: String,
+    request_id: String,
+    event: Option<Value>,
+    result: Option<Value>,
+    error: Option<String>,
+}
+
+fn rust_runner_path() -> Result<PathBuf, String> {
+    if let Ok(path) = std::env::var("EPUB_TOOL_RUST_TASK_RUNNER") {
+        if !path.is_empty() {
+            return Ok(PathBuf::from(path));
+        }
+    }
+    if let Some(root) = workspace_root() {
+        let path = root
+            .join("src-tauri")
+            .join("target")
+            .join("debug")
+            .join(RUST_TASK_RUNNER_NAME);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    let executable =
+        std::env::current_exe().map_err(|error| format!("无法定位桌面应用可执行文件: {error}"))?;
+    let path = executable
+        .parent()
+        .ok_or_else(|| format!("桌面应用可执行文件没有父目录: {}", executable.display()))?
+        .join(RUST_TASK_RUNNER_NAME);
+    if path.is_file() {
+        return Ok(path);
+    }
+    Err(format!(
+        "未找到 Rust Worker 可执行文件。开发态请先构建 {RUST_TASK_RUNNER_NAME}，打包态请确认它已随应用打包。"
+    ))
+}
+
+fn build_rust_worker_command(app: &AppHandle) -> Result<Command, String> {
+    let mut command = Command::new(rust_runner_path()?);
+    command
+        .arg("serve")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(resource_dir) = resolve_opencc_resource_dir(app) {
+        command.env("EPUB_TOOL_OPENCC_RESOURCE_DIR", resource_dir);
+    }
+    if let Some(model_dir) = resolve_ocr_model_dir(app) {
+        command.env("EPUB_TOOL_OCR_ONNX_MODEL_DIR", model_dir);
+    }
+    #[cfg(unix)]
+    command.process_group(0);
+    configure_system_open_command(&mut command);
+    Ok(command)
+}
+
+fn start_rust_worker(app: &AppHandle) -> Result<RustWorker, String> {
+    let mut child = build_rust_worker_command(app)?
+        .spawn()
+        .map_err(|error| format!("启动 Rust Worker 失败: {error}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "无法读取 Rust Worker stdin".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "无法读取 Rust Worker stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法读取 Rust Worker stderr".to_string())?;
+    let stderr_lines = Arc::new(Mutex::new(Vec::new()));
+    let stderr_lines_for_thread = Arc::clone(&stderr_lines);
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if let Ok(mut lines) = stderr_lines_for_thread.lock() {
+                lines.push(line);
+                if lines.len() > WORKER_STDERR_MAX_LINES {
+                    let overflow = lines.len() - WORKER_STDERR_MAX_LINES;
+                    lines.drain(..overflow);
+                }
+            }
+        }
+    });
+    Ok(RustWorker {
+        child: Arc::new(Mutex::new(child)),
+        stdin,
+        stdout: BufReader::new(stdout),
+        stderr_lines,
+    })
+}
+
+fn worker_pid(worker: &RustWorker) -> Option<u32> {
+    worker.child.lock().ok().map(|child| child.id())
+}
+
+fn worker_stderr_tail(worker: &RustWorker) -> String {
+    worker
+        .stderr_lines
+        .lock()
+        .ok()
+        .filter(|lines| !lines.is_empty())
+        .map(|lines| format!(" Worker stderr: {}", lines.join(" | ")))
+        .unwrap_or_default()
+}
+
+fn terminate_worker_process_tree(child: &mut Child) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let process_group = -(child.id() as i32);
+        let result = unsafe { libc::kill(process_group, libc::SIGTERM) };
+        if result == 0 {
+            return Ok(());
+        }
+    }
+    child
+        .kill()
+        .map_err(|error| format!("终止 Rust Worker 失败: {error}"))
+}
+
+fn stop_rust_worker(worker: &mut RustWorker) -> Result<(), String> {
+    let mut child = worker
+        .child
+        .lock()
+        .map_err(|_| "Rust Worker 子进程锁已损坏".to_string())?;
+    if child
+        .try_wait()
+        .map_err(|error| format!("检查 Rust Worker 状态失败: {error}"))?
+        .is_none()
+    {
+        terminate_worker_process_tree(&mut child)?;
+    }
+    Ok(())
+}
+
+fn set_active_worker_child(store: &RustBackendState, child: Option<Arc<Mutex<Child>>>) {
+    if let Ok(mut active_child) = store.active_child.lock() {
+        *active_child = child;
+    }
+}
+
+fn terminate_active_worker(store: &RustBackendState) -> Result<(), String> {
+    let active_child = store
+        .active_child
+        .lock()
+        .map_err(|_| "活动 Rust Worker 锁已损坏".to_string())?
+        .take();
+    if let Some(child) = active_child {
+        let mut child = child
+            .lock()
+            .map_err(|_| "活动 Rust Worker 子进程锁已损坏".to_string())?;
+        if child
+            .try_wait()
+            .map_err(|error| format!("检查活动 Rust Worker 状态失败: {error}"))?
+            .is_none()
+        {
+            terminate_worker_process_tree(&mut child)?;
+        }
+    }
+    Ok(())
+}
+
+fn set_worker_status(store: &RustBackendState, status: EngineStatus) {
+    if let Ok(mut current) = store.status.lock() {
+        *current = status;
+    }
+}
+
+fn ensure_rust_worker(
+    app: &AppHandle,
+    store: &RustBackendState,
+    worker_slot: &mut Option<RustWorker>,
+) -> Result<(), String> {
+    if let Some(worker) = worker_slot.as_mut() {
+        if worker
+            .child
+            .lock()
+            .map_err(|_| "Rust Worker 子进程锁已损坏".to_string())?
+            .try_wait()
+            .map_err(|error| format!("检查 Rust Worker 状态失败: {error}"))?
+            .is_none()
+        {
+            return Ok(());
+        }
+    }
+    let worker = start_rust_worker(app)?;
+    let pid = worker_pid(&worker).ok_or_else(|| "无法获取 Rust Worker PID".to_string())?;
+    let status = store
+        .status
+        .lock()
+        .map_err(|_| "Rust Worker 状态锁已损坏".to_string())?;
+    let auto_restart_limit = status.auto_restart_limit;
+    let manual_restart_count = status.manual_restart_count;
+    drop(status);
+    *worker_slot = Some(worker);
+    set_worker_status(
+        store,
+        ready_rust_backend_status(auto_restart_limit, manual_restart_count, pid),
+    );
+    Ok(())
+}
+
+fn recover_rust_worker(app: &AppHandle, store: &RustBackendState, error: &str) {
+    let recovery_epoch = store.recovery_epoch.fetch_add(1, Ordering::AcqRel) + 1;
+    let auto_restart_limit = match store.status.lock() {
+        Ok(status) => status.auto_restart_limit,
+        Err(_) => return,
+    };
+    let recovery_attempt = match store.status.lock() {
+        Ok(status) => status.recovery_attempts.saturating_add(1),
+        Err(_) => return,
+    };
+    if recovery_attempt > auto_restart_limit {
+        if let Ok(mut worker_slot) = store.worker.lock() {
+            if let Some(worker) = worker_slot.as_mut() {
+                let _ = stop_rust_worker(worker);
+            }
+            *worker_slot = None;
+        }
+        set_worker_status(
+            store,
+            EngineStatus {
+                state: "unavailable".to_string(),
+                message: "Rust Worker 自动恢复次数已耗尽".to_string(),
+                last_error: Some(error.to_string()),
+                pid: None,
+                recovery_attempts: auto_restart_limit,
+                auto_restart_limit,
+                manual_restart_count: store
+                    .status
+                    .lock()
+                    .map(|status| status.manual_restart_count)
+                    .unwrap_or(0),
+            },
+        );
+        return;
+    }
+    let mut worker_slot = match store.worker.lock() {
+        Ok(worker_slot) => worker_slot,
+        Err(_) => return,
+    };
+    if let Some(worker) = worker_slot.as_mut() {
+        let _ = stop_rust_worker(worker);
+    }
+    *worker_slot = None;
+    if store.recovery_epoch.load(Ordering::Acquire) != recovery_epoch {
+        return;
+    }
+    match ensure_rust_worker(app, store, &mut worker_slot) {
+        Ok(()) => {
+            if let Ok(mut status) = store.status.lock() {
+                status.message = "Rust Worker 已自动恢复".to_string();
+                status.recovery_attempts = recovery_attempt;
+            }
+        }
+        Err(restart_error) => set_worker_status(
+            store,
+            EngineStatus {
+                state: "unavailable".to_string(),
+                message: "Rust Worker 自动恢复失败".to_string(),
+                last_error: Some(format!("{error}; {restart_error}")),
+                pid: None,
+                recovery_attempts: recovery_attempt,
+                auto_restart_limit,
+                manual_restart_count: store
+                    .status
+                    .lock()
+                    .map(|status| status.manual_restart_count)
+                    .unwrap_or(0),
+            },
+        ),
+    }
+}
+
+fn shutdown_rust_worker(store: &RustBackendState) {
+    if let Ok(mut worker_slot) = store.worker.lock() {
+        if let Some(worker) = worker_slot.as_mut() {
+            let _ = stop_rust_worker(worker);
+        }
+        *worker_slot = None;
+    }
+}
+
 fn append_input_source(path: &Path, result: &mut Vec<String>) -> Result<(), String> {
     if path.is_dir() {
         collect_epubs_recursive(path, result)?;
@@ -381,12 +720,70 @@ fn append_input_source(path: &Path, result: &mut Vec<String>) -> Result<(), Stri
 }
 
 #[tauri::command]
-fn get_python_worker_status(state: State<'_, RustBackendState>) -> Result<EngineStatus, String> {
-    state
-        .auto_restart_limit
-        .lock()
-        .map(|limit| rust_backend_status(*limit))
-        .map_err(|_| "Rust 后端状态锁已损坏".to_string())
+async fn get_python_worker_status(app: AppHandle) -> Result<EngineStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<RustBackendState>();
+        let mut worker_slot = store
+            .worker
+            .lock()
+            .map_err(|_| "Rust Worker 锁已损坏".to_string())?;
+        let worker_exited = match worker_slot.as_mut() {
+            Some(worker) => worker
+                .child
+                .lock()
+                .map_err(|_| "Rust Worker 子进程锁已损坏".to_string())?
+                .try_wait()
+                .map(|status| status.is_some())
+                .map_err(|error| format!("检查 Rust Worker 状态失败: {error}"))?,
+            None => false,
+        };
+        let worker_missing = worker_slot.is_none();
+        let recovery_exhausted = store
+            .status
+            .lock()
+            .map(|status| {
+                status.state == "unavailable"
+                    && status.recovery_attempts >= status.auto_restart_limit
+            })
+            .unwrap_or(false);
+        if worker_exited {
+            drop(worker_slot);
+            if !recovery_exhausted {
+                recover_rust_worker(&app, store.inner(), "Rust Worker 在空闲时意外退出");
+            }
+        } else if worker_missing && !recovery_exhausted {
+            *worker_slot = None;
+            if let Err(error) = ensure_rust_worker(&app, store.inner(), &mut worker_slot) {
+                let auto_restart_limit = store
+                    .status
+                    .lock()
+                    .map(|status| status.auto_restart_limit)
+                    .unwrap_or(2);
+                set_worker_status(
+                    store.inner(),
+                    EngineStatus {
+                        state: "unavailable".to_string(),
+                        message: "启动 Rust Worker 失败".to_string(),
+                        last_error: Some(error),
+                        pid: None,
+                        recovery_attempts: 0,
+                        auto_restart_limit,
+                        manual_restart_count: 0,
+                    },
+                );
+            }
+            drop(worker_slot);
+        } else {
+            drop(worker_slot);
+        }
+        store
+            .status
+            .lock()
+            .map(|status| status.clone())
+            .map_err(|_| "Rust Worker 状态锁已损坏".to_string())
+    })
+    .await
+    .map_err(|error| format!("读取 Rust Worker 状态失败: {error}"))?
 }
 
 #[tauri::command]
@@ -394,21 +791,50 @@ fn set_python_worker_auto_restart_limit(
     state: State<'_, RustBackendState>,
     limit: u8,
 ) -> Result<EngineStatus, String> {
-    let mut current_limit = state
-        .auto_restart_limit
+    let mut status = state
+        .status
         .lock()
-        .map_err(|_| "Rust 后端状态锁已损坏".to_string())?;
-    *current_limit = limit.min(5);
-    Ok(rust_backend_status(*current_limit))
+        .map_err(|_| "Rust Worker 状态锁已损坏".to_string())?;
+    status.auto_restart_limit = limit.min(5);
+    Ok(status.clone())
 }
 
 #[tauri::command]
-fn restart_python_worker(state: State<'_, RustBackendState>) -> Result<EngineStatus, String> {
-    state
-        .auto_restart_limit
-        .lock()
-        .map(|limit| rust_backend_status(*limit))
-        .map_err(|_| "Rust 后端状态锁已损坏".to_string())
+async fn restart_python_worker(app: AppHandle) -> Result<EngineStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<RustBackendState>();
+        store
+            .manual_restart_requested
+            .store(true, Ordering::Release);
+        store.recovery_epoch.fetch_add(1, Ordering::AcqRel);
+        let result = (|| {
+            terminate_active_worker(store.inner())?;
+            let mut worker_slot = store
+                .worker
+                .lock()
+                .map_err(|_| "Rust Worker 锁已损坏".to_string())?;
+            if let Some(worker) = worker_slot.as_mut() {
+                stop_rust_worker(worker)?;
+            }
+            *worker_slot = None;
+            ensure_rust_worker(&app, store.inner(), &mut worker_slot)?;
+            if let Ok(mut status) = store.status.lock() {
+                status.message = "Rust Worker 已手动重启".to_string();
+                status.manual_restart_count = status.manual_restart_count.saturating_add(1);
+            }
+            store
+                .status
+                .lock()
+                .map(|status| status.clone())
+                .map_err(|_| "Rust Worker 状态锁已损坏".to_string())
+        })();
+        store
+            .manual_restart_requested
+            .store(false, Ordering::Release);
+        result
+    })
+    .await
+    .map_err(|error| format!("重启 Rust Worker 失败: {error}"))?
 }
 
 #[tauri::command]
@@ -606,6 +1032,115 @@ async fn resolve_input_sources(
     Ok(files)
 }
 
+fn execute_rust_worker_request(
+    app: &AppHandle,
+    store: &RustBackendState,
+    request_id: &str,
+    frontend_request: &epub_tool_newui::FrontendTaskRequest,
+    on_event: &Channel<EngineEvent>,
+) -> Result<Value, String> {
+    let log_path = resolve_log_path(app)?.to_string_lossy().to_string();
+    let worker_request = RustWorkerRequest {
+        request_id,
+        request: frontend_request,
+        log_path,
+    };
+    let request_line = serde_json::to_string(&worker_request)
+        .map_err(|error| format!("序列化 Rust Worker 请求失败: {error}"))?;
+    let mut worker_slot = store
+        .worker
+        .lock()
+        .map_err(|_| "Rust Worker 锁已损坏".to_string())?;
+    ensure_rust_worker(app, store, &mut worker_slot)?;
+    let active_child = worker_slot
+        .as_ref()
+        .map(|worker| Arc::clone(&worker.child))
+        .ok_or_else(|| "Rust Worker 未初始化".to_string())?;
+    set_active_worker_child(store, Some(active_child));
+    if let Ok(mut status) = store.status.lock() {
+        status.state = "busy".to_string();
+        status.message = "Rust Worker 正在执行请求".to_string();
+    }
+    let result = (|| -> Result<Value, String> {
+        let worker = worker_slot
+            .as_mut()
+            .ok_or_else(|| "Rust Worker 未初始化".to_string())?;
+        worker
+            .stdin
+            .write_all(request_line.as_bytes())
+            .and_then(|_| worker.stdin.write_all(b"\n"))
+            .and_then(|_| worker.stdin.flush())
+            .map_err(|error| format!("发送 Rust Worker 请求失败: {error}"))?;
+        loop {
+            let mut line = String::new();
+            let bytes_read = worker
+                .stdout
+                .read_line(&mut line)
+                .map_err(|error| format!("读取 Rust Worker 输出失败: {error}"))?;
+            if bytes_read == 0 {
+                return Err(format!(
+                    "Rust Worker 意外退出。{}",
+                    worker_stderr_tail(worker)
+                ));
+            }
+            let envelope: RustWorkerEnvelope = serde_json::from_str(line.trim_end())
+                .map_err(|error| format!("解析 Rust Worker 响应失败: {error}"))?;
+            if envelope.request_id != request_id {
+                return Err(format!(
+                    "Rust Worker 响应 ID 不匹配，期望 {request_id}，收到 {}",
+                    envelope.request_id
+                ));
+            }
+            match envelope.kind.as_str() {
+                "event" => {
+                    let event = envelope
+                        .event
+                        .ok_or_else(|| "Rust Worker 事件缺少内容".to_string())?;
+                    let task_event = engine_adapter::task_event_from_value(event)?;
+                    on_event
+                        .send(EngineEvent {
+                            protocol_version: ProtocolVersion::V1 as i32,
+                            request_id: request_id.to_string(),
+                            payload: Some(engine_event::Payload::TaskEvent(task_event)),
+                        })
+                        .map_err(|error| format!("推送 Rust Worker 事件失败: {error}"))?;
+                }
+                "result" => {
+                    return envelope
+                        .result
+                        .ok_or_else(|| "Rust Worker 响应缺少任务结果".to_string());
+                }
+                "error" => {
+                    return Err(envelope
+                        .error
+                        .unwrap_or_else(|| "Rust Worker 返回未知错误".to_string()));
+                }
+                _ => return Err(format!("Rust Worker 返回未知响应类型: {}", envelope.kind)),
+            }
+        }
+    })();
+    set_active_worker_child(store, None);
+    match &result {
+        Ok(_) => {
+            if let Ok(mut status) = store.status.lock() {
+                status.state = "ready".to_string();
+                status.message = "Rust Worker 已就绪".to_string();
+                status.last_error = None;
+                status.recovery_attempts = 0;
+                status.pid = worker_slot.as_ref().and_then(worker_pid);
+            }
+        }
+        Err(error) => {
+            drop(worker_slot);
+            if !store.manual_restart_requested.load(Ordering::Acquire) {
+                recover_rust_worker(app, store, error);
+            }
+            return Err(error.clone());
+        }
+    }
+    result
+}
+
 #[tauri::command]
 async fn run_epub_task(
     app: AppHandle,
@@ -618,29 +1153,15 @@ async fn run_epub_task(
         return Err("任务命令只接受 runTask operation".to_string());
     };
     let frontend_request = engine_adapter::frontend_task_request(&run_request)?;
-    if frontend_request.taskType == "chinese_convert" {
-        if let Some(resource_dir) = resolve_opencc_resource_dir(&app) {
-            rust_backend::text::configure_resource_dir(resource_dir)?;
-        }
-    }
-    if frontend_request.taskType == "decrypt_font" {
-        if let Some(resources) = resolve_rust_ocr_resources(&app) {
-            rust_backend::font::decrypt_font::configure_ocr_resources(resources)?;
-        }
-    }
-
     tauri::async_runtime::spawn_blocking(move || -> Result<EngineResponse, String> {
-        let log_path = resolve_log_path(&app)?;
-        let result = rust_backend::run(&frontend_request, &log_path, &mut |event| {
-            let task_event = engine_adapter::task_event_from_value(event)?;
-            on_event
-                .send(EngineEvent {
-                    protocol_version: ProtocolVersion::V1 as i32,
-                    request_id: request_id.clone(),
-                    payload: Some(engine_event::Payload::TaskEvent(task_event)),
-                })
-                .map_err(|error| format!("推送 Rust 后端事件失败: {error}"))
-        })?;
+        let store = app.state::<RustBackendState>();
+        let result = execute_rust_worker_request(
+            &app,
+            store.inner(),
+            &request_id,
+            &frontend_request,
+            &on_event,
+        )?;
         Ok(EngineResponse {
             protocol_version: ProtocolVersion::V1 as i32,
             request_id,
@@ -681,13 +1202,6 @@ fn resolve_opencc_resource_dir(app: &AppHandle) -> Option<PathBuf> {
         })
 }
 
-fn resolve_rust_ocr_resources(
-    app: &AppHandle,
-) -> Option<rust_backend::font::decrypt_font::OcrResourcePaths> {
-    let model_dir = resolve_ocr_model_dir(app)?;
-    Some(rust_backend::font::decrypt_font::OcrResourcePaths { model_dir })
-}
-
 fn setup_window_effects(app: &tauri::App) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
@@ -724,7 +1238,11 @@ fn main() {
         .setup(|app| {
             app.manage(PersistedStore::load(app.handle()));
             app.manage(RustBackendState {
-                auto_restart_limit: Mutex::new(2),
+                worker: Mutex::new(None),
+                active_child: Mutex::new(None),
+                manual_restart_requested: AtomicBool::new(false),
+                recovery_epoch: AtomicU64::new(0),
+                status: Mutex::new(EngineStatus::default()),
             });
             setup_window_effects(app)?;
             Ok(())
@@ -748,5 +1266,10 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_, _| {});
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let store = app_handle.state::<RustBackendState>();
+            shutdown_rust_worker(store.inner());
+        }
+    });
 }
