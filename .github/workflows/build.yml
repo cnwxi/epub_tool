@@ -82,18 +82,22 @@ jobs:
             arch: x64
             runner: ubuntu-22.04
             artifact_name: linux-x64-bundle
+            bundle_targets: deb,rpm
           - platform: linux
             arch: arm64
             runner: ubuntu-24.04-arm
             artifact_name: linux-arm64-bundle
+            bundle_targets: deb,rpm
           - platform: windows
             arch: x64
             runner: windows-2022
             artifact_name: windows-x64-bundle
+            bundle_targets: nsis
           - platform: windows
             arch: arm64
             runner: windows-11-arm
             artifact_name: windows-arm64-bundle
+            bundle_targets: nsis
           - platform: macos
             arch: x64
             runner: macos-15-intel
@@ -158,6 +162,9 @@ jobs:
           npm ci
           npm --prefix frontend ci
 
+      - name: Verify generated protocol code
+        run: npm run protocol:check
+
       - name: Install Python dependencies
         run: python -m pip install -r requirements/requirements.txt pyinstaller
 
@@ -185,6 +192,12 @@ jobs:
           done
           cargo fetch --locked
 
+      - name: Run Rust tests
+        working-directory: src-tauri
+        env:
+          EPUB_TOOL_TEST_PYTHON: python
+        run: cargo test --locked
+
       - name: Build Tauri app
         if: matrix.target.platform != 'macos'
         uses: tauri-apps/tauri-action@v0.6.0
@@ -192,7 +205,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: .
-          tauriScript: npm run tauri --
+          tauriScript: npm run tauri
+          args: --bundles ${{ matrix.target.bundle_targets }}
 
       - name: Build macOS app bundle
         if: matrix.target.platform == 'macos'
@@ -450,7 +464,7 @@ jobs:
             exit 1
           fi
 
-          printf '## 版本信息\n\n%s\n\n---\n\n' "$release_notes" > release-body.md
+          printf '## 版本信息\n%s\n' "$release_notes" > release-body.md
 
           cat >> release-body.md <<'MARKDOWN'
           ## 安装
@@ -480,10 +494,6 @@ jobs:
           ### Windows
 
           下载下方 `windows_x64_small_setup.exe` / `windows_arm64_small_setup.exe` 或对应 `.msi`，双击安装。
-
-          ---
-
-          📖 [README](https://github.com/cnwxi/epub_tool#readme) · 📝 [更新日志](https://github.com/cnwxi/epub_tool/blob/main/assets/docs/CHANGELOG.md)
           MARKDOWN
 
       - name: Publish GitHub release

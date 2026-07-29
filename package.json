@@ -4,6 +4,8 @@
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
+    "protocol:generate": "npx --yes @bufbuild/buf@1.72.0 generate && node scripts/normalize_protocol_generated.mjs",
+    "protocol:check": "npm run protocol:generate && git diff --exit-code -- frontend/src/generated python_backend/generated",
     "build:python-sidecar": "python scripts/build_python_sidecar.py",
     "build:verify-ocr-onnx-models": "python scripts/verify_ocr_onnx_models.py",
     "dev:python-sidecar": "python scripts/build_python_sidecar.py --ensure",

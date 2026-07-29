@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 import random
 import subprocess
 import zipfile
@@ -14,7 +13,7 @@ from python_backend.epub_workspace import EpubWorkspace
 from python_backend.services.image import image_compress, image_to_webp, replace_cover
 from python_backend.services.text import chinese_convert
 from python_backend.services.image.image_processing import format_size_mb
-from python_backend.protocol import TaskRequest
+from python_backend.protocol import TaskEvent, TaskRequest
 from python_backend.task_runner import (
     input_has_task_output_suffix,
     run_task,
@@ -28,6 +27,14 @@ class Logger:
 
     def write(self, message: str) -> None:
         self.messages.append(message)
+
+
+class EventCollector:
+    def __init__(self) -> None:
+        self.events: list[TaskEvent] = []
+
+    def emit(self, event: TaskEvent) -> None:
+        self.events.append(event)
 
 
 @pytest.mark.parametrize(
@@ -352,22 +359,25 @@ def test_invalid_options_fail_before_processing(task_type: str, options: dict[st
         validate_task_options(task_type, options)
 
 
-def test_runner_emits_real_output_and_continues_partial_batch(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_runner_emits_real_output_and_continues_partial_batch(tmp_path: Path) -> None:
     source = tmp_path / "book.epub"
     missing = tmp_path / "missing.epub"
     write_epub(source)
-    result = run_task(TaskRequest(
-        task_id="image-batch",
-        task_type="image_to_webp",
-        input_files=[str(missing), str(source)],
-        output_dir=str(tmp_path / "output"),
-        options={"quality": 75},
-    ))
-    events = capsys.readouterr().out
+    collector = EventCollector()
+    result = run_task(
+        TaskRequest(
+            task_id="image-batch",
+            task_type="image_to_webp",
+            input_files=[str(missing), str(source)],
+            output_dir=str(tmp_path / "output"),
+            options={"quality": 75},
+        ),
+        emitter=collector,
+    )
     assert result.status == "partial"
     assert result.summary == {"total": 2, "success": 1, "failed": 1, "skipped": 0}
     assert result.outputs == [str(tmp_path / "output" / "book_image_to_webp.epub")]
-    event_names = [json.loads(line)["event"] for line in events.splitlines()]
+    event_names = [event.event for event in collector.events]
     assert event_names.count("task.file.started") == 2
     assert event_names.count("task.file.finished") == 2
 
@@ -422,14 +432,18 @@ def test_built_sidecar_loads_opencc_data_when_available(tmp_path: Path) -> None:
         [
             str(sidecar),
             "run",
-            "--task-type",
-            "chinese_convert",
-            "--input-file",
+            "--requestId",
+            "sidecar-request",
+            "--taskId",
+            "sidecar-task",
+            "--taskType",
+            "TASK_TYPE_CHINESE_CONVERT",
+            "--inputFile",
             str(source),
-            "--output-dir",
+            "--outputDir",
             str(tmp_path),
-            "--options-json",
-            '{"direction":"s2t"}',
+            "--optionsJson",
+            '{"chineseConvert":{"direction":"s2t"}}',
         ],
         check=False,
         capture_output=True,

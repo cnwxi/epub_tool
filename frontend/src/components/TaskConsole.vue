@@ -107,15 +107,15 @@ const emit = defineEmits<{
           <div class="result-detail-list">
             <div
               v-for="item in result.errors"
-              :key="`${item.input_file}-${item.message}`"
+              :key="`${item.inputFile}-${item.message}`"
               class="result-detail-row error glass-soft"
             >
               <div class="result-row-head">
-                <strong>{{ formatFileName(item.input_file) }}</strong>
+                <strong>{{ formatFileName(item.inputFile) }}</strong>
                 <span class="result-status-tag error">失败</span>
               </div>
               <p>{{ item.message }}</p>
-              <span>{{ item.input_file }}</span>
+              <span>{{ item.inputFile }}</span>
             </div>
           </div>
         </div>
@@ -128,15 +128,15 @@ const emit = defineEmits<{
           <div class="result-detail-list">
             <div
               v-for="item in result.skipped"
-              :key="`${item.input_file}-${item.message}`"
+              :key="`${item.inputFile}-${item.message}`"
               class="result-detail-row skip glass-soft"
             >
               <div class="result-row-head">
-                <strong>{{ formatFileName(item.input_file) }}</strong>
+                <strong>{{ formatFileName(item.inputFile) }}</strong>
                 <span class="result-status-tag skip">跳过</span>
               </div>
               <p>{{ item.message }}</p>
-              <span>{{ item.input_file }}</span>
+              <span>{{ item.inputFile }}</span>
             </div>
           </div>
         </div>

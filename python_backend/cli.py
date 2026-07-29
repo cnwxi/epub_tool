@@ -2,21 +2,37 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import socket
 import sys
 import threading
-import uuid
 from pathlib import Path
 from typing import Any
 
+from python_backend.engine_protocol import (
+    PROTOCOL_VERSION,
+    EngineProtocolError,
+    font_target_to_wire,
+    message_to_json_dict,
+    parse_engine_request,
+    task_event_to_wire,
+    task_request_from_wire,
+    task_result_to_wire,
+)
+from python_backend.generated.epub_tool.v1 import engine_pb2
 from python_backend.json_output import dumps_json_line
-from python_backend.protocol import TaskRequest
-from python_backend.task_runner import iter_font_targets, list_font_targets, run_task
+from python_backend.task_runner import iter_font_targets, run_task
 
 
 PARENT_LIVENESS_ADDR_ENV = "EPUB_TOOL_PARENT_LIVENESS_ADDR"
 PARENT_LIVENESS_TOKEN_ENV = "EPUB_TOOL_PARENT_LIVENESS_TOKEN"
+LOGGER = logging.getLogger(__name__)
+
+ERROR_CODE_INVALID_ARGUMENT = "INVALID_ARGUMENT"
+ERROR_CODE_IO = "IO_ERROR"
+ERROR_CODE_DEPENDENCY = "DEPENDENCY_ERROR"
+ERROR_CODE_INTERNAL = "INTERNAL"
 
 
 def configure_stdio() -> None:
@@ -57,29 +73,7 @@ def start_parent_monitor() -> None:
     ).start()
 
 
-def pick_payload_value(payload: dict[str, Any], *keys: str, default: Any = None) -> Any:
-    for key in keys:
-        if key in payload and payload[key] is not None:
-            return payload[key]
-    return default
-
-
-def load_request_from_payload(payload: dict[str, Any]) -> TaskRequest:
-    task_type = pick_payload_value(payload, "task_type", "taskType")
-    if not task_type:
-        raise ValueError("任务请求缺少 task_type/taskType")
-
-    return TaskRequest(
-        task_id=pick_payload_value(payload, "task_id", "taskId", default=str(uuid.uuid4())),
-        task_type=task_type,
-        input_files=pick_payload_value(payload, "input_files", "inputFiles", default=[])
-        or [],
-        output_dir=pick_payload_value(payload, "output_dir", "outputDir"),
-        options=pick_payload_value(payload, "options", default={}) or {},
-    )
-
-
-def load_request_from_args(args: argparse.Namespace) -> TaskRequest:
+def load_engine_request_from_args(args: argparse.Namespace) -> engine_pb2.EngineRequest:
     if args.request_file:
         raw = Path(args.request_file).read_text(encoding="utf-8")
         payload = json.loads(raw)
@@ -87,97 +81,177 @@ def load_request_from_args(args: argparse.Namespace) -> TaskRequest:
         payload = json.loads(args.request_json)
     else:
         payload = {
-            "task_id": args.task_id or str(uuid.uuid4()),
-            "task_type": args.task_type,
-            "input_files": args.input_file or [],
-            "output_dir": args.output_dir,
-            "options": json.loads(args.options_json or "{}"),
+            "protocolVersion": "PROTOCOL_VERSION_V1",
+            "requestId": args.request_id,
+            "runTask": {
+                "taskId": args.task_id,
+                "taskType": args.task_type,
+                "inputFiles": args.input_file or [],
+                "options": json.loads(args.options_json or '{"empty": {}}'),
+            },
         }
+        if args.output_dir:
+            payload["runTask"]["outputDir"] = args.output_dir
 
-    return load_request_from_payload(payload)
+    if not isinstance(payload, dict):
+        raise EngineProtocolError("引擎请求必须是 JSON 对象")
+    return parse_engine_request(payload)
+
+
+class EngineEventEmitter:
+    def __init__(self, request_id: str):
+        self.request_id = request_id
+
+    def emit(self, event) -> None:
+        envelope = engine_pb2.EngineEvent(
+            protocol_version=PROTOCOL_VERSION,
+            request_id=self.request_id,
+            task_event=task_event_to_wire(event),
+        )
+        emit_json_message(envelope)
+
+
+def emit_json_message(message: Any) -> None:
+    sys.stdout.write(dumps_json_line(message_to_json_dict(message)) + "\n")
+    sys.stdout.flush()
+
+
+def engine_error_response(
+    request_id: str,
+    code: str,
+    message: str,
+) -> engine_pb2.EngineResponse:
+    return engine_pb2.EngineResponse(
+        protocol_version=PROTOCOL_VERSION,
+        request_id=request_id,
+        error=engine_pb2.EngineError(code=code, message=message),
+    )
+
+
+def is_dependency_error(error: Exception) -> bool:
+    """Return whether an exception was caused by a missing Python dependency."""
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        if isinstance(current, ImportError):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def engine_error_from_exception(
+    request_id: str,
+    error: Exception,
+) -> engine_pb2.EngineResponse:
+    """Convert a request failure into a stable response without killing the worker."""
+    if isinstance(error, (EngineProtocolError, TypeError, ValueError)):
+        return engine_error_response(request_id, ERROR_CODE_INVALID_ARGUMENT, str(error))
+    if isinstance(error, OSError):
+        return engine_error_response(request_id, ERROR_CODE_IO, str(error))
+    if is_dependency_error(error):
+        return engine_error_response(request_id, ERROR_CODE_DEPENDENCY, str(error))
+
+    LOGGER.error(
+        "Engine request %s failed unexpectedly",
+        request_id,
+        exc_info=(type(error), error, error.__traceback__),
+    )
+    return engine_error_response(
+        request_id,
+        ERROR_CODE_INTERNAL,
+        "处理引擎发生未预期错误，请查看日志。",
+    )
+
+
+def process_engine_request(
+    request: engine_pb2.EngineRequest,
+) -> engine_pb2.EngineResponse:
+    operation = request.WhichOneof("operation")
+    if operation == "run_task":
+        result = run_task(
+            task_request_from_wire(request.run_task),
+            emitter=EngineEventEmitter(request.request_id),
+        )
+        return engine_pb2.EngineResponse(
+            protocol_version=PROTOCOL_VERSION,
+            request_id=request.request_id,
+            task_result=task_result_to_wire(result),
+        )
+    if operation == "scan_fonts":
+        results = []
+        for event in iter_font_targets(list(request.scan_fonts.input_files)):
+            progress = engine_pb2.FontScanProgress(
+                current_index=event["current_index"],
+                total_files=event["total_files"],
+                result=font_target_to_wire(event["result"]),
+            )
+            emit_json_message(
+                engine_pb2.EngineEvent(
+                    protocol_version=PROTOCOL_VERSION,
+                    request_id=request.request_id,
+                    font_scan_progress=progress,
+                )
+            )
+            results.append(progress.result)
+        return engine_pb2.EngineResponse(
+            protocol_version=PROTOCOL_VERSION,
+            request_id=request.request_id,
+            font_scan_result=engine_pb2.FontScanResult(results=results),
+        )
+    raise EngineProtocolError("不支持的 operation")
+
+
+def execute_engine_request(request: engine_pb2.EngineRequest) -> engine_pb2.EngineResponse:
+    """Contain execution failures at the worker protocol boundary.
+
+    Service code is extensible and may raise exceptions outside per-file handling
+    (for example while preparing an output directory or importing a task module).
+    The persistent worker must answer the request and remain usable in those cases.
+    """
+    try:
+        return process_engine_request(request)
+    except (EngineProtocolError, OSError, ImportError, TypeError, ValueError) as exc:
+        return engine_error_from_exception(request.request_id, exc)
+    except Exception as exc:  # Protocol boundary: preserve worker availability for plugin failures.
+        return engine_error_from_exception(request.request_id, exc)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    request = load_request_from_args(args)
-    result = run_task(request)
-    return 0 if result.ok else 1
-
-
-def cmd_list_fonts_batch(args: argparse.Namespace) -> int:
-    results = []
-    for event in iter_font_targets(args.input_files):
-        results.append(event["result"])
-        sys.stdout.write(dumps_json_line(event) + "\n")
-        sys.stdout.flush()
-
-    sys.stdout.write(
-        dumps_json_line({"event": "font-targets.finished", "font_targets": results})
-        + "\n"
-    )
-    sys.stdout.flush()
-    return 0
-
-
-def cmd_list_fonts(args: argparse.Namespace) -> int:
-    payload = list_font_targets(args.input_file)
-    sys.stdout.write(dumps_json_line(payload) + "\n")
-    return 0
-
-
-def emit_worker_response(request_id: str, *, result: Any = None, error: str | None = None) -> None:
-    payload: dict[str, Any] = {
-        "event": "worker.response",
-        "request_id": request_id,
-        "ok": error is None,
-    }
-    if error is None:
-        payload["result"] = result
+    request_id = "invalid-request"
+    try:
+        request = load_engine_request_from_args(args)
+        request_id = request.request_id
+    except (EngineProtocolError, OSError, TypeError, ValueError) as exc:
+        response = engine_error_from_exception(request_id, exc)
     else:
-        payload["error"] = error
-    sys.stdout.write(dumps_json_line(payload) + "\n")
-    sys.stdout.flush()
+        response = execute_engine_request(request)
+    emit_json_message(response)
+    if response.WhichOneof("payload") == "task_result":
+        return 0 if response.task_result.ok else 1
+    return 0 if response.WhichOneof("payload") != "error" else 1
 
 
 def cmd_serve(_args: argparse.Namespace) -> int:
-    """处理来自 Tauri 的长连接 JSON Lines 请求。
-
-    请求按顺序执行，保证现有服务模块的全局 logger 替换和日志文件写入不发生
-    并发冲突。任务事件会直接复用既有 stdout 协议，最后再发送 worker.response。
-    """
+    """Process serialized EngineRequest messages in request order."""
     start_parent_monitor()
     for raw_line in sys.stdin:
         line = raw_line.strip()
         if not line:
             continue
 
-        request_id = "unknown"
+        request_id = "invalid-request"
         try:
             payload = json.loads(line)
             if not isinstance(payload, dict):
-                raise ValueError("worker 请求必须是 JSON 对象")
-            request_id = str(payload.get("request_id") or uuid.uuid4())
-            command = payload.get("command")
-
-            if command == "run":
-                request_payload = payload.get("request")
-                if not isinstance(request_payload, dict):
-                    raise ValueError("run 请求缺少 request 对象")
-                result = run_task(load_request_from_payload(request_payload))
-                emit_worker_response(request_id, result=result.to_dict())
-            elif command == "list-fonts-batch":
-                input_files = payload.get("input_files")
-                if not isinstance(input_files, list):
-                    raise ValueError("list-fonts-batch 请求缺少 input_files 数组")
-                results = []
-                for event in iter_font_targets([str(path) for path in input_files]):
-                    results.append(event["result"])
-                    sys.stdout.write(dumps_json_line(event) + "\n")
-                    sys.stdout.flush()
-                emit_worker_response(request_id, result=results)
-            else:
-                raise ValueError(f"不支持的 worker 命令: {command}")
-        except Exception as exc:
-            emit_worker_response(request_id, error=str(exc))
+                raise EngineProtocolError("引擎请求必须是 JSON 对象")
+            request_id = str(payload.get("requestId") or request_id)
+            request = parse_engine_request(payload)
+        except (EngineProtocolError, TypeError, ValueError) as exc:
+            response = engine_error_from_exception(request_id, exc)
+        else:
+            response = execute_engine_request(request)
+        emit_json_message(response)
 
     return 0
 
@@ -187,38 +261,30 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="执行 EPUB 处理任务")
-    run_parser.add_argument("--request-json", help="完整 TaskRequest JSON")
-    run_parser.add_argument("--request-file", help="包含 TaskRequest JSON 的文件")
+    run_parser.add_argument("--requestJson", dest="request_json", help="完整 EngineRequest JSON")
+    run_parser.add_argument("--requestFile", dest="request_file", help="包含 EngineRequest JSON 的文件")
     run_parser.add_argument(
-        "--task-type",
+        "--taskType",
+        dest="task_type",
         choices=[
-            "reformat_epub",
-            "decrypt_epub",
-            "encrypt_epub",
-            "encrypt_font",
-            "decrypt_font",
-            "webp_to_img",
-            "image_compress",
-            "image_to_webp",
-            "chinese_convert",
-            "replace_cover",
+            "TASK_TYPE_REFORMAT_EPUB",
+            "TASK_TYPE_DECRYPT_EPUB",
+            "TASK_TYPE_ENCRYPT_EPUB",
+            "TASK_TYPE_ENCRYPT_FONT",
+            "TASK_TYPE_DECRYPT_FONT",
+            "TASK_TYPE_WEBP_TO_IMG",
+            "TASK_TYPE_IMAGE_COMPRESS",
+            "TASK_TYPE_IMAGE_TO_WEBP",
+            "TASK_TYPE_CHINESE_CONVERT",
+            "TASK_TYPE_REPLACE_COVER",
         ],
     )
-    run_parser.add_argument("--task-id")
-    run_parser.add_argument("--input-file", action="append")
-    run_parser.add_argument("--output-dir")
-    run_parser.add_argument("--options-json", help="任务选项 JSON")
+    run_parser.add_argument("--requestId", dest="request_id")
+    run_parser.add_argument("--taskId", dest="task_id")
+    run_parser.add_argument("--inputFile", dest="input_file", action="append")
+    run_parser.add_argument("--outputDir", dest="output_dir")
+    run_parser.add_argument("--optionsJson", dest="options_json", help="TaskOptions JSON")
     run_parser.set_defaults(func=cmd_run)
-
-    fonts_parser = subparsers.add_parser("list-fonts", help="列出可用字体 family")
-    fonts_parser.add_argument("input_file")
-    fonts_parser.set_defaults(func=cmd_list_fonts)
-
-    fonts_batch_parser = subparsers.add_parser(
-        "list-fonts-batch", help="批量列出可用字体 family"
-    )
-    fonts_batch_parser.add_argument("input_files", nargs="+")
-    fonts_batch_parser.set_defaults(func=cmd_list_fonts_batch)
 
     serve_parser = subparsers.add_parser("serve", help="作为常驻 JSON Lines worker 运行")
     serve_parser.set_defaults(func=cmd_serve)

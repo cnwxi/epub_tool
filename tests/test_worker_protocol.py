@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from python_backend import cli
 from python_backend.json_output import dumps_json_line
-from python_backend.protocol import TaskResult
+from python_backend.protocol import TaskEvent, TaskResult
 from python_backend.services.font import decrypt_font
 
 
@@ -101,14 +101,13 @@ class WorkerProtocolTest(unittest.TestCase):
         sys.stdin = io.StringIO(
             json.dumps(
                 {
-                    "request_id": "run-1",
-                    "command": "run",
-                    "request": {
-                        "task_id": "task-1",
-                        "task_type": "reformat_epub",
-                        "input_files": [],
-                        "output_dir": None,
-                        "options": {},
+                    "protocolVersion": "PROTOCOL_VERSION_V1",
+                    "requestId": "run-1",
+                    "runTask": {
+                        "taskId": "task-1",
+                        "taskType": "TASK_TYPE_REFORMAT_EPUB",
+                        "inputFiles": [],
+                        "options": {"empty": {}},
                     },
                 }
             )
@@ -136,10 +135,167 @@ class WorkerProtocolTest(unittest.TestCase):
             sys.stdout = original_stdout
 
         response = json.loads(output.getvalue())
-        self.assertEqual(response["event"], "worker.response")
-        self.assertEqual(response["request_id"], "run-1")
-        self.assertTrue(response["ok"])
-        self.assertEqual(response["result"]["status"], "success")
+        self.assertEqual(response["requestId"], "run-1")
+        self.assertEqual(response["protocolVersion"], "PROTOCOL_VERSION_V1")
+        self.assertTrue(response["taskResult"]["ok"])
+        self.assertEqual(response["taskResult"]["status"], "success")
+
+    def test_serve_rejects_request_without_operation(self):
+        original_stdin = sys.stdin
+        original_stdout = sys.stdout
+        sys.stdin = io.StringIO(
+            json.dumps(
+                {
+                    "protocolVersion": "PROTOCOL_VERSION_V1",
+                    "requestId": "missing-operation-1",
+                }
+            )
+            + "\n"
+        )
+        output = io.StringIO()
+        sys.stdout = output
+        try:
+            with patch.object(cli, "start_parent_monitor"):
+                self.assertEqual(cli.cmd_serve(None), 0)
+        finally:
+            sys.stdin = original_stdin
+            sys.stdout = original_stdout
+
+        response = json.loads(output.getvalue())
+        self.assertEqual(response["requestId"], "missing-operation-1")
+        self.assertEqual(response["error"]["code"], "INVALID_ARGUMENT")
+
+    def test_serve_returns_protocol_error_and_processes_the_next_request(self):
+        invalid_request = {
+            "protocolVersion": "PROTOCOL_VERSION_V1",
+            "requestId": "invalid-protocol-1",
+            "unknownField": True,
+        }
+        valid_request = {
+            "protocolVersion": "PROTOCOL_VERSION_V1",
+            "requestId": "run-after-invalid-2",
+            "runTask": {
+                "taskId": "task-2",
+                "taskType": "TASK_TYPE_REFORMAT_EPUB",
+                "inputFiles": [],
+                "options": {"empty": {}},
+            },
+        }
+        original_stdin = sys.stdin
+        original_stdout = sys.stdout
+        sys.stdin = io.StringIO(
+            json.dumps(invalid_request) + "\n" + json.dumps(valid_request) + "\n"
+        )
+        output = io.StringIO()
+        sys.stdout = output
+        try:
+            with (
+                patch.object(
+                    cli,
+                    "run_task",
+                    return_value=TaskResult(
+                        ok=True,
+                        status="success",
+                        summary={"total": 0, "success": 0, "failed": 0, "skipped": 0},
+                    ),
+                ) as run_task,
+                patch.object(cli, "start_parent_monitor"),
+            ):
+                self.assertEqual(cli.cmd_serve(None), 0)
+        finally:
+            sys.stdin = original_stdin
+            sys.stdout = original_stdout
+
+        responses = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(responses[0]["requestId"], "invalid-protocol-1")
+        self.assertEqual(responses[0]["error"]["code"], "INVALID_ARGUMENT")
+        self.assertEqual(responses[1]["requestId"], "run-after-invalid-2")
+        self.assertTrue(responses[1]["taskResult"]["ok"])
+        run_task.assert_called_once()
+
+    def test_serve_returns_io_error_and_processes_the_next_request(self):
+        request = {
+            "protocolVersion": "PROTOCOL_VERSION_V1",
+            "requestId": "io-error-1",
+            "runTask": {
+                "taskId": "task-1",
+                "taskType": "TASK_TYPE_REFORMAT_EPUB",
+                "inputFiles": [],
+                "options": {"empty": {}},
+            },
+        }
+        next_request = {
+            **request,
+            "requestId": "run-2",
+            "runTask": {**request["runTask"], "taskId": "task-2"},
+        }
+        original_stdin = sys.stdin
+        original_stdout = sys.stdout
+        sys.stdin = io.StringIO(json.dumps(request) + "\n" + json.dumps(next_request) + "\n")
+        output = io.StringIO()
+        sys.stdout = output
+        try:
+            with (
+                patch.object(
+                    cli,
+                    "run_task",
+                    side_effect=[
+                        OSError("output is read-only"),
+                        TaskResult(
+                            ok=True,
+                            status="success",
+                            summary={"total": 0, "success": 0, "failed": 0, "skipped": 0},
+                        ),
+                    ],
+                ),
+                patch.object(cli, "start_parent_monitor"),
+            ):
+                self.assertEqual(cli.cmd_serve(None), 0)
+        finally:
+            sys.stdin = original_stdin
+            sys.stdout = original_stdout
+
+        responses = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(responses[0]["requestId"], "io-error-1")
+        self.assertEqual(responses[0]["error"]["code"], "IO_ERROR")
+        self.assertEqual(responses[1]["requestId"], "run-2")
+        self.assertTrue(responses[1]["taskResult"]["ok"])
+
+    def test_wrapped_import_error_uses_dependency_error_code(self):
+        try:
+            try:
+                raise ModuleNotFoundError("No module named 'missing_dependency'")
+            except ModuleNotFoundError as cause:
+                raise RuntimeError("Python 依赖未安装完整") from cause
+        except RuntimeError as error:
+            response = cli.engine_error_from_exception("dependency-error-1", error)
+
+        self.assertEqual(response.request_id, "dependency-error-1")
+        self.assertEqual(response.error.code, cli.ERROR_CODE_DEPENDENCY)
+
+    def test_engine_event_emitter_uses_request_envelope_and_camel_case(self):
+        output = io.StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = output
+        try:
+            cli.EngineEventEmitter("event-1").emit(
+                TaskEvent(
+                    event="task.started",
+                    task_id="task-1",
+                    status="started",
+                    progress=0,
+                    message="starting",
+                    total_files=1,
+                )
+            )
+        finally:
+            sys.stdout = original_stdout
+
+        event = json.loads(output.getvalue())
+        self.assertEqual(event["requestId"], "event-1")
+        self.assertEqual(event["taskEvent"]["taskId"], "task-1")
+        self.assertEqual(event["taskEvent"]["totalFiles"], 1)
+        self.assertNotIn("task_id", event["taskEvent"])
 
     def test_ocr_backend_is_reused_for_same_model_configuration(self):
         decrypt_font._OCR_BACKEND_CACHE.clear()

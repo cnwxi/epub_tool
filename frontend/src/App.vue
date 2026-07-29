@@ -36,6 +36,21 @@ type MasonryCard = {
   preferredColumn?: number;
 };
 
+type WireTaskType = NonNullable<NonNullable<TaskRequest["runTask"]>["taskType"]>;
+
+const wireTaskTypeByTask: Record<TaskType, WireTaskType> = {
+  reformat_epub: "TASK_TYPE_REFORMAT_EPUB",
+  decrypt_epub: "TASK_TYPE_DECRYPT_EPUB",
+  encrypt_epub: "TASK_TYPE_ENCRYPT_EPUB",
+  encrypt_font: "TASK_TYPE_ENCRYPT_FONT",
+  decrypt_font: "TASK_TYPE_DECRYPT_FONT",
+  webp_to_img: "TASK_TYPE_WEBP_TO_IMG",
+  image_compress: "TASK_TYPE_IMAGE_COMPRESS",
+  image_to_webp: "TASK_TYPE_IMAGE_TO_WEBP",
+  chinese_convert: "TASK_TYPE_CHINESE_CONVERT",
+  replace_cover: "TASK_TYPE_REPLACE_COVER",
+};
+
 const sectionItems: Array<{
   key: SectionKey;
   label: string;
@@ -1747,19 +1762,19 @@ const loadFontFamilies = async (options?: {
   const completedPaths = new Set<string>();
 
   const applyResult = (result: FontTargetResult) => {
-    if (requestId !== fontLoadRequestId || completedPaths.has(result.input_file)) {
+    if (requestId !== fontLoadRequestId || completedPaths.has(result.inputFile)) {
       return;
     }
 
-    const item = pendingByPath.get(result.input_file);
+    const item = pendingByPath.get(result.inputFile);
     if (!item) {
       return;
     }
 
-    completedPaths.add(result.input_file);
+    completedPaths.add(result.inputFile);
     const previousStatus = previousStatusByPath.get(item.path) ?? "idle";
     if (result.ok) {
-      const families = result.font_families ?? [];
+      const families = result.fontFamilies;
       syncFontFamilies(item, families, previousStatus);
       item.fontLoadStatus = "loaded";
       refreshedCount += 1;
@@ -1785,20 +1800,31 @@ const loadFontFamilies = async (options?: {
     }
     fontProgressFileName.value = pendingTargets[0]?.name ?? "";
 
-    const results = await listFontTargetsBatch(
+    const response = await listFontTargetsBatch(
       pendingTargets.map((item) => item.path),
       (event) => {
         if (requestId !== fontLoadRequestId) {
           return;
         }
-        const item = pendingByPath.get(event.result.input_file);
+        const progress = event.fontScanProgress;
+        if (!progress) {
+          return;
+        }
+        const item = pendingByPath.get(progress.result.inputFile);
         fontProgressFileName.value = item?.name ?? fontProgressFileName.value;
-        applyResult(event.result);
+        applyResult(progress.result);
       },
     );
 
     if (requestId !== fontLoadRequestId) {
       return;
+    }
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    const results = response.fontScanResult?.results;
+    if (!results) {
+      throw new Error("字体扫描响应缺少 fontScanResult。");
     }
     // 事件回调已实时处理了大部分结果，这里只兜底未收到的
     for (const result of results) {
@@ -1860,53 +1886,75 @@ const buildRequest = (): TaskRequest => {
   if (!activeTask.value) {
     throw new Error("当前页面不是任务工具页，无法构建执行请求。");
   }
-  const request: TaskRequest = {
-    taskId: crypto.randomUUID(),
-    taskType: activeTask.value,
+  const requestId = crypto.randomUUID();
+  const runTask: NonNullable<TaskRequest["runTask"]> = {
+    taskId: requestId,
+    taskType: wireTaskTypeByTask[activeTask.value],
     inputFiles: files.value.map((item) => item.path),
-    outputDir: outputDir.value || null,
-    options: {},
+    options: { empty: {} },
   };
+  const request: TaskRequest = {
+    protocolVersion: "PROTOCOL_VERSION_V1",
+    requestId,
+    runTask,
+  };
+  if (outputDir.value) {
+    runTask.outputDir = outputDir.value;
+  }
 
   if (isFontTargetTask(activeTask.value)) {
-    request.options = {
-      target_font_families_by_file: Object.fromEntries(
-        files.value.map((item) => [item.path, item.selectedFontFamilies]),
-      ),
+    runTask.options = {
+      font: {
+        targetFontFamiliesByFile: Object.fromEntries(
+          files.value.map((item) => [item.path, { values: item.selectedFontFamilies }]),
+        ),
+      },
     };
   }
 
   if (activeTask.value === "decrypt_font") {
     const normalizedSettings = normalizeFontDecryptSettings(fontDecryptSettings.value);
     fontDecryptSettings.value = normalizedSettings;
-    request.options = {
-      ...(request.options ?? {}),
-      ocr_char_policy: normalizedSettings.ocrCharPolicy,
-      min_ocr_confidence: normalizedSettings.minOcrConfidence,
+    runTask.options = {
+      font: {
+        targetFontFamiliesByFile: Object.fromEntries(
+          files.value.map((item) => [item.path, { values: item.selectedFontFamilies }]),
+        ),
+        ocrCharPolicy: normalizedSettings.ocrCharPolicy,
+        minOcrConfidence: normalizedSettings.minOcrConfidence,
+      },
     };
   }
 
   if (activeTask.value === "image_compress") {
-    request.options = {
-      jpeg_quality: Math.round(newTaskSettings.value.jpegQuality),
-      webp_quality: Math.round(newTaskSettings.value.webpQuality),
-      png_to_jpg: newTaskSettings.value.pngToJpg,
-      png_quantize: newTaskSettings.value.imageCompressQuantizePng,
+    runTask.options = {
+      imageCompress: {
+        jpegQuality: Math.round(newTaskSettings.value.jpegQuality),
+        webpQuality: Math.round(newTaskSettings.value.webpQuality),
+        pngToJpg: newTaskSettings.value.pngToJpg,
+        pngQuantize: newTaskSettings.value.imageCompressQuantizePng,
+      },
     };
   } else if (activeTask.value === "webp_to_img") {
-    request.options = {
-      quality: Math.round(newTaskSettings.value.webpToImageQuality),
-      png_quantize: newTaskSettings.value.webpToImageQuantizePng,
+    runTask.options = {
+      imageConversion: {
+        quality: Math.round(newTaskSettings.value.webpToImageQuality),
+        pngQuantize: newTaskSettings.value.webpToImageQuantizePng,
+      },
     };
   } else if (activeTask.value === "image_to_webp") {
-    request.options = { quality: Math.round(newTaskSettings.value.imageWebpQuality) };
+    runTask.options = {
+      imageConversion: { quality: Math.round(newTaskSettings.value.imageWebpQuality) },
+    };
   } else if (activeTask.value === "chinese_convert") {
-    request.options = { direction: newTaskSettings.value.chineseDirection };
+    runTask.options = {
+      chineseConvert: { direction: newTaskSettings.value.chineseDirection },
+    };
   } else if (activeTask.value === "replace_cover") {
-    request.options = {
-      cover_path_by_file: Object.fromEntries(
+    runTask.options = {
+      replaceCover: { coverPathByFile: Object.fromEntries(
         files.value.filter((item) => item.coverPath).map((item) => [item.path, item.coverPath]),
-      ),
+      ) },
     };
   }
 
@@ -2044,7 +2092,7 @@ const rememberTask = (taskType: TaskType, taskResult: TaskResult) => {
 const syncQueueWithResult = (taskType: TaskType, taskResult: TaskResult) => {
   const snapshot = [...taskFilesByType.value[taskType]];
   const nextSelectedPath = pickNeighborPath(snapshot, selectedFilePathByType.value[taskType]);
-  const blockedPaths = new Set(taskResult.errors.map((item) => item.input_file));
+  const blockedPaths = new Set(taskResult.errors.map((item) => item.inputFile));
 
   taskFilesByType.value[taskType] = snapshot.filter((item) => blockedPaths.has(item.path));
   if (
@@ -2073,7 +2121,7 @@ const createRunningTaskResult = (total: number): TaskResult => ({
     failed: 0,
     skipped: 0,
   },
-  log_path: null,
+  logPath: "",
 });
 
 const clearHistory = () => {
@@ -2087,8 +2135,8 @@ const maybeOpenFollowUpTargets = (taskResult: TaskResult) => {
   if (settings.value.autoOpenOutputFolder && taskResult.outputs[0]) {
     void openPath(getContainingDirectory(taskResult.outputs[0]));
   }
-  if (settings.value.autoOpenLogFile && taskResult.log_path) {
-    void openPath(taskResult.log_path);
+  if (settings.value.autoOpenLogFile && taskResult.logPath) {
+    void openPath(taskResult.logPath);
   }
 };
 
@@ -2104,21 +2152,21 @@ const pushLog = (event: TaskEvent) => {
   if (event.event === "task.started") {
     taskProgressCurrent.value = 0;
   } else if (event.event === "task.file.started") {
-    taskProgressCurrent.value = Math.max((event.current_index ?? 1) - 1, 0);
+    taskProgressCurrent.value = Math.max((event.currentIndex ?? 1) - 1, 0);
   } else if (event.event === "task.file.finished") {
-    taskProgressCurrent.value = event.current_index ?? taskProgressCurrent.value;
+    taskProgressCurrent.value = event.currentIndex ?? taskProgressCurrent.value;
   } else if (event.event === "task.finished") {
     taskProgressCurrent.value =
-      event.result?.summary.total ?? event.total_files ?? taskProgressCurrent.value;
+      event.result?.summary.total ?? event.totalFiles ?? taskProgressCurrent.value;
   }
-  taskProgressTotal.value = event.total_files ?? taskProgressTotal.value;
-  taskProgressFileName.value = event.current_file
-    ? event.current_file.split(/[\\/]/).pop() ?? event.current_file
+  taskProgressTotal.value = event.totalFiles ?? taskProgressTotal.value;
+  taskProgressFileName.value = event.currentFile
+    ? event.currentFile.split(/[\\/]/).pop() ?? event.currentFile
     : taskProgressFileName.value;
-  if (targetTaskType && event.event === "task.file.finished" && event.current_file) {
+  if (targetTaskType && event.event === "task.file.finished" && event.currentFile) {
     const currentResult =
       taskResultByType.value[targetTaskType] ??
-      createRunningTaskResult(event.total_files ?? taskProgressTotal.value);
+      createRunningTaskResult(event.totalFiles ?? taskProgressTotal.value);
     const nextResult: TaskResult = {
       ...currentResult,
       outputs: [...currentResult.outputs],
@@ -2129,19 +2177,19 @@ const pushLog = (event: TaskEvent) => {
 
     if (event.status === "success") {
       nextResult.summary.success += 1;
-      if (event.output_path) {
-        nextResult.outputs.push(event.output_path);
+      if (event.outputPath) {
+        nextResult.outputs.push(event.outputPath);
       }
     } else if (event.status === "skip") {
       nextResult.summary.skipped += 1;
       nextResult.skipped.push({
-        input_file: event.current_file,
+        inputFile: event.currentFile,
         message: event.message,
       });
     } else if (event.status === "error") {
       nextResult.summary.failed += 1;
       nextResult.errors.push({
-        input_file: event.current_file,
+        inputFile: event.currentFile,
         message: event.message,
       });
     }
@@ -2149,7 +2197,7 @@ const pushLog = (event: TaskEvent) => {
     taskResultByType.value[targetTaskType] = nextResult;
     syncTaskQueueWithFinishedFile(
       targetTaskType,
-      event.current_file,
+      event.currentFile,
       event.status === "error",
     );
   }
@@ -2174,11 +2222,11 @@ const runSelectedTask = async () => {
       taskLogsByType.value[taskType] = [
         {
           event: "task.validation.error",
-          task_id: "local",
+          taskId: "local",
           status: "error",
           progress: 0,
           message,
-          total_files: files.value.length,
+          totalFiles: files.value.length,
           level: "error",
         },
       ];
@@ -2202,17 +2250,28 @@ const runSelectedTask = async () => {
   const request = buildRequest();
 
   try {
-    const taskResult = await runTask(request, pushLog);
+    const response = await runTask(request, (event) => {
+      if (event.taskEvent) {
+        pushLog(event.taskEvent);
+      }
+    });
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    const taskResult = response.taskResult;
+    if (!taskResult) {
+      throw new Error("任务响应缺少 taskResult。");
+    }
     taskResultByType.value[taskType] = taskResult;
     syncQueueWithResult(taskType, taskResult);
-    rememberTask(request.taskType, taskResult);
+    rememberTask(taskType, taskResult);
     maybeOpenFollowUpTargets(taskResult);
     taskStatus.value = taskResult.ok ? "任务完成" : "任务结束，但存在失败项";
   } catch (error) {
     const message = toErrorMessage(error, "执行过程中出现未知错误");
     logs.value.push({
       event: "task.bridge.error",
-      task_id: "local",
+      taskId: "local",
       status: "error",
       progress: progress.value,
       message,
@@ -3058,14 +3117,14 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                           <span class="content-animated-value">{{ result.errors.length }} 项</span>
                         </div>
                         <div class="result-detail-list">
-                          <div v-for="item in result.errors" :key="`${item.input_file}-${item.message}`"
+                          <div v-for="item in result.errors" :key="`${item.inputFile}-${item.message}`"
                             class="result-detail-row error glass-soft">
                             <div class="result-row-head">
-                              <strong>{{ item.input_file.split(/[\\/]/).pop() ?? item.input_file }}</strong>
+                              <strong>{{ item.inputFile.split(/[\\/]/).pop() ?? item.inputFile }}</strong>
                               <span class="result-status-tag error">失败</span>
                             </div>
                             <p>{{ item.message }}</p>
-                            <span>{{ item.input_file }}</span>
+                            <span>{{ item.inputFile }}</span>
                           </div>
                         </div>
                       </div>
@@ -3076,14 +3135,14 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                           <span class="content-animated-value">{{ result.skipped.length }} 项</span>
                         </div>
                         <div class="result-detail-list">
-                          <div v-for="item in result.skipped" :key="`${item.input_file}-${item.message}`"
+                          <div v-for="item in result.skipped" :key="`${item.inputFile}-${item.message}`"
                             class="result-detail-row skip glass-soft">
                             <div class="result-row-head">
-                              <strong>{{ item.input_file.split(/[\\/]/).pop() ?? item.input_file }}</strong>
+                              <strong>{{ item.inputFile.split(/[\\/]/).pop() ?? item.inputFile }}</strong>
                               <span class="result-status-tag skip">跳过</span>
                             </div>
                             <p>{{ item.message }}</p>
-                            <span>{{ item.input_file }}</span>
+                            <span>{{ item.inputFile }}</span>
                           </div>
                         </div>
                       </div>

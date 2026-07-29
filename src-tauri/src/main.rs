@@ -1,7 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+mod engine_protocol;
+
+use engine_protocol::v1::{
+    engine_request, engine_response, EngineEvent, EngineRequest, EngineResponse,
+    ProtocolVersion,
+};
+use serde::Serialize;
+use serde_json::Value;
 use std::{
     collections::BTreeMap,
     fs,
@@ -43,26 +49,6 @@ const COVER_PREVIEW_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FrontendTaskRequest {
-    task_id: String,
-    task_type: String,
-    input_files: Vec<String>,
-    output_dir: Option<String>,
-    #[serde(default)]
-    options: Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct FontTargetResponse {
-    ok: bool,
-    input_file: String,
-    font_families: Vec<String>,
-    #[serde(default)]
-    error: Option<String>,
-}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -946,14 +932,11 @@ fn terminate_active_worker(store: &PythonWorkerStore) -> Result<PythonWorkerStat
 fn execute_worker_request(
     app: &AppHandle,
     store: &PythonWorkerStore,
-    request: Value,
+    request: EngineRequest,
     on_event: &Channel<Value>,
-) -> Result<Value, String> {
-    let request_id = request
-        .get("request_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "worker 请求缺少 request_id".to_string())?
-        .to_string();
+) -> Result<(EngineResponse, Value), String> {
+    validate_engine_request(&request)?;
+    let request_id = request.request_id.clone();
     let request_line = serde_json::to_string(&request)
         .map_err(|error| format!("序列化 worker 请求失败: {error}"))?;
     let mut worker_slot = store
@@ -975,7 +958,7 @@ fn execute_worker_request(
         .ok_or_else(|| "Python worker 未初始化".to_string())?;
     set_active_worker_child(store, Some(active_child));
 
-    let result = (|| -> Result<Value, String> {
+    let result = (|| -> Result<(EngineResponse, Value), String> {
         let worker = worker_slot
             .as_mut()
             .ok_or_else(|| "Python worker 未初始化".to_string())?;
@@ -999,32 +982,39 @@ fn execute_worker_request(
 
             let payload: Value = serde_json::from_str(line.trim_end())
                 .map_err(|error| format!("解析 Python worker 事件失败: {error}"))?;
-            if payload.get("event").and_then(Value::as_str) == Some("worker.response") {
-                let response_id = payload
-                    .get("request_id")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| "Python worker 响应缺少 request_id".to_string())?;
-                if response_id != request_id {
+            if payload.get("taskEvent").is_some() || payload.get("fontScanProgress").is_some() {
+                let event: EngineEvent = serde_json::from_value(payload.clone())
+                    .map_err(|error| format!("解析 Python worker 事件信封失败: {error}"))?;
+                if event.protocol_version != ProtocolVersion::V1 as i32 {
+                    return Err("Python worker 事件使用了不支持的 protocolVersion".to_string());
+                }
+                if event.request_id != request_id {
                     return Err(format!(
-                        "Python worker 响应 ID 不匹配，期望 {request_id}，收到 {response_id}"
+                        "Python worker 事件 ID 不匹配，期望 {request_id}，收到 {}",
+                        event.request_id
                     ));
                 }
-                if payload.get("ok").and_then(Value::as_bool) == Some(true) {
-                    return payload
-                        .get("result")
-                        .cloned()
-                        .ok_or_else(|| "Python worker 成功响应缺少 result".to_string());
+                if event.payload.is_none() {
+                    return Err("Python worker 事件缺少 payload".to_string());
                 }
-                let error = payload
-                    .get("error")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Python worker 返回未知错误");
-                return Err(error.to_string());
+                on_event
+                    .send(payload)
+                    .map_err(|error| format!("推送 Python worker 事件失败: {error}"))?;
+                continue;
             }
 
-            on_event
-                .send(payload)
-                .map_err(|error| format!("推送 Python worker 事件失败: {error}"))?;
+            let response: EngineResponse = serde_json::from_value(payload.clone())
+                .map_err(|error| format!("解析 Python worker 响应信封失败: {error}"))?;
+            if response.protocol_version != ProtocolVersion::V1 as i32 {
+                return Err("Python worker 响应使用了不支持的 protocolVersion".to_string());
+            }
+            let response_id = &response.request_id;
+            if response_id != &request_id {
+                return Err(format!(
+                    "Python worker 响应 ID 不匹配，期望 {request_id}，收到 {response_id}"
+                ));
+            }
+            return Ok((response, payload));
         }
     })();
     set_active_worker_child(store, None);
@@ -1045,12 +1035,17 @@ fn execute_worker_request(
     result
 }
 
-fn worker_request_id(prefix: &str) -> String {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|value| value.as_nanos())
-        .unwrap_or_default();
-    format!("{prefix}-{timestamp}")
+fn validate_engine_request(request: &EngineRequest) -> Result<(), String> {
+    if request.protocol_version != ProtocolVersion::V1 as i32 {
+        return Err("请求使用了不支持的 protocolVersion".to_string());
+    }
+    if request.request_id.is_empty() {
+        return Err("请求缺少 requestId".to_string());
+    }
+    if request.operation.is_none() {
+        return Err("请求缺少 operation".to_string());
+    }
+    Ok(())
 }
 
 fn append_input_source(path: &Path, result: &mut Vec<String>) -> Result<(), String> {
@@ -1069,25 +1064,6 @@ fn append_input_source(path: &Path, result: &mut Vec<String>) -> Result<(), Stri
     }
 
     Ok(())
-}
-
-#[tauri::command]
-async fn list_font_targets(
-    app: AppHandle,
-    file_path: String,
-) -> Result<FontTargetResponse, String> {
-    let output = build_backend_command(&app, "list-fonts")?
-        .arg(file_path)
-        .output()
-        .map_err(|error| format!("调用 Python 后端失败: {error}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(format!("列出字体失败: {stderr}"));
-    }
-
-    serde_json::from_slice::<FontTargetResponse>(&output.stdout)
-        .map_err(|error| format!("解析字体结果失败: {error}"))
 }
 
 fn get_python_worker_status_blocking(
@@ -1233,26 +1209,27 @@ async fn restart_python_worker(app: AppHandle) -> Result<PythonWorkerStatus, Str
 #[tauri::command]
 async fn list_font_targets_batch(
     app: AppHandle,
-    file_paths: Vec<String>,
+    request: EngineRequest,
     on_event: Channel<Value>,
-) -> Result<Vec<FontTargetResponse>, String> {
-    if file_paths.is_empty() {
-        return Ok(Vec::new());
+) -> Result<Value, String> {
+    validate_engine_request(&request)?;
+    if !matches!(request.operation, Some(engine_request::Operation::ScanFonts(_))) {
+        return Err("字体扫描命令只接受 scanFonts operation".to_string());
     }
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<FontTargetResponse>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
         let store = app.state::<PythonWorkerStore>();
-        let result = execute_worker_request(
+        let (response, response_json) = execute_worker_request(
             &app,
             store.inner(),
-            json!({
-                "request_id": worker_request_id("font-targets"),
-                "command": "list-fonts-batch",
-                "input_files": file_paths,
-            }),
+            request,
             &on_event,
         )?;
-        serde_json::from_value(result).map_err(|error| format!("解析字体扫描结果失败: {error}"))
+        match response.payload {
+            Some(engine_response::Payload::FontScanResult(_))
+            | Some(engine_response::Payload::Error(_)) => Ok(response_json),
+            _ => Err("Python worker 字体扫描响应缺少 fontScanResult".to_string()),
+        }
     })
     .await
     .map_err(|error| format!("异步字体扫描失败: {error}"))?
@@ -1410,35 +1387,27 @@ async fn resolve_input_sources(
 #[tauri::command]
 async fn run_epub_task(
     app: AppHandle,
-    request: FrontendTaskRequest,
+    request: EngineRequest,
     on_event: Channel<Value>,
 ) -> Result<Value, String> {
-    let task_id = request.task_id.clone();
-    let total_files = request.input_files.len();
-    on_event
-        .send(json!({
-            "event": "task.launching",
-            "task_id": task_id,
-            "status": "starting",
-            "progress": 0,
-            "message": "正在向处理引擎提交任务…",
-            "total_files": total_files,
-            "level": "info"
-        }))
-        .map_err(|error| format!("推送任务启动事件失败: {error}"))?;
+    validate_engine_request(&request)?;
+    if !matches!(request.operation, Some(engine_request::Operation::RunTask(_))) {
+        return Err("任务命令只接受 runTask operation".to_string());
+    }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
         let store = app.state::<PythonWorkerStore>();
-        execute_worker_request(
+        let (response, response_json) = execute_worker_request(
             &app,
             store.inner(),
-            json!({
-                "request_id": task_id,
-                "command": "run",
-                "request": request,
-            }),
+            request,
             &on_event,
-        )
+        )?;
+        match response.payload {
+            Some(engine_response::Payload::TaskResult(_))
+            | Some(engine_response::Payload::Error(_)) => Ok(response_json),
+            _ => Err("Python worker 任务响应缺少 taskResult".to_string()),
+        }
     })
     .await
     .map_err(|error| format!("异步任务失败: {error}"))?
@@ -1501,7 +1470,6 @@ fn main() {
             get_log_path,
             get_persisted_store_path,
             get_python_worker_status,
-            list_font_targets,
             list_font_targets_batch,
             load_persisted_state,
             open_path,
@@ -1522,4 +1490,149 @@ fn main() {
             shutdown_python_worker(worker_store.inner());
         }
     });
+}
+
+#[cfg(test)]
+mod protocol_contract_tests {
+    use super::{
+        engine_request, engine_response, EngineEvent, EngineRequest, EngineResponse,
+        ProtocolVersion,
+    };
+    use crate::engine_protocol::v1::{
+        task_options, EmptyOptions, FontScanRequest, RunTaskRequest, TaskOptions, TaskType,
+    };
+    use serde_json::Value;
+    use std::{
+        io::{BufRead, BufReader, Write},
+        path::PathBuf,
+        process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    };
+
+    const PROTOCOL_TEST_PYTHON_ENV: &str = "EPUB_TOOL_TEST_PYTHON";
+
+    fn protocol_test_python() -> String {
+        std::env::var(PROTOCOL_TEST_PYTHON_ENV).unwrap_or_else(|_| "python3".to_string())
+    }
+
+    fn start_worker() -> (Child, ChildStdin, BufReader<ChildStdout>) {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri 应位于工作区根目录下")
+            .to_path_buf();
+        let mut child = Command::new(protocol_test_python())
+            .args(["-m", "python_backend.cli", "serve"])
+            .current_dir(workspace_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("启动 Python worker 失败；请设置 EPUB_TOOL_TEST_PYTHON");
+        let stdin = child.stdin.take().expect("Python worker stdin 不可用");
+        let stdout = child.stdout.take().expect("Python worker stdout 不可用");
+        (child, stdin, BufReader::new(stdout))
+    }
+
+    fn write_request(stdin: &mut ChildStdin, request: &EngineRequest) {
+        serde_json::to_writer(&mut *stdin, request).expect("序列化 EngineRequest 失败");
+        stdin.write_all(b"\n").expect("写入 Python worker 请求失败");
+        stdin.flush().expect("刷新 Python worker 请求失败");
+    }
+
+    fn read_response(
+        stdout: &mut BufReader<ChildStdout>,
+        expected_request_id: &str,
+    ) -> (Vec<EngineEvent>, EngineResponse) {
+        let mut events = Vec::new();
+        loop {
+            let mut line = String::new();
+            let bytes_read = stdout
+                .read_line(&mut line)
+                .expect("读取 Python worker 输出失败");
+            assert!(bytes_read > 0, "Python worker 在返回响应前退出");
+            let payload: Value =
+                serde_json::from_str(line.trim_end()).expect("Python worker 输出不是 JSON");
+            if payload.get("taskEvent").is_some() || payload.get("fontScanProgress").is_some() {
+                let event: EngineEvent =
+                    serde_json::from_value(payload).expect("Python worker 事件不符合 EngineEvent");
+                assert_eq!(event.protocol_version, ProtocolVersion::V1 as i32);
+                assert_eq!(event.request_id, expected_request_id);
+                assert!(event.payload.is_some(), "Python worker 事件缺少 payload");
+                events.push(event);
+                continue;
+            }
+
+            let response: EngineResponse =
+                serde_json::from_value(payload).expect("Python worker 响应不符合 EngineResponse");
+            assert_eq!(response.protocol_version, ProtocolVersion::V1 as i32);
+            assert_eq!(response.request_id, expected_request_id);
+            assert!(response.payload.is_some(), "Python worker 响应缺少 payload");
+            return (events, response);
+        }
+    }
+
+    #[test]
+    fn rust_and_python_worker_share_the_engine_json_contract() {
+        let (mut child, mut stdin, mut stdout) = start_worker();
+
+        let request = EngineRequest {
+            protocol_version: ProtocolVersion::V1 as i32,
+            request_id: "scan-fonts-contract".to_string(),
+            operation: Some(engine_request::Operation::ScanFonts(FontScanRequest {
+                input_files: Vec::new(),
+            })),
+        };
+        write_request(&mut stdin, &request);
+        let (events, response) = read_response(&mut stdout, &request.request_id);
+        assert!(events.is_empty());
+        match response.payload {
+            Some(engine_response::Payload::FontScanResult(result)) => {
+                assert!(result.results.is_empty());
+            }
+            _ => panic!("scanFonts 响应应包含 fontScanResult"),
+        }
+
+        let request = EngineRequest {
+            protocol_version: ProtocolVersion::V1 as i32,
+            request_id: "run-task-contract".to_string(),
+            operation: Some(engine_request::Operation::RunTask(RunTaskRequest {
+                task_id: "run-task-contract".to_string(),
+                task_type: TaskType::ReformatEpub as i32,
+                input_files: Vec::new(),
+                output_dir: None,
+                options: Some(TaskOptions {
+                    kind: Some(task_options::Kind::Empty(EmptyOptions {})),
+                }),
+            })),
+        };
+        write_request(&mut stdin, &request);
+        let (events, response) = read_response(&mut stdout, &request.request_id);
+        assert!(!events.is_empty(), "runTask 应至少返回一个 EngineEvent");
+        match response.payload {
+            Some(engine_response::Payload::TaskResult(result)) => assert!(result.ok),
+            _ => panic!("runTask 响应应包含 taskResult"),
+        }
+
+        let request = EngineRequest {
+            protocol_version: ProtocolVersion::V1 as i32,
+            request_id: "invalid-options-contract".to_string(),
+            operation: Some(engine_request::Operation::RunTask(RunTaskRequest {
+                task_id: "invalid-options-contract".to_string(),
+                task_type: TaskType::ReformatEpub as i32,
+                input_files: Vec::new(),
+                output_dir: None,
+                options: None,
+            })),
+        };
+        write_request(&mut stdin, &request);
+        let (_, response) = read_response(&mut stdout, &request.request_id);
+        match response.payload {
+            Some(engine_response::Payload::Error(error)) => {
+                assert_eq!(error.code, "INVALID_ARGUMENT");
+            }
+            _ => panic!("无效 options 响应应包含 error"),
+        }
+
+        drop(stdin);
+        let status = child.wait().expect("等待 Python worker 退出失败");
+        assert!(status.success(), "Python worker 退出失败：{status}");
+    }
 }

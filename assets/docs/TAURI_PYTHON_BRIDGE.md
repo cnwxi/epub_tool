@@ -4,30 +4,30 @@
 
 ```text
 Vue 组件
-  -> invoke("run_epub_task")
+  -> invoke("run_epub_task", EngineRequest)
   -> Rust command
   -> 优先调用 PyInstaller 生成的 python sidecar
   -> 若 sidecar 不存在且处于开发工作区，则回退 python -m python_backend.cli
-  -> Python 输出 JSON Lines
-  -> Rust 逐行读取并通过 Channel 推回前端
+  -> Python 输出 EngineEvent / EngineResponse JSON Lines（protobuf JSON camelCase 映射）
+  -> Rust 原样通过 Channel 推送 EngineEvent，并返回 EngineResponse
 ```
 
 ## Rust 侧职责
 
-- 解析前端请求
+- 使用 `proto/epub_tool/v1/engine.proto` 生成的类型解析前端请求与 worker 信封
 - 优先查找 `src-tauri/binaries/epub-tool-python/epub-tool-python(.exe)` 或打包后资源目录中的 sidecar
 - 仅在开发态回退到系统 Python：`python3` / `python` / Windows `py -3`
 - 启动 sidecar 或 `python_backend.cli`
 - 读取 stdout/stderr
-- 将事件转发给前端
-- 返回最终 `TaskResult`
+- 原样转发完整 `EngineEvent` 给前端
+- 原样返回最终 `EngineResponse`
 - 递归扫描输入目录中的 `.epub` 文件，避免前端直接做本地文件系统递归
 
 ## Python 侧职责
 
 - 通过 `python_backend/services/` 组织 EPUB 处理实现；任务模块只由统一后端加载，不支持直接执行脚本
 - 统一计算输出路径
-- 同时写 `log.txt` 和 stdout 事件
+- 同时写 `log.txt` 和 stdout `EngineEvent`
 - 保持既有处理逻辑不被重写，并让包内导入异常直接传播
 
 ## Sidecar 构建策略

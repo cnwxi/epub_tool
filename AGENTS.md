@@ -15,14 +15,14 @@ npm run tauri:dev
 # 仅启动前端（无 Tauri Runtime，任务执行不可用）
 npm run dev
 
-# Python CLI 单独调试
-conda run -n epub_tool python -m python_backend.cli run --task-type reformat_epub --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_epub --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_epub --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type encrypt_font --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type decrypt_font --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli run --task-type webp_to_img --input-file ./book.epub
-conda run -n epub_tool python -m python_backend.cli list-fonts ./book.epub
+# Python CLI 单独调试（参数与 JSON 字段均使用 camelCase）
+conda run -n epub_tool python -m python_backend.cli run \
+  --requestId debug-request \
+  --taskId debug-task \
+  --taskType TASK_TYPE_REFORMAT_EPUB \
+  --inputFile ./book.epub
+
+# 字体扫描通过 serve 的 scanFonts operation 执行，详见 assets/docs/CLI_USAGE.md
 
 # 仅构建 ONNX-only sidecar
 npm run build:python-sidecar
@@ -44,7 +44,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
                           │<────────────────────────────────────│
                           │                                    │
            Tauri IPC channel                                    │
-           推送 TaskEvent 到前端                                 │
+           推送 EngineEvent 到前端                               │
 ```
 
 ### 各层职责
@@ -52,7 +52,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
 - **`frontend/`** — Vue 3 单页应用。`App.vue` 承载任务、队列、设置、历史记录和更新检查等页面状态；`SideNav`、`DropZone`、`TaskConsole` 提供主要界面组件；`useTaskBridge` 封装 IPC 调用，`usePersistentState` 提供 Tauri Rust store + localStorage 双层持久化。
 - **`src-tauri/src/main.rs`** — Tauri 命令与 Python Worker 生命周期管理，包括任务执行、字体目标读取、输入解析、路径操作、状态持久化和 Worker 状态/重启配置。JSON 文件持久化到 `app-state.json`，损坏文件自动备份为 `.corrupt-{timestamp}` 后缀。
 - **`src-tauri/tauri.conf.json`** — 开发 URL `localhost:5173`，透明窗口（macOS 毛玻璃效果），sidecar 从 `bundle-resources/binaries/` 打包，OCR 模型从 `bundle-resources/ocr-models/` 打包。
-- **`python_backend/cli.py`** — Sidecar 的 CLI 入口。提供 `run`、`list-fonts`、`list-fonts-batch` 和常驻 Worker 使用的 `serve` 子命令；任务请求统一使用 `TaskRequest` 结构。
+- **`python_backend/cli.py`** — Sidecar 的 CLI 入口。提供一次性 `run` 和常驻 Worker 使用的 `serve` 子命令；两者均使用 `EngineRequest`、`EngineEvent` 与 `EngineResponse` 协议信封。
 - **`python_backend/task_runner.py`** — 编排批量任务执行。按任务类型动态导入 `python_backend/services/` 下的处理模块，将其 `logger` 替换为 `BroadcastLogger`，同时写入 `log.txt` 和 stdout JSON Lines 事件。按 `{stem}_{suffix}.epub` 规则推断输出路径。
 - **`python_backend/protocol.py`** — 数据类定义：`TaskRequest`、`TaskEvent`、`TaskResult`。
 - **`python_backend/services/`** — EPUB 处理服务模块，按功能分为 `epub/`（格式化与文件加解密）、`font/`（字体加解密）、`image/`（图片转换、压缩、封面与图片处理共享逻辑）、`text/`（简繁转换）和 `utils/`（日志等跨领域共享工具）。任务模块对外暴露统一的 `run()` 入口，内部使用共享的 `logger` 对象，运行时由 `task_runner` 替换。
