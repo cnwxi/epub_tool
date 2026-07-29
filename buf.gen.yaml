@@ -1,9 +1,9 @@
 version: v2
 clean: true
 plugins:
-  - remote: buf.build/protocolbuffers/python
+  - remote: buf.build/protocolbuffers/python:v35.1
     out: python_backend/generated
-  - remote: buf.build/bufbuild/es
+  - remote: buf.build/bufbuild/es:v2.13.0
     out: frontend/src/generated
     opt:
       - target=ts

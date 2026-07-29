@@ -2,8 +2,9 @@
 
 `proto/epub_tool/v1/engine.proto` 是 Vue、Rust 与 Python engine 之间唯一的
 协议源。Python worker 使用 JSON Lines，但每一行都是 protobuf JSON 映射；项目
-规范的请求与输出字段均为 lower camel case。运行 `npx --yes @bufbuild/buf@latest generate`
-生成 TypeScript 与 Python 类型；Rust 在 Cargo 构建时从同一文件生成类型。
+规范的请求与输出字段均为 lower camel case。运行 `npm run protocol:generate`
+生成 TypeScript 与 Python 类型；Rust 在 Cargo 构建时从同一文件生成类型。该命令固定
+Buf CLI 与远程插件版本；提交前可用 `npm run protocol:check` 验证生成代码没有漂移。
 
 ## 请求
 

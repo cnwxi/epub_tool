@@ -162,6 +162,9 @@ jobs:
           npm ci
           npm --prefix frontend ci
 
+      - name: Verify generated protocol code
+        run: npm run protocol:check
+
       - name: Install Python dependencies
         run: python -m pip install -r requirements/requirements.txt pyinstaller
 
@@ -188,6 +191,12 @@ jobs:
             sleep "$delay"
           done
           cargo fetch --locked
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        env:
+          EPUB_TOOL_TEST_PYTHON: python
+        run: cargo test --locked
 
       - name: Build Tauri app
         if: matrix.target.platform != 'macos'
