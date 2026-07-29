@@ -311,7 +311,7 @@ fn is_external_reference(path: &str) -> bool {
         || path.starts_with("data:")
 }
 
-fn relative_member_path(from_directory: &str, target_path: &str) -> String {
+pub(crate) fn relative_member_path(from_directory: &str, target_path: &str) -> String {
     let from: Vec<&str> = from_directory
         .split('/')
         .filter(|part| !part.is_empty())

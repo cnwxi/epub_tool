@@ -8,6 +8,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from fontTools.ttLib import TTFont
 from PIL import Image
 
@@ -62,10 +63,15 @@ def run_task(
     return Path(result["outputs"][0])
 
 
-def run_font_ocr_task(backend: str, input_file: Path, output_dir: Path) -> Path:
+def run_font_ocr_task(
+    backend: str,
+    input_file: Path,
+    output_dir: Path,
+    target_families: list[str] | None = None,
+) -> Path:
     output_dir.mkdir()
     options = {
-        "target_font_families_by_file": {str(input_file): ["htt"]},
+        "target_font_families_by_file": {str(input_file): target_families or ["htt"]},
         "min_ocr_confidence": 0.8,
         "ocr_char_policy": "strict",
     }
@@ -106,9 +112,16 @@ def run_font_ocr_task(backend: str, input_file: Path, output_dir: Path) -> Path:
     return Path(result["outputs"][0])
 
 
-def run_font_encrypt_task(backend: str, input_file: Path, output_dir: Path) -> Path:
+def run_font_encrypt_task(
+    backend: str,
+    input_file: Path,
+    output_dir: Path,
+    target_families: list[str] | None = None,
+) -> Path:
     output_dir.mkdir()
-    options = {"target_font_families_by_file": {str(input_file): ["htt"]}}
+    options = {
+        "target_font_families_by_file": {str(input_file): target_families or ["htt"]}
+    }
     if backend == "python":
         return Path(run_python_task(input_file, output_dir, "encrypt_font", options)["outputs"][0])
     request = {
@@ -270,6 +283,97 @@ def test_rust_font_encrypt_matches_python_for_real_epub(tmp_path: Path) -> None:
         assert rust_epub.read("OEBPS/Text/lqz0001.xhtml") != input_epub.read(
             "OEBPS/Text/lqz0001.xhtml"
         )
+
+
+@pytest.mark.skipif(
+    not REAL_DECRYPTED_INPUT.is_file(), reason="本地 fixtures 中没有真实 OTF EPUB 样本"
+)
+def test_rust_cff_otf_encrypt_matches_python_invariants(tmp_path: Path) -> None:
+    python_output = run_font_encrypt_task(
+        "python", REAL_DECRYPTED_INPUT, tmp_path / "python", ["yy"]
+    )
+    rust_output = run_font_encrypt_task(
+        "rust", REAL_DECRYPTED_INPUT, tmp_path / "rust", ["yy"]
+    )
+
+    with (
+        zipfile.ZipFile(REAL_DECRYPTED_INPUT) as input_epub,
+        zipfile.ZipFile(python_output) as python_epub,
+        zipfile.ZipFile(rust_output) as rust_epub,
+    ):
+        original_cmap = TTFont(BytesIO(input_epub.read("OEBPS/Fonts/yy.otf"))).getBestCmap() or {}
+        python_font = TTFont(BytesIO(python_epub.read("OEBPS/Fonts/yy.otf")))
+        rust_font = TTFont(BytesIO(rust_epub.read("OEBPS/Fonts/yy.otf")))
+        python_cmap = python_font.getBestCmap() or {}
+        rust_cmap = rust_font.getBestCmap() or {}
+
+        assert "CFF " in python_font
+        assert "CFF " in rust_font
+        assert python_cmap != original_cmap
+        assert rust_cmap != original_cmap
+        assert len(rust_cmap) == len(python_cmap) == len(original_cmap)
+
+
+@pytest.mark.skipif(
+    not REAL_DECRYPTED_INPUT.is_file(), reason="本地 fixtures 中没有真实 OTF EPUB 样本"
+)
+def test_rust_cff_otf_decrypt_keeps_python_low_confidence_review_artifacts(
+    tmp_path: Path,
+) -> None:
+    python_output = run_font_ocr_task(
+        "python", REAL_DECRYPTED_INPUT, tmp_path / "python", ["yy"]
+    )
+    rust_output = run_font_ocr_task(
+        "rust", REAL_DECRYPTED_INPUT, tmp_path / "rust", ["yy"]
+    )
+
+    with zipfile.ZipFile(python_output) as python_epub, zipfile.ZipFile(rust_output) as rust_epub:
+        assert python_epub.testzip() is None
+        assert rust_epub.testzip() is None
+        assert set(python_epub.namelist()) == set(rust_epub.namelist())
+        for epub in (python_epub, rust_epub):
+            members = set(epub.namelist())
+            failure_images = {
+                member for member in members if member.startswith("OEBPS/Images/ocr-failures/")
+            }
+            assert "OEBPS/Fonts/yy.otf" not in members
+            assert failure_images
+            assert all(member.endswith(".png") for member in failure_images)
+            html = b"\n".join(
+                epub.read(member)
+                for member in members
+                if member.startswith("OEBPS/Text/") and member.endswith(".xhtml")
+            )
+            assert b'class="ocr-failure"' in html
+            assert b'data-status="OCR_LOW_CONF"' in html
+            opf = epub.read("OEBPS/content.opf")
+            assert b'ocr_failure_' in opf
+            assert b'Images/ocr-failures/' in opf
+
+        html_members = sorted(
+            member
+            for member in python_epub.namelist()
+            if member.startswith("OEBPS/Text/") and member.endswith(".xhtml")
+        )
+        for member in html_members:
+            python_html = BeautifulSoup(python_epub.read(member), "html.parser")
+            rust_html = BeautifulSoup(rust_epub.read(member), "html.parser")
+            assert python_html.get_text() == rust_html.get_text(), member
+
+            def failure_markers(soup: BeautifulSoup) -> list[tuple[str | None, ...]]:
+                return [
+                    (
+                        marker.get("data-codepoint"),
+                        marker.get("data-original-char"),
+                        marker.get("data-status"),
+                        marker.get("data-font-path"),
+                        marker.img.get("src") if marker.img else None,
+                        marker.img.get("alt") if marker.img else None,
+                    )
+                    for marker in soup.select("span.ocr-failure")
+                ]
+
+            assert failure_markers(python_html) == failure_markers(rust_html), member
 
 
 @pytest.mark.skipif(

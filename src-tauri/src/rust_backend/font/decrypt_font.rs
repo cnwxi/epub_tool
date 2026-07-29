@@ -6,6 +6,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::Cursor,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
@@ -14,17 +15,40 @@ use super::{
     encrypt_font::FontEncryptionPlan, font_cmap::unicode_cmap,
     font_obfuscation::split_obfuscation_text,
 };
-use crate::rust_backend::{epub::EpubWorkspace, EpubTask, TaskOutcome};
-use image::{imageops::FilterType, DynamicImage, Rgb, RgbImage};
+use crate::rust_backend::{
+    epub::{workspace::relative_member_path, EpubWorkspace},
+    EpubTask, TaskOutcome,
+};
+use image::{imageops::FilterType, DynamicImage, ImageFormat, Rgb, RgbImage};
 use ort::{session::Session, value::TensorRef};
 use regex::Regex;
 use serde_json::Value;
+use sha1::{Digest, Sha1};
 
 const OCR_PERIOD_ALIASES: [char; 3] = ['.', '．', '｡'];
 const OCR_HANGUL_OBFUSCATION_START: u32 = 0xAC00;
 const OCR_HANGUL_OBFUSCATION_END: u32 = 0xD7AF;
 pub const DEFAULT_OCR_MAX_IMAGE_WIDTH: usize = 3200;
 const DEFAULT_MIN_OCR_CONFIDENCE: f32 = 0.8;
+const OCR_FAILURE_IMAGE_DIR: &str = "Images/ocr-failures";
+const OCR_FAILURE_STYLE_CLASS: &str = "epub-tool-ocr-failure-style";
+const OCR_FAILURE_STYLE_CSS: &str = ".ocr-failure{font-size:1em;white-space:nowrap;line-height:1;}.ocr-failure img.ocr-failure-glyph{height:1.18em!important;width:auto!important;max-width:none!important;max-height:none!important;vertical-align:-0.22em!important;display:inline-block!important;}";
+
+#[derive(Debug, Clone)]
+struct OcrFailure {
+    character: char,
+    status_code: &'static str,
+    reason: String,
+    font_path: String,
+    image_path: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct OcrReplacementPlan {
+    replacements: BTreeMap<String, BTreeMap<char, char>>,
+    failures: BTreeMap<String, BTreeMap<char, OcrFailure>>,
+    failure_images: BTreeMap<String, Vec<u8>>,
+}
 
 pub struct DecryptFontTask;
 
@@ -98,15 +122,25 @@ impl EpubTask for DecryptFontTask {
             .and_then(Value::as_f64)
             .map(|value| value as f32)
             .unwrap_or(DEFAULT_MIN_OCR_CONFIDENCE);
-        let replacements = build_strict_ocr_replacements(
+        let ocr_plan = build_ocr_replacement_plan(
             &font_data_by_path,
             &text_by_font,
             &resources,
             minimum_confidence,
+            &workspace.opf_path,
         )?;
-        let processed_fonts: BTreeSet<_> = replacements
+        let processed_fonts: BTreeSet<_> = font_data_by_path
             .iter()
-            .filter(|(_, table)| !table.is_empty())
+            .filter(|(path, _)| {
+                ocr_plan
+                    .replacements
+                    .get(*path)
+                    .is_some_and(|table| !table.is_empty())
+                    || ocr_plan
+                        .failures
+                        .get(*path)
+                        .is_some_and(|table| !table.is_empty())
+            })
             .map(|(path, _)| path.clone())
             .collect();
         if processed_fonts.is_empty() {
@@ -121,10 +155,16 @@ impl EpubTask for DecryptFontTask {
                     .ok_or_else(|| format!("EPUB 缺少 XHTML 文件: {member}"))?,
             )
             .map_err(|_| format!("XHTML 不是 UTF-8: {member}"))?;
-            let rewritten = plan.rewrite_xhtml(source, &replacements)?;
-            workspace
-                .members
-                .insert(member.clone(), rewritten.into_bytes());
+            let failure_markup = ocr_failure_markup(&ocr_plan.failures, member);
+            let rewritten = plan.rewrite_xhtml_with_ocr_failures(
+                source,
+                &ocr_plan.replacements,
+                &failure_markup,
+            )?;
+            workspace.members.insert(
+                member.clone(),
+                ensure_ocr_failure_style(rewritten).into_bytes(),
+            );
         }
         for (member, data) in workspace.members.clone() {
             if member.to_ascii_lowercase().ends_with(".css") {
@@ -144,12 +184,20 @@ impl EpubTask for DecryptFontTask {
         .map_err(|_| format!("OPF 不是 UTF-8: {opf_path}"))?;
         workspace.members.insert(
             opf_path.clone(),
-            clean_strict_opf_font_manifest(opf, &opf_target_hrefs(&opf_path, &processed_fonts))
-                .into_bytes(),
+            add_ocr_failure_images_to_manifest(
+                &clean_strict_opf_font_manifest(
+                    opf,
+                    &opf_target_hrefs(&opf_path, &processed_fonts),
+                ),
+                &ocr_plan.failure_images,
+                &opf_path,
+            )
+            .into_bytes(),
         );
         for font_path in &processed_fonts {
             workspace.members.remove(font_path);
         }
+        workspace.members.extend(ocr_plan.failure_images);
         log(format!(
             "Rust 字体 OCR 解密完成：处理 {} 个字体、{} 个 XHTML 文件。",
             processed_fonts.len(),
@@ -173,6 +221,148 @@ fn opf_target_hrefs(opf_path: &str, font_paths: &BTreeSet<String>) -> BTreeSet<S
                 .to_string()
         })
         .collect()
+}
+
+fn ocr_failure_image_path(
+    opf_path: &str,
+    font_hash: &str,
+    character: char,
+    status_code: &str,
+) -> String {
+    let directory = opf_path
+        .rsplit_once('/')
+        .map_or("", |(directory, _)| directory);
+    let filename = format!(
+        "{}_U-{:04X}_{status_code}.png",
+        &font_hash[..8],
+        character as u32
+    );
+    if directory.is_empty() {
+        format!("{OCR_FAILURE_IMAGE_DIR}/{filename}")
+    } else {
+        format!("{directory}/{OCR_FAILURE_IMAGE_DIR}/{filename}")
+    }
+}
+
+fn ocr_failure_markup(
+    failures: &BTreeMap<String, BTreeMap<char, OcrFailure>>,
+    html_path: &str,
+) -> BTreeMap<String, BTreeMap<char, String>> {
+    let html_directory = html_path
+        .rsplit_once('/')
+        .map_or("", |(directory, _)| directory);
+    failures
+        .iter()
+        .map(|(font_path, table)| {
+            let markup = table
+                .iter()
+                .map(|(character, failure)| {
+                    let image = failure.image_path.as_deref().map_or_else(String::new, |path| {
+                        format!(
+                            "<img class=\"ocr-failure-glyph\" src=\"{}\" alt=\"U+{:04X} {} {}\"/>",
+                            escape_xml_attr(&relative_member_path(html_directory, path)),
+                            failure.character as u32,
+                            escape_xml_attr(&failure.character.to_string()),
+                            failure.status_code,
+                        )
+                    });
+                    let text = format!(
+                        "<span class=\"ocr-failure\" data-codepoint=\"U+{:04X}\" data-original-char=\"{}\" data-status=\"{}\" data-font-path=\"{}\" data-reason=\"{}\">{image}</span>",
+                        failure.character as u32,
+                        escape_xml_attr(&failure.character.to_string()),
+                        failure.status_code,
+                        escape_xml_attr(&failure.font_path),
+                        escape_xml_attr(&failure.reason),
+                    );
+                    (*character, text)
+                })
+                .collect();
+            (font_path.clone(), markup)
+        })
+        .collect()
+}
+
+fn ensure_ocr_failure_style(xhtml: String) -> String {
+    if !xhtml.contains("class=\"ocr-failure\"")
+        || xhtml.contains(&format!("class=\"{OCR_FAILURE_STYLE_CLASS}\""))
+    {
+        return xhtml;
+    }
+    let style = format!(
+        "<style type=\"text/css\" class=\"{OCR_FAILURE_STYLE_CLASS}\">{OCR_FAILURE_STYLE_CSS}</style>"
+    );
+    if let Some(index) = xhtml.find("</head>") {
+        return format!("{}{style}{}", &xhtml[..index], &xhtml[index..]);
+    }
+    if let Some(index) = xhtml.find('>') {
+        if xhtml[..=index].to_ascii_lowercase().contains("<html") {
+            return format!("{}{style}{}", &xhtml[..=index], &xhtml[index + 1..]);
+        }
+    }
+    format!("{style}{xhtml}")
+}
+
+fn add_ocr_failure_images_to_manifest(
+    opf: &str,
+    failure_images: &BTreeMap<String, Vec<u8>>,
+    opf_path: &str,
+) -> String {
+    if failure_images.is_empty() {
+        return opf.to_string();
+    }
+    let id = Regex::new(r#"(?is)\bid\s*=\s*[\"']([^\"']*)[\"']"#).expect("literal regex");
+    let href = Regex::new(r#"(?is)\bhref\s*=\s*[\"']([^\"']*)[\"']"#).expect("literal regex");
+    let mut ids = id
+        .captures_iter(opf)
+        .filter_map(|capture| capture.get(1).map(|value| value.as_str().to_string()))
+        .collect::<BTreeSet<_>>();
+    let mut hrefs = href
+        .captures_iter(opf)
+        .filter_map(|capture| capture.get(1).map(|value| value.as_str().to_string()))
+        .collect::<BTreeSet<_>>();
+    let directory = opf_path
+        .rsplit_once('/')
+        .map_or("", |(directory, _)| directory);
+    let mut next_index = 1_usize;
+    let mut entries = Vec::new();
+    for image_path in failure_images.keys() {
+        let image_href = relative_member_path(directory, image_path);
+        if hrefs.contains(&image_href) {
+            continue;
+        }
+        let item_id = loop {
+            let candidate = format!("ocr_failure_{next_index}");
+            next_index += 1;
+            if ids.insert(candidate.clone()) {
+                break candidate;
+            }
+        };
+        hrefs.insert(image_href.clone());
+        entries.push(format!(
+            "    <item id=\"{item_id}\" href=\"{}\" media-type=\"image/png\"/>",
+            escape_xml_attr(&image_href),
+        ));
+    }
+    if entries.is_empty() {
+        return opf.to_string();
+    }
+    let Some(index) = opf.to_ascii_lowercase().find("</manifest") else {
+        return opf.to_string();
+    };
+    format!(
+        "{}\n{}\n{}",
+        &opf[..index],
+        entries.join("\n"),
+        &opf[index..]
+    )
+}
+
+fn escape_xml_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('\"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// Application-owned location for the bundled OCR model. ONNX Runtime is linked
@@ -267,8 +457,9 @@ pub struct OnnxGlyphOcrBackend {
 }
 
 /// Rasterizes a single glyph before it is sent to PaddleOCR. The production
-/// task only supports embedded TrueType fonts and returns a task error for
-/// unsupported outlines rather than emitting a visually different EPUB.
+/// task supports embedded TrueType and CFF OpenType fonts, and returns a task
+/// error for unsupported outlines rather than emitting a visually different
+/// EPUB.
 pub struct FontGlyphRenderer {
     font: fontdue::Font,
     font_size: f32,
@@ -355,22 +546,26 @@ pub fn is_period_like_image(image: &DynamicImage) -> bool {
         && (0.55..=1.6).contains(&aspect_ratio)
 }
 
-/// Builds the complete per-font replacement tables needed by EPUB rewriting.
-/// The caller must not use a partial result: any unrenderable glyph, missing
-/// cmap entry, low-confidence prediction or multi-character OCR result aborts
-/// the EPUB task without writing a partial result.
-pub fn build_strict_ocr_replacements(
+/// Builds the complete per-font OCR plan needed by EPUB rewriting.
+///
+/// Python's reference backend never guesses a low-confidence character. It
+/// instead replaces the affected text with a visible glyph image and records
+/// its diagnostic metadata, while continuing to process the rest of the EPUB.
+/// This function follows that policy so an otherwise readable book is not
+/// discarded solely because one glyph needs manual review.
+fn build_ocr_replacement_plan(
     font_data_by_path: &BTreeMap<String, Vec<u8>>,
     text_by_font: &BTreeMap<String, String>,
     resources: &OcrResourcePaths,
     minimum_confidence: f32,
-) -> Result<BTreeMap<String, BTreeMap<char, char>>, String> {
+    opf_path: &str,
+) -> Result<OcrReplacementPlan, String> {
     if !(0.0..=1.0).contains(&minimum_confidence) {
         return Err("OCR 最低置信度必须在 0 到 1 之间".to_string());
     }
     let mut backend =
         OnnxGlyphOcrBackend::from_model_dir(&resources.model_dir, DEFAULT_OCR_MAX_IMAGE_WIDTH)?;
-    let mut tables = BTreeMap::new();
+    let mut plan = OcrReplacementPlan::default();
     for (font_path, font_data) in font_data_by_path {
         let cmap = unicode_cmap(font_data)
             .map_err(|error| format!("读取待解密字体 cmap 失败 {font_path}: {error}"))?;
@@ -378,35 +573,126 @@ pub fn build_strict_ocr_replacements(
         let candidates = split_obfuscation_text(text).obfuscate;
         let renderer = FontGlyphRenderer::new(font_data)?;
         let mut replacements = BTreeMap::new();
+        let mut failures = BTreeMap::new();
+        let font_hash = format!("{:x}", Sha1::digest(font_data));
         for character in candidates.chars() {
             if !cmap.contains_key(&(character as u32)) {
                 continue;
             }
-            let image = renderer.render(character)?;
-            let result = backend.recognize_image(&image)?;
+            let image = match renderer.render(character) {
+                Ok(image) => image,
+                Err(error) => {
+                    failures.insert(
+                        character,
+                        OcrFailure {
+                            character,
+                            status_code: "OCR_EXCEPTION",
+                            reason: format!("OCR 异常: {error}，字体 {font_path}"),
+                            font_path: font_path.clone(),
+                            image_path: None,
+                        },
+                    );
+                    continue;
+                }
+            };
+            let result = match backend.recognize_image(&image) {
+                Ok(result) => result,
+                Err(error) => {
+                    failures.insert(
+                        character,
+                        ocr_failure(
+                            character,
+                            "OCR_EXCEPTION",
+                            format!("OCR 异常: {error}，字体 {font_path}"),
+                            font_path,
+                            opf_path,
+                            &font_hash,
+                            &image,
+                            &mut plan.failure_images,
+                        )?,
+                    );
+                    continue;
+                }
+            };
             let normalized =
                 normalize_ocr_text(&result.text, Some(character), is_period_like_image(&image));
             let mut decoded = normalized.chars();
-            let replacement = decoded
-                .next()
-                .filter(|_| decoded.next().is_none())
-                .ok_or_else(|| {
-                    format!(
-                        "字体 OCR 未得到单字结果 {font_path} U+{:04X}: {}",
-                        character as u32, result.text
-                    )
-                })?;
+            let Some(replacement) = decoded.next().filter(|_| decoded.next().is_none()) else {
+                let status_code = if normalized.is_empty() {
+                    "OCR_EMPTY"
+                } else {
+                    "OCR_MULTI_CHAR"
+                };
+                let reason = if normalized.is_empty() {
+                    format!("OCR 为空，字体 {font_path}")
+                } else {
+                    format!("OCR 结果不是单字: {normalized}，字体 {font_path}")
+                };
+                failures.insert(
+                    character,
+                    ocr_failure(
+                        character,
+                        status_code,
+                        reason,
+                        font_path,
+                        opf_path,
+                        &font_hash,
+                        &image,
+                        &mut plan.failure_images,
+                    )?,
+                );
+                continue;
+            };
             if result.confidence < minimum_confidence {
-                return Err(format!(
-                    "字体 OCR 置信度不足 {font_path} U+{:04X}: {:.4} < {:.4}",
-                    character as u32, result.confidence, minimum_confidence
-                ));
+                failures.insert(
+                    character,
+                    ocr_failure(
+                        character,
+                        "OCR_LOW_CONF",
+                        format!(
+                            "OCR 置信度过低: {:.4} < {:.4}，字体 {font_path}",
+                            result.confidence, minimum_confidence
+                        ),
+                        font_path,
+                        opf_path,
+                        &font_hash,
+                        &image,
+                        &mut plan.failure_images,
+                    )?,
+                );
+                continue;
             }
             replacements.insert(character, replacement);
         }
-        tables.insert(font_path.clone(), replacements);
+        plan.replacements.insert(font_path.clone(), replacements);
+        plan.failures.insert(font_path.clone(), failures);
     }
-    Ok(tables)
+    Ok(plan)
+}
+
+fn ocr_failure(
+    character: char,
+    status_code: &'static str,
+    reason: String,
+    font_path: &str,
+    opf_path: &str,
+    font_hash: &str,
+    image: &DynamicImage,
+    failure_images: &mut BTreeMap<String, Vec<u8>>,
+) -> Result<OcrFailure, String> {
+    let image_path = ocr_failure_image_path(opf_path, font_hash, character, status_code);
+    let mut encoded = Cursor::new(Vec::new());
+    image
+        .write_to(&mut encoded, ImageFormat::Png)
+        .map_err(|error| format!("编码 OCR 失败字形图像失败: {error}"))?;
+    failure_images.insert(image_path.clone(), encoded.into_inner());
+    Ok(OcrFailure {
+        character,
+        status_code,
+        reason,
+        font_path: font_path.to_string(),
+        image_path: Some(image_path),
+    })
 }
 
 /// Removes only the simple font references accepted by the native font plan.

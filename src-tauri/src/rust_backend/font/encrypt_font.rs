@@ -258,7 +258,7 @@ impl FontEncryptionPlan {
         input: &Path,
         options: &Value,
     ) -> Result<Self, String> {
-        Self::build_for_font_formats(workspace, input, options, false, false)
+        Self::build_for_font_formats(workspace, input, options, true, false)
     }
 
     pub(crate) fn build_for_decryption(
@@ -394,7 +394,8 @@ impl FontEncryptionPlan {
                 &self.selector_rules,
                 &self.font_by_family,
                 &BTreeMap::new(),
-                |font, text| {
+                None,
+                |font: &str, text: &str| {
                     if self.target_fonts.contains(font) {
                         text_by_font
                             .entry(font.to_string())
@@ -429,6 +430,23 @@ impl FontEncryptionPlan {
             &self.selector_rules,
             &self.font_by_family,
             replacements,
+            None,
+            |_, _| {},
+        )
+    }
+
+    pub(crate) fn rewrite_xhtml_with_ocr_failures(
+        &self,
+        source: &str,
+        replacements: &BTreeMap<String, BTreeMap<char, char>>,
+        failure_markup: &BTreeMap<String, BTreeMap<char, String>>,
+    ) -> Result<String, String> {
+        transform_xhtml(
+            source,
+            &self.selector_rules,
+            &self.font_by_family,
+            replacements,
+            Some(failure_markup),
             |_, _| {},
         )
     }
@@ -774,6 +792,7 @@ fn validate_xhtml_subset(
         selector_rules,
         font_by_family,
         &BTreeMap::new(),
+        None,
         |_, _| {},
     )
     .map(|_| ())
@@ -784,6 +803,7 @@ fn transform_xhtml(
     selector_rules: &[StrictFontRule],
     font_by_family: &BTreeMap<String, String>,
     replacements: &BTreeMap<String, BTreeMap<char, char>>,
+    failure_markup: Option<&BTreeMap<String, BTreeMap<char, String>>>,
     mut visit_text: impl FnMut(&str, &str),
 ) -> Result<String, String> {
     let entity = Regex::new(r"&(?:#[0-9]+|#[xX][0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9._-]*);")
@@ -798,8 +818,18 @@ fn transform_xhtml(
         if let Some(font) = stack.last().and_then(|context| context.font.as_deref()) {
             let visible = entity.replace_all(text, "");
             visit_text(font, &visible);
+            let failures = failure_markup.and_then(|by_font| by_font.get(font));
             if let Some(mapping) = replacements.get(font) {
-                result.push_str(&rewrite_text_preserving_entities(text, mapping, &entity));
+                result.push_str(&rewrite_text_preserving_entities(
+                    text, mapping, failures, &entity,
+                ));
+            } else if let Some(failures) = failures {
+                result.push_str(&rewrite_text_preserving_entities(
+                    text,
+                    &BTreeMap::new(),
+                    Some(failures),
+                    &entity,
+                ));
             } else {
                 result.push_str(text);
             }
@@ -878,25 +908,38 @@ fn transform_xhtml(
 fn rewrite_text_preserving_entities(
     text: &str,
     mapping: &BTreeMap<char, char>,
+    failures: Option<&BTreeMap<char, String>>,
     entity: &Regex,
 ) -> String {
     let mut result = String::with_capacity(text.len());
     let mut cursor = 0;
     for matched in entity.find_iter(text) {
-        result.extend(
-            text[cursor..matched.start()]
-                .chars()
-                .map(|character| mapping.get(&character).copied().unwrap_or(character)),
+        rewrite_text_fragment(
+            &mut result,
+            &text[cursor..matched.start()],
+            mapping,
+            failures,
         );
         result.push_str(matched.as_str());
         cursor = matched.end();
     }
-    result.extend(
-        text[cursor..]
-            .chars()
-            .map(|character| mapping.get(&character).copied().unwrap_or(character)),
-    );
+    rewrite_text_fragment(&mut result, &text[cursor..], mapping, failures);
     result
+}
+
+fn rewrite_text_fragment(
+    output: &mut String,
+    text: &str,
+    mapping: &BTreeMap<char, char>,
+    failures: Option<&BTreeMap<char, String>>,
+) {
+    for character in text.chars() {
+        if let Some(markup) = failures.and_then(|failures| failures.get(&character)) {
+            output.push_str(markup);
+        } else {
+            output.push(mapping.get(&character).copied().unwrap_or(character));
+        }
+    }
 }
 
 fn has_class(classes: Option<&str>, expected: &str) -> bool {
