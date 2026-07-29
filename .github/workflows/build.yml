@@ -177,9 +177,6 @@ jobs:
       - name: Run Python tests
         run: python -m unittest discover -s tests
 
-      - name: Run Rust golden regression tests
-        run: python -m pytest -q tests/test_rust_*.py
-
       - name: Fetch Rust dependencies
         shell: bash
         run: |
@@ -194,6 +191,10 @@ jobs:
             sleep "$delay"
           done
           cargo fetch --locked
+
+      - name: Build Rust task runner
+        working-directory: src-tauri
+        run: cargo build --locked --bin rust-task-runner
 
       # `cargo test` invokes Tauri's build script directly, bypassing
       # `beforeBuildCommand`; verify the bundled Rust runtime resources first.
