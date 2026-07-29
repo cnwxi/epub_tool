@@ -192,6 +192,12 @@ jobs:
           done
           cargo fetch --locked
 
+      # `cargo test` runs Tauri's build script directly, bypassing its
+      # `beforeBuildCommand`; stage the sidecar resource first. The later
+      # packaging step reuses it through `--ensure`.
+      - name: Prepare sidecar resources for Rust tests
+        run: npm run dev:bundle-assets
+
       - name: Run Rust tests
         working-directory: src-tauri
         env:

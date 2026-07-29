@@ -13,7 +13,7 @@
     "dev:bundle-assets": "npm run build:verify-ocr-onnx-models && npm run dev:python-sidecar && npm run build:prepare-bundle-resources",
     "dev:frontend": "npm --prefix frontend run dev -- --host",
     "dev:desktop": "npm run dev:bundle-assets && npm run dev:frontend",
-    "build:bundle-assets": "npm run build && npm run build:verify-ocr-onnx-models && npm run build:python-sidecar && npm run build:prepare-bundle-resources",
+    "build:bundle-assets": "npm run build && npm run build:verify-ocr-onnx-models && npm run dev:python-sidecar && npm run build:prepare-bundle-resources",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "python scripts/build_tauri.py",
