@@ -57,7 +57,7 @@ const sectionItems: Array<{
   description: string;
 }> = [
   { key: "overview", label: "功能概览", description: "按类别选择 EPUB 处理工具" },
-  { key: "engine", label: "处理引擎", description: "查看并管理 Python Worker 状态" },
+  { key: "engine", label: "处理引擎", description: "查看 Rust 处理引擎状态" },
   { key: "reformat_epub", label: "格式化", description: "重构 EPUB 目录与引用" },
   { key: "decrypt_epub", label: "文件解密", description: "还原文件名混淆" },
   { key: "encrypt_epub", label: "文件加密", description: "生成文件名混淆版" },
@@ -1169,7 +1169,7 @@ const activeDescription = computed(() => {
     case "overview":
       return "查看累计处理统计，并按处理类别选择工具；每个任务会保留各自的文件队列与输出目录。";
     case "engine":
-      return "查看 Python Worker 的运行状态、恢复记录、最近错误与最近任务，并可按需重启。";
+      return "查看 Rust 处理引擎状态、最近错误与最近任务。";
     case "reformat_epub":
     case "decrypt_epub":
     case "encrypt_epub":
@@ -3158,7 +3158,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
               <div class="settings-block-head">
                 <div>
                   <p class="eyebrow">处理引擎</p>
-                  <h3>Python Worker</h3>
+                  <h3>Rust 处理引擎</h3>
                   <p class="muted">常驻处理引擎会复用已加载模块与 OCR 模型；重启不会自动重放中断任务。</p>
                 </div>
                 <div class="panel-actions">

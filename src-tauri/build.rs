@@ -11,10 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let descriptor_path = PathBuf::from(std::env::var("OUT_DIR")?).join("engine_descriptor.bin");
     let mut config = prost_build::Config::new();
     config.file_descriptor_set_path(&descriptor_path);
-    config.compile_protos(
-        &["../proto/epub_tool/v1/engine.proto"],
-        &["../proto"],
-    )?;
+    config.compile_protos(&["../proto/epub_tool/v1/engine.proto"], &["../proto"])?;
     pbjson_build::Builder::new()
         .register_descriptors(&std::fs::read(descriptor_path)?)?
         .build(&[".epub_tool.v1"])?;

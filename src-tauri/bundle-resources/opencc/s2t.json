@@ -1,0 +1,14 @@
+{
+  "name": "Simplified Chinese to Traditional Chinese",
+  "conversion_chain": [
+    {
+      "dict": {
+        "type": "group",
+        "dicts": [
+          { "type": "text", "file": "STPhrases.txt" },
+          { "type": "text", "file": "STCharacters.txt" }
+        ]
+      }
+    }
+  ]
+}
