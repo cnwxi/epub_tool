@@ -8,7 +8,7 @@ use std::{
     fs,
     io::Cursor,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{LazyLock, OnceLock},
 };
 
 use super::{
@@ -310,13 +310,17 @@ fn add_ocr_failure_images_to_manifest(
     if failure_images.is_empty() {
         return opf.to_string();
     }
-    let id = Regex::new(r#"(?is)\bid\s*=\s*[\"']([^\"']*)[\"']"#).expect("literal regex");
-    let href = Regex::new(r#"(?is)\bhref\s*=\s*[\"']([^\"']*)[\"']"#).expect("literal regex");
-    let mut ids = id
+    static ITEM_ID: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?is)\bid\s*=\s*[\"']([^\"']*)[\"']"#).expect("literal regex")
+    });
+    static ITEM_HREF: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?is)\bhref\s*=\s*[\"']([^\"']*)[\"']"#).expect("literal regex")
+    });
+    let mut ids = ITEM_ID
         .captures_iter(opf)
         .filter_map(|capture| capture.get(1).map(|value| value.as_str().to_string()))
         .collect::<BTreeSet<_>>();
-    let mut hrefs = href
+    let mut hrefs = ITEM_HREF
         .captures_iter(opf)
         .filter_map(|capture| capture.get(1).map(|value| value.as_str().to_string()))
         .collect::<BTreeSet<_>>();
@@ -705,10 +709,12 @@ pub fn clean_strict_css_font_references(
     if css.to_ascii_lowercase().contains("font:") || css.to_ascii_lowercase().contains("all:") {
         return Err("font/all 简写清理当前 Rust 实现暂不支持".to_string());
     }
-    let face = Regex::new(r"(?is)\s*@font-face\s*\{[^{}]*\}").expect("literal regex");
-    let family = Regex::new(r"(?is)font-family\s*:\s*([^;{}]+);?").expect("literal regex");
-    let without_faces = face.replace_all(css, |captures: &regex::Captures<'_>| {
-        family
+    static FONT_FACE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)\s*@font-face\s*\{[^{}]*\}").expect("literal regex"));
+    static FONT_FAMILY: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)font-family\s*:\s*([^;{}]+);?").expect("literal regex"));
+    let without_faces = FONT_FACE.replace_all(css, |captures: &regex::Captures<'_>| {
+        FONT_FAMILY
             .captures(&captures[0])
             .and_then(|family_match| family_match.get(1))
             .map(|family_match| {
@@ -721,7 +727,7 @@ pub fn clean_strict_css_font_references(
             .then(String::new)
             .unwrap_or_else(|| captures[0].to_string())
     });
-    Ok(family
+    Ok(FONT_FAMILY
         .replace_all(&without_faces, |captures: &regex::Captures<'_>| {
             let kept: Vec<_> = captures[1]
                 .split(',')
@@ -747,16 +753,21 @@ pub fn clean_strict_opf_font_manifest(
     opf: &str,
     target_hrefs: &std::collections::BTreeSet<String>,
 ) -> String {
-    let item = Regex::new(r"(?is)\s*<item\b([^>]*)/?>").expect("literal regex");
-    let href = Regex::new(r#"(?is)\bhref\s*=\s*['\"]([^'\"]*)['\"]"#).expect("literal regex");
-    item.replace_all(opf, |captures: &regex::Captures<'_>| {
-        href.captures(&captures[1])
-            .and_then(|href| href.get(1))
-            .is_some_and(|href| target_hrefs.contains(href.as_str()))
-            .then(String::new)
-            .unwrap_or_else(|| captures[0].to_string())
-    })
-    .into_owned()
+    static MANIFEST_ITEM: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)\s*<item\b([^>]*)/?>").expect("literal regex"));
+    static MANIFEST_HREF: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?is)\bhref\s*=\s*['\"]([^'\"]*)['\"]"#).expect("literal regex")
+    });
+    MANIFEST_ITEM
+        .replace_all(opf, |captures: &regex::Captures<'_>| {
+            MANIFEST_HREF
+                .captures(&captures[1])
+                .and_then(|href| href.get(1))
+                .is_some_and(|href| target_hrefs.contains(href.as_str()))
+                .then(String::new)
+                .unwrap_or_else(|| captures[0].to_string())
+        })
+        .into_owned()
 }
 
 impl OnnxGlyphOcrBackend {

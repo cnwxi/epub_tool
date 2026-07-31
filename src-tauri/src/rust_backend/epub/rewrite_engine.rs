@@ -8,7 +8,10 @@ use super::{
     workspace::{resolve_reference, EpubWorkspace},
 };
 use regex::{Captures, Regex};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::LazyLock,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RewriteMode {
@@ -146,11 +149,12 @@ pub fn rewrite(
 fn rewrite_container_rootfile(container: &[u8]) -> Result<Vec<u8>, String> {
     let container = std::str::from_utf8(container)
         .map_err(|_| "container.xml 不是 UTF-8，无法更新 OPF 根文件".to_string())?;
-    let rootfile = Regex::new(r"(?is)<rootfile\b[^>]*?/?>").expect("valid rootfile regex");
-    if !rootfile.is_match(container) {
+    static ROOTFILE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<rootfile\b[^>]*?/?>").expect("valid rootfile regex"));
+    if !ROOTFILE.is_match(container) {
         return Err("container.xml 缺少 OPF rootfile".to_string());
     }
-    Ok(rootfile
+    Ok(ROOTFILE
         .replacen(
             container,
             1,
@@ -368,8 +372,10 @@ fn rewrite_xhtml(source: &str, source_path: &str, plan: &RewritePlan) -> String 
         text = format!("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n{text}");
     }
     if !text.contains("<!DOCTYPE html") {
-        text = Regex::new(r"(?s)(<\?xml.*?\?>)\n*")
-            .expect("valid xml declaration regex")
+        static XML_DECLARATION: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?s)(<\?xml.*?\?>)\n*").expect("valid xml declaration regex")
+        });
+        text = XML_DECLARATION
             .replacen(&text, 1, "$1\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\"\n  \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">\n")
             .into_owned();
     }
@@ -407,10 +413,11 @@ fn rewrite_xhtml(source: &str, source_path: &str, plan: &RewritePlan) -> String 
 }
 
 fn rewrite_css(source: &str, source_path: &str, plan: &RewritePlan) -> String {
-    let import =
+    static CSS_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?is)@import\s+(?:([\"'])([^\"']*)[\"']|url\(\s*[\"']?([^\"')]*).*?\))"#)
-            .expect("valid css import regex");
-    let rewritten = import.replace_all(source, |captures: &Captures<'_>| {
+            .expect("valid css import regex")
+    });
+    let rewritten = CSS_IMPORT.replace_all(source, |captures: &Captures<'_>| {
         let raw = captures
             .get(2)
             .or_else(|| captures.get(3))
@@ -428,25 +435,27 @@ fn rewrite_css(source: &str, source_path: &str, plan: &RewritePlan) -> String {
 }
 
 fn rewrite_urls(source: &str, source_path: &str, plan: &RewritePlan) -> String {
-    let url =
-        Regex::new(r#"(?is)(url\(\s*[\"']?)([^\"')]*)([\"']?\s*\))"#).expect("valid url regex");
-    url.replace_all(source, |captures: &Captures<'_>| {
-        let raw = captures.get(2).map_or("", |value| value.as_str());
-        let (path, fragment) = split_reference(raw);
-        let Some(target) = target_for_reference(source_path, path, plan) else {
-            return captures[0].to_string();
-        };
-        let directory = match target.resource_type {
-            ResourceType::Image => "Images",
-            ResourceType::Font => "Fonts",
-            _ => return captures[0].to_string(),
-        };
-        format!(
-            "{}../{directory}/{}{}{}",
-            &captures[1], target.filename, fragment, &captures[3]
-        )
-    })
-    .into_owned()
+    static URL_REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?is)(url\(\s*[\"']?)([^\"')]*)([\"']?\s*\))"#).expect("valid url regex")
+    });
+    URL_REFERENCE
+        .replace_all(source, |captures: &Captures<'_>| {
+            let raw = captures.get(2).map_or("", |value| value.as_str());
+            let (path, fragment) = split_reference(raw);
+            let Some(target) = target_for_reference(source_path, path, plan) else {
+                return captures[0].to_string();
+            };
+            let directory = match target.resource_type {
+                ResourceType::Image => "Images",
+                ResourceType::Font => "Fonts",
+                _ => return captures[0].to_string(),
+            };
+            format!(
+                "{}../{directory}/{}{}{}",
+                &captures[1], target.filename, fragment, &captures[3]
+            )
+        })
+        .into_owned()
 }
 
 fn rewrite_toc(source: &str, source_path: &str, plan: &RewritePlan) -> String {
@@ -463,7 +472,7 @@ fn rewrite_attribute(
     name: &str,
     mut replacement: impl FnMut(&str) -> Option<String>,
 ) -> String {
-    let pattern = Regex::new(&format!(
+    let pattern = crate::rust_backend::util::cached_regex(&format!(
         r#"(?is)(<[^>]*\b{name}\s*=\s*[\"'])([^\"']*)([\"'][^>]*>)"#
     ))
     .expect("valid attribute regex");
@@ -517,9 +526,11 @@ fn rewrite_opf(book: &ParsedBook, plan: &RewritePlan) -> Result<String, String> 
             .and_then(|id| plan.output_ids.get(id))
             .map(|id| format!("#{id}"))
     });
-    let reference =
+    static REFERENCE_TAG: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?is)(<reference\b[^>]*\bhref\s*=\s*[\"'])([^\"']*)([\"'][^>]*/>)"#)
-            .expect("valid guide reference regex");
+            .expect("valid reference regex")
+    });
+    let reference = &*REFERENCE_TAG;
     Ok(reference
         .replace_all(&opf, |captures: &Captures<'_>| {
             let (path, fragment) = split_reference(&captures[2]);

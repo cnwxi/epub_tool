@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{LazyLock, OnceLock},
 };
 
 pub struct ChineseConvertTask;
@@ -58,10 +58,13 @@ fn converter(direction: &str) -> Result<OpenccConverter, String> {
         .iter()
         .map(|name| OpenccDictionary::load(&directory.join(name)))
         .collect::<Result<Vec<_>, _>>()?;
-    let separators = Regex::new(
-        r"\s+|-|,|\.|\?|!|\*|　|，|。|、|；|：|？|！|…|“|”|‘|’|『|』|「|」|﹁|﹂|—|－|（|）|《|》|〈|〉|～|．|／|＼|︒|︑|︔|︓|︿|﹀|︹|︺|︙|︐|［|﹇|］|﹈|︕|︖|︰|︳|︴|︽|︾|︵|︶|｛|︷|｝|︸|﹃|﹄|【|︻|】|︼",
-    )
-    .expect("valid OpenCC separator regex");
+    static SEPARATORS_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"\s+|-|,|\.|\?|!|\*|　|，|。|、|；|：|？|！|…|“|”|‘|’|『|』|「|」|﹁|﹂|—|－|（|）|《|》|〈|〉|～|．|／|＼|︒|︑|︔|︓|︿|﹀|︹|︺|︙|︐|［|﹇|］|﹈|︕|︖|︰|︳|︴|︽|︾|︵|︶|｛|︷|｝|︸|﹃|﹄|【|︻|】|︼",
+        )
+        .expect("valid OpenCC separator regex")
+    });
+    let separators = SEPARATORS_PATTERN.clone();
     Ok(OpenccConverter {
         dictionaries,
         separators,
@@ -262,14 +265,17 @@ impl EpubTask for ChineseConvertTask {
 
 fn convert_xml(data: &[u8], converter: &OpenccConverter) -> Result<Vec<u8>, String> {
     let text = decode_xml(data)?;
-    let token =
-        Regex::new(r"(?s)<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[^>]+>").expect("valid XML token regex");
-    let visible_attribute = Regex::new(r#"(?i)(\b(?:alt|title)\s*=\s*[\"'])([^\"']*)([\"'])"#)
-        .expect("valid visible attribute regex");
+    static XML_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?s)<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[^>]+>").expect("valid XML token regex")
+    });
+    static VISIBLE_ATTRIBUTE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)(\b(?:alt|title)\s*=\s*[\"'])([^\"']*)([\"'])"#)
+            .expect("valid visible attribute regex")
+    });
     let mut output = String::with_capacity(text.len());
     let mut cursor = 0;
     let mut blocked_depth = 0_u32;
-    for matched in token.find_iter(&text) {
+    for matched in XML_TOKEN.find_iter(&text) {
         let body = &text[cursor..matched.start()];
         if blocked_depth == 0 {
             output.push_str(&converter.convert(body));
@@ -282,7 +288,7 @@ fn convert_xml(data: &[u8], converter: &OpenccConverter) -> Result<Vec<u8>, Stri
             blocked_depth += 1;
         }
         if blocked_depth == 0 && !lowered.starts_with("<!--") && !lowered.starts_with("<![cdata[") {
-            tag = visible_attribute
+            tag = VISIBLE_ATTRIBUTE
                 .replace_all(&tag, |captures: &Captures<'_>| {
                     format!(
                         "{}{}{}",
@@ -313,9 +319,11 @@ fn decode_xml(data: &[u8]) -> Result<String, String> {
         return Ok(text);
     }
     let declaration = String::from_utf8_lossy(&data[..data.len().min(1024)]);
-    let encoding_pattern = Regex::new(r#"(?i)<\?xml\b[^>]*\bencoding\s*=\s*[\"']([^\"']+)[\"']"#)
-        .expect("valid XML encoding regex");
-    let encoding = encoding_pattern
+    static ENCODING_DECLARATION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)<\?xml\b[^>]*\bencoding\s*=\s*[\"']([^\"']+)[\"']"#)
+            .expect("valid XML encoding regex")
+    });
+    let encoding = ENCODING_DECLARATION
         .captures(&declaration)
         .map(|captures| captures[1].to_ascii_lowercase())
         .unwrap_or_else(|| "utf-8".to_string());
@@ -385,10 +393,11 @@ fn decode_utf32(data: &[u8], little_endian: bool) -> Result<String, String> {
 }
 
 fn as_utf8_xml(text: &str) -> String {
-    let encoding_pattern =
+    static ENCODING_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?is)(<\?xml\b[^>]*\bencoding\s*=\s*[\"'])[^\"']*([\"'])"#)
-            .expect("valid XML encoding regex");
-    encoding_pattern.replace(text, "${1}UTF-8${2}").into_owned()
+            .expect("valid XML encoding regex")
+    });
+    ENCODING_PATTERN.replace(text, "${1}UTF-8${2}").into_owned()
 }
 
 fn extension_of(path: &str) -> String {

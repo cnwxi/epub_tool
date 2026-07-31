@@ -20,6 +20,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
+    sync::LazyLock,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -806,8 +807,10 @@ fn transform_xhtml(
     failure_markup: Option<&BTreeMap<String, BTreeMap<char, String>>>,
     mut visit_text: impl FnMut(&str, &str),
 ) -> Result<String, String> {
-    let entity = Regex::new(r"&(?:#[0-9]+|#[xX][0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9._-]*);")
-        .expect("literal entity regex");
+    static HTML_ENTITY: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"&(?:#[0-9]+|#[xX][0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9._-]*);")
+            .expect("literal entity regex")
+    });
     let mut result = String::with_capacity(source.len());
     let mut stack = Vec::<ElementContext>::new();
     let mut cursor = 0;
@@ -816,19 +819,22 @@ fn transform_xhtml(
         let text_end = next_tag.unwrap_or(source.len());
         let text = &source[cursor..text_end];
         if let Some(font) = stack.last().and_then(|context| context.font.as_deref()) {
-            let visible = entity.replace_all(text, "");
+            let visible = HTML_ENTITY.replace_all(text, "");
             visit_text(font, &visible);
             let failures = failure_markup.and_then(|by_font| by_font.get(font));
             if let Some(mapping) = replacements.get(font) {
                 result.push_str(&rewrite_text_preserving_entities(
-                    text, mapping, failures, &entity,
+                    text,
+                    mapping,
+                    failures,
+                    &HTML_ENTITY,
                 ));
             } else if let Some(failures) = failures {
                 result.push_str(&rewrite_text_preserving_entities(
                     text,
                     &BTreeMap::new(),
                     Some(failures),
-                    &entity,
+                    &HTML_ENTITY,
                 ));
             } else {
                 result.push_str(text);

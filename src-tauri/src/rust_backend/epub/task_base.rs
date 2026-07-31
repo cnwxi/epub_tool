@@ -5,7 +5,10 @@
 use super::workspace::{resolve_reference, EpubWorkspace};
 use percent_encoding::percent_decode_str;
 use regex::Regex;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::LazyLock,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ResourceType {
@@ -67,9 +70,10 @@ impl ParsedBook {
             .clone();
         let manifest = extract_tag_block(&opf, "manifest")
             .ok_or_else(|| "OPF 缺少 manifest，当前 Rust 实现暂不支持".to_string())?;
-        let item_pattern = Regex::new(r"(?is)<item\b[^>]*>").expect("valid item regex");
+        static ITEM_PATTERN: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"(?is)<item\b[^>]*>").expect("valid item regex"));
         let mut items = Vec::new();
-        for matched in item_pattern.find_iter(manifest) {
+        for matched in ITEM_PATTERN.find_iter(manifest) {
             let attrs = parse_attributes(matched.as_str())?;
             let Some(id) = attrs.get("id").filter(|value| !value.is_empty()) else {
                 return Err("manifest item 缺少 id，当前 Rust 实现暂不支持".to_string());
@@ -197,8 +201,9 @@ pub fn basename(value: &str) -> &str {
 }
 
 pub fn replace_tag_block(source: &str, tag: &str, replacement: &str) -> Result<String, String> {
-    let pattern = Regex::new(&format!(r"(?is)<{tag}\b[^>]*>.*?</{tag}\s*>"))
-        .map_err(|error| format!("创建 OPF 正则失败: {error}"))?;
+    let pattern =
+        crate::rust_backend::util::cached_regex(&format!(r"(?is)<{tag}\b[^>]*>.*?</{tag}\s*>"))
+            .map_err(|error| format!("创建 OPF 正则失败: {error}"))?;
     if !pattern.is_match(source) {
         return Err(format!("OPF 缺少 <{tag}> 区块"));
     }
@@ -261,7 +266,9 @@ pub fn parse_attributes(tag: &str) -> Result<BTreeMap<String, String>, String> {
 }
 
 fn extract_tag_block<'a>(source: &'a str, tag: &str) -> Option<&'a str> {
-    let pattern = Regex::new(&format!(r"(?is)<{tag}\b[^>]*>(.*?)</{tag}\s*>")).ok()?;
+    let pattern =
+        crate::rust_backend::util::cached_regex(&format!(r"(?is)<{tag}\b[^>]*>(.*?)</{tag}\s*>"))
+            .ok()?;
     pattern
         .captures(source)?
         .get(1)
@@ -269,7 +276,7 @@ fn extract_tag_block<'a>(source: &'a str, tag: &str) -> Option<&'a str> {
 }
 
 fn find_open_tag(source: &str, tag: &str) -> Option<String> {
-    let pattern = Regex::new(&format!(r"(?is)<{tag}\b[^>]*>")).ok()?;
+    let pattern = crate::rust_backend::util::cached_regex(&format!(r"(?is)<{tag}\b[^>]*>")).ok()?;
     pattern
         .find(source)
         .map(|matched| matched.as_str().to_string())

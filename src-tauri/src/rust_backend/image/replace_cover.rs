@@ -6,7 +6,7 @@ use crate::rust_backend::{
 use image::{ImageFormat, ImageReader};
 use regex::Regex;
 use serde_json::Value;
-use std::{fs, io::Cursor, path::Path};
+use std::{fs, io::Cursor, path::Path, sync::LazyLock};
 
 pub struct ReplaceCoverTask;
 
@@ -134,9 +134,10 @@ fn cover_extension(data: &[u8]) -> Result<&'static str, String> {
 }
 
 fn find_cover_item(opf: &str, opf_path: &str) -> Result<Option<CoverItem>, String> {
-    let item_pattern = Regex::new(r#"(?is)<item\b[^>]*>"#).expect("valid item regex");
+    static COVER_ITEM: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?is)<item\b[^>]*>"#).expect("valid item regex"));
     let cover_id = find_cover_id(opf);
-    for item in item_pattern.find_iter(opf) {
+    for item in COVER_ITEM.find_iter(opf) {
         let tag = item.as_str();
         let properties = attribute(tag, "properties").unwrap_or_default();
         let id = attribute(tag, "id");
@@ -164,8 +165,9 @@ fn find_cover_item(opf: &str, opf_path: &str) -> Result<Option<CoverItem>, Strin
 }
 
 fn find_cover_id(opf: &str) -> Option<String> {
-    let meta_pattern = Regex::new(r#"(?is)<meta\b[^>]*>"#).expect("valid meta regex");
-    let cover_id = meta_pattern.find_iter(opf).find_map(|item| {
+    static COVER_META: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?is)<meta\b[^>]*>"#).expect("valid meta regex"));
+    let cover_id = COVER_META.find_iter(opf).find_map(|item| {
         (attribute(item.as_str(), "name").as_deref() == Some("cover"))
             .then(|| attribute(item.as_str(), "content"))
             .flatten()
@@ -200,8 +202,9 @@ fn insert_cover_item(
     cover_id: &str,
     new_path: &str,
 ) -> Result<String, String> {
-    let manifest = Regex::new(r#"(?is)<manifest\b[^>]*>"#).expect("valid manifest regex");
-    let manifest = manifest
+    static MANIFEST_OPEN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?is)<manifest\b[^>]*>"#).expect("valid manifest regex"));
+    let manifest = MANIFEST_OPEN
         .find(opf)
         .ok_or_else(|| "OPF 缺少 manifest".to_string())?;
     let item = format!(
@@ -218,8 +221,9 @@ fn insert_cover_item(
 }
 
 fn ensure_cover_metadata(opf: &str, cover_id: &str) -> Result<String, String> {
-    let meta_pattern = Regex::new(r#"(?is)<meta\b[^>]*>"#).expect("valid meta regex");
-    if let Some(meta) = meta_pattern
+    static COVER_META: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?is)<meta\b[^>]*>"#).expect("valid meta regex"));
+    if let Some(meta) = COVER_META
         .find_iter(opf)
         .find(|item| attribute(item.as_str(), "name").as_deref() == Some("cover"))
     {
@@ -238,8 +242,9 @@ fn ensure_cover_metadata(opf: &str, cover_id: &str) -> Result<String, String> {
             &opf[index..]
         ));
     }
-    let package = Regex::new(r#"(?is)<package\b[^>]*>"#).expect("valid package regex");
-    let package = package
+    static PACKAGE_OPEN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?is)<package\b[^>]*>"#).expect("valid package regex"));
+    let package = PACKAGE_OPEN
         .find(opf)
         .ok_or_else(|| "OPF 缺少 package 节点".to_string())?;
     Ok(format!(
@@ -250,8 +255,9 @@ fn ensure_cover_metadata(opf: &str, cover_id: &str) -> Result<String, String> {
 }
 
 fn next_cover_id(opf: &str) -> String {
-    let item_pattern = Regex::new(r#"(?is)<item\b[^>]*>"#).expect("valid item regex");
-    let ids: Vec<String> = item_pattern
+    static COVER_ITEM: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?is)<item\b[^>]*>"#).expect("valid item regex"));
+    let ids: Vec<String> = COVER_ITEM
         .find_iter(opf)
         .filter_map(|item| attribute(item.as_str(), "id"))
         .collect();
@@ -265,7 +271,7 @@ fn next_cover_id(opf: &str) -> String {
 }
 
 fn attribute(tag: &str, name: &str) -> Option<String> {
-    let pattern = Regex::new(&format!(
+    let pattern = crate::rust_backend::util::cached_regex(&format!(
         r#"(?is)\b{}\s*=\s*[\"']([^\"']*)[\"']"#,
         regex::escape(name)
     ))
@@ -276,7 +282,7 @@ fn attribute(tag: &str, name: &str) -> Option<String> {
 }
 
 fn set_attribute(tag: &str, name: &str, value: &str) -> String {
-    let pattern = Regex::new(&format!(
+    let pattern = crate::rust_backend::util::cached_regex(&format!(
         r#"(?is)(\b{}\s*=\s*[\"'])([^\"']*)([\"'])"#,
         regex::escape(name)
     ))

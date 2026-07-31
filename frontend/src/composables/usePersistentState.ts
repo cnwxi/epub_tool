@@ -4,6 +4,8 @@ import { useTaskBridge } from "./useTaskBridge";
 
 const { isTauriRuntime, loadPersistedState, savePersistedState } = useTaskBridge();
 
+const SAVE_DEBOUNCE_MS = 300;
+
 export function usePersistentState<T>(
   key: string,
   fallback: T,
@@ -14,6 +16,8 @@ export function usePersistentState<T>(
   const state = ref(normalizeValue(fallback)) as Ref<T>;
   let nativeStoreReady = !isTauriRuntime();
   let saveQueue = Promise.resolve();
+  let saveDebounceTimer = 0;
+  let pendingSaveValue: T | undefined;
 
   if (typeof window !== "undefined") {
     try {
@@ -49,6 +53,22 @@ export function usePersistentState<T>(
       });
   }
 
+  const flushPendingSave = () => {
+    if (!saveDebounceTimer) {
+      return;
+    }
+    window.clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = 0;
+    const snapshot = pendingSaveValue;
+    pendingSaveValue = undefined;
+    if (snapshot === undefined) {
+      return;
+    }
+    saveQueue = saveQueue
+      .then(() => savePersistedState(key, snapshot))
+      .catch(() => undefined);
+  };
+
   watch(
     state,
     (value) => {
@@ -62,12 +82,19 @@ export function usePersistentState<T>(
         return;
       }
 
-      saveQueue = saveQueue
-        .then(() => savePersistedState(key, normalizedValue))
-        .catch(() => undefined);
+      pendingSaveValue = normalizedValue;
+      if (saveDebounceTimer) {
+        window.clearTimeout(saveDebounceTimer);
+      }
+      saveDebounceTimer = window.setTimeout(flushPendingSave, SAVE_DEBOUNCE_MS);
     },
     { deep: true },
   );
+
+  if (typeof window !== "undefined" && isTauriRuntime()) {
+    window.addEventListener("pagehide", flushPendingSave);
+    window.addEventListener("beforeunload", flushPendingSave);
+  }
 
   return state;
 }

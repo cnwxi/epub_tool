@@ -2,6 +2,7 @@ pub mod epub;
 pub mod font;
 pub mod image;
 pub mod text;
+pub mod util;
 
 use crate::FrontendTaskRequest;
 use epub::{DecryptEpubTask, EncryptEpubTask, ReformatEpubTask};

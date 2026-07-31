@@ -8,6 +8,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Cursor,
     path::Path,
+    sync::LazyLock,
 };
 
 const IMAGE_EXTENSIONS: [&str; 5] = ["jpg", "jpeg", "png", "webp", "bmp"];
@@ -445,14 +446,17 @@ fn rewrite_document(
     document_path: &str,
     replacements: &[(String, String)],
 ) -> String {
-    let attribute =
+    static REFERENCE_ATTRIBUTE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?i)(\b(?:src|href|xlink:href|poster)\s*=\s*[\"'])([^\"']+)([\"'])"#)
-            .expect("valid reference attribute regex");
-    let srcset =
-        Regex::new(r#"(?i)(\bsrcset\s*=\s*[\"'])([^\"']+)([\"'])"#).expect("valid srcset regex");
-    let css_url =
-        Regex::new(r#"(?i)(url\(\s*[\"']?)([^\"')]+)([\"']?\s*\))"#).expect("valid CSS url regex");
-    let rewritten = attribute.replace_all(document, |captures: &Captures<'_>| {
+            .expect("valid reference attribute regex")
+    });
+    static SRCSET_ATTRIBUTE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)(\bsrcset\s*=\s*[\"'])([^\"']+)([\"'])"#).expect("valid srcset regex")
+    });
+    static CSS_URL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)(url\(\s*[\"']?)([^\"')]+)([\"']?\s*\))"#).expect("valid CSS url regex")
+    });
+    let rewritten = REFERENCE_ATTRIBUTE.replace_all(document, |captures: &Captures<'_>| {
         format!(
             "{}{}{}",
             &captures[1],
@@ -460,7 +464,7 @@ fn rewrite_document(
             &captures[3]
         )
     });
-    let rewritten = srcset.replace_all(&rewritten, |captures: &Captures<'_>| {
+    let rewritten = SRCSET_ATTRIBUTE.replace_all(&rewritten, |captures: &Captures<'_>| {
         format!(
             "{}{}{}",
             &captures[1],
@@ -468,7 +472,7 @@ fn rewrite_document(
             &captures[3]
         )
     });
-    css_url
+    CSS_URL
         .replace_all(&rewritten, |captures: &Captures<'_>| {
             format!(
                 "{}{}{}",
@@ -527,35 +531,42 @@ fn rewrite_one(reference: &str, document_path: &str, replacements: &[(String, St
 }
 
 fn rewrite_opf_manifest(opf: &str, opf_path: &str, replacements: &[(String, String)]) -> String {
-    let item = Regex::new(r#"(?is)(<item\b)([^>]*)(/?>)"#).expect("valid OPF item regex");
-    let href = Regex::new(r#"(?i)(\bhref\s*=\s*[\"'])([^\"']+)([\"'])"#).expect("valid href regex");
-    let media_type = Regex::new(r#"(?i)(\bmedia-type\s*=\s*[\"'])([^\"']+)([\"'])"#)
-        .expect("valid media type regex");
-    item.replace_all(opf, |captures: &Captures<'_>| {
-        let attributes = &captures[2];
-        let Some(href_match) = href.captures(attributes) else {
-            return captures[0].to_string();
-        };
-        let raw_href = &href_match[2];
-        let Ok(Some(source)) = resolve_reference(opf_path, raw_href) else {
-            return captures[0].to_string();
-        };
-        let Some((_, target)) = replacements.iter().find(|(old, _)| old == &source) else {
-            return captures[0].to_string();
-        };
-        let rewritten_href = rewrite_reference(raw_href, opf_path, target);
-        let attributes = href
-            .replace(attributes, format!("${{1}}{rewritten_href}${{3}}"))
-            .into_owned();
-        let attributes = media_type
-            .replace(
-                &attributes,
-                format!("${{1}}{}${{3}}", media_type_for(target)),
-            )
-            .into_owned();
-        format!("{}{}{}", &captures[1], attributes, &captures[3])
-    })
-    .into_owned()
+    static OPF_ITEM: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?is)(<item\b)([^>]*)(/?>)"#).expect("valid OPF item regex")
+    });
+    static OPF_HREF: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)(\bhref\s*=\s*[\"'])([^\"']+)([\"'])"#).expect("valid href regex")
+    });
+    static OPF_MEDIA_TYPE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)(\bmedia-type\s*=\s*[\"'])([^\"']+)([\"'])"#)
+            .expect("valid media type regex")
+    });
+    OPF_ITEM
+        .replace_all(opf, |captures: &Captures<'_>| {
+            let attributes = &captures[2];
+            let Some(href_match) = OPF_HREF.captures(attributes) else {
+                return captures[0].to_string();
+            };
+            let raw_href = &href_match[2];
+            let Ok(Some(source)) = resolve_reference(opf_path, raw_href) else {
+                return captures[0].to_string();
+            };
+            let Some((_, target)) = replacements.iter().find(|(old, _)| old == &source) else {
+                return captures[0].to_string();
+            };
+            let rewritten_href = rewrite_reference(raw_href, opf_path, target);
+            let attributes = OPF_HREF
+                .replace(attributes, format!("${{1}}{rewritten_href}${{3}}"))
+                .into_owned();
+            let attributes = OPF_MEDIA_TYPE
+                .replace(
+                    &attributes,
+                    format!("${{1}}{}${{3}}", media_type_for(target)),
+                )
+                .into_owned();
+            format!("{}{}{}", &captures[1], attributes, &captures[3])
+        })
+        .into_owned()
 }
 
 #[cfg(test)]
