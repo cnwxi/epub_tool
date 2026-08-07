@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { open } from "@tauri-apps/plugin-dialog";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import DropZone from "./components/DropZone.vue";
@@ -249,8 +250,10 @@ let brandEasterHideTimer = 0;
 const {
   collectEpubFiles,
   getLogPath,
+  getOpenedUrls,
   getPersistedStorePath,
   getPythonWorkerStatus,
+  isMobileRuntime,
   isTauriRuntime,
   listFontTargetsBatch,
   openPath,
@@ -259,8 +262,12 @@ const {
   restartPythonWorker,
   runTask,
   setPythonWorkerAutoRestartLimit,
+  stageMobileSourceForTask,
+  exportMobileOutput,
   validateOutputDirectory,
 } = useTaskBridge();
+
+let unlistenOpenedFiles: UnlistenFn | undefined;
 
 const hideBrandEasterAnimation = () => {
   brandEasterActive.value = false;
@@ -1627,7 +1634,7 @@ const pickFiles = async () => {
 };
 
 const scanInputDirectory = async () => {
-  if (!isTauriRuntime()) {
+  if (!isTauriRuntime() || isMobileRuntime()) {
     return;
   }
 
@@ -1643,7 +1650,7 @@ const scanInputDirectory = async () => {
 };
 
 const pickOutputDirectory = async () => {
-  if (!isTauriRuntime()) {
+  if (!isTauriRuntime() || isMobileRuntime()) {
     return;
   }
 
@@ -1899,7 +1906,7 @@ const buildRequest = (): TaskRequest => {
     requestId,
     runTask,
   };
-  if (outputDir.value) {
+  if (outputDir.value && !isMobileRuntime()) {
     runTask.outputDir = outputDir.value;
   }
 
@@ -1970,11 +1977,12 @@ const pickCoverForFile = async (file: QueuedFile) => {
   });
   if (typeof selected === "string") {
     try {
-      const preview = await readImagePreview(selected);
+      const stagedCover = await stageMobileSourceForTask(selected, "cover");
+      const preview = await readImagePreview(stagedCover);
       if (file.coverPreviewUrl) {
         URL.revokeObjectURL(file.coverPreviewUrl);
       }
-      file.coverPath = selected;
+      file.coverPath = stagedCover;
       file.coverPreviewUrl = URL.createObjectURL(
         new Blob([new Uint8Array(preview.bytes)], { type: preview.mimeType }),
       );
@@ -2130,7 +2138,7 @@ const clearHistory = () => {
 };
 
 const maybeOpenFollowUpTargets = (taskResult: TaskResult) => {
-  if (!isTauriRuntime()) {
+  if (!isTauriRuntime() || isMobileRuntime()) {
     return;
   }
   if (settings.value.autoOpenOutputFolder && taskResult.outputs[0]) {
@@ -2212,7 +2220,7 @@ const runSelectedTask = async () => {
     return;
   }
   const taskType = activeTask.value;
-  if (outputDir.value && isTauriRuntime()) {
+  if (outputDir.value && isTauriRuntime() && !isMobileRuntime()) {
     const configuredOutputDir = outputDir.value;
     try {
       await validateOutputDirectory(configuredOutputDir);
@@ -2304,7 +2312,31 @@ const openPersistedStoreFile = () => {
   void openPath(currentPersistedStorePath.value);
 };
 
+const exportMobileResult = async (sourcePath: string) => {
+  if (!isMobileRuntime()) {
+    return;
+  }
+  const name = sourcePath.split(/[\\/]/).pop() || "processed.epub";
+  const destination = await save({
+    defaultPath: name,
+    filters: [{ name: "EPUB", extensions: ["epub"] }],
+  });
+  if (typeof destination !== "string") {
+    return;
+  }
+  try {
+    await exportMobileOutput(sourcePath, destination);
+    taskStatus.value = "处理结果已导出";
+  } catch (error) {
+    taskStatus.value = toErrorMessage(error, "导出处理结果失败。");
+  }
+};
+
 const openOutputFolder = (path: string) => {
+  if (isMobileRuntime()) {
+    void exportMobileResult(path);
+    return;
+  }
   void openPath(getContainingDirectory(path));
 };
 
@@ -2562,6 +2594,23 @@ onMounted(async () => {
     scheduleCustomScrollbarUpdate();
     return;
   }
+  if (isMobileRuntime()) {
+    try {
+      const initialUrls = await getOpenedUrls();
+      if (initialUrls.length > 0) {
+        await resolveAndQueuePaths(initialUrls);
+      }
+      unlistenOpenedFiles = await listen<string[]>("opened", (event) => {
+        void resolveAndQueuePaths(event.payload);
+      });
+    } catch {
+      // 文件关联仅是移动端的额外入口，不影响正常文件选择流程。
+    }
+    await nextTick();
+    scheduleCustomScrollbarUpdate();
+    await measureMasonryBoard();
+    return;
+  }
   unlistenDrop = await getCurrentWindow().onDragDropEvent((event) => {
     if (!isTaskSection.value) {
       dragActive.value = false;
@@ -2606,6 +2655,7 @@ onBeforeUnmount(() => {
   customScrollbarResizeObserver?.disconnect();
   customScrollbarResizeObserver = null;
   unlistenDrop?.();
+  unlistenOpenedFiles?.();
   if (brandEasterResetTimer && typeof window !== "undefined") {
     window.clearTimeout(brandEasterResetTimer);
   }
@@ -2747,7 +2797,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
           </section>
 
           <template v-if="isTaskSection">
-            <DropZone :is-active="dragActive" :file-count="files.length" @drag-state="dragActive = $event"
+            <DropZone :is-active="dragActive" :file-count="files.length" :is-mobile-runtime="isMobileRuntime()" @drag-state="dragActive = $event"
               @drop-files="handleDropZoneFiles" @pick-files="pickFiles" @scan-directory="scanInputDirectory"
               @clear="clearFiles" />
 
@@ -2764,7 +2814,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                         <p class="eyebrow">任务配置</p>
                         <h3>输出与执行</h3>
                       </div>
-                      <div class="panel-actions">
+                      <div v-if="!isMobileRuntime()" class="panel-actions">
                         <button class="ghost-btn task-action-btn" type="button" @click="pickOutputDirectory">
                           选择输出目录
                         </button>
@@ -2775,7 +2825,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                     </div>
 
                     <div class="settings-stack">
-                      <label class="field glass-soft task-field-card">
+                      <label v-if="!isMobileRuntime()" class="field glass-soft task-field-card">
                         <span>输出目录</span>
                         <input :value="outputDir || '默认：源文件同级目录'" readonly type="text" />
                       </label>
@@ -3105,7 +3155,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                             @click="openOutputFolder(output)">
                             <div class="result-row-head">
                               <strong>{{ output.split(/[\\/]/).pop() ?? output }}</strong>
-                              <span class="result-status-tag success">成功</span>
+                              <span class="result-status-tag success">{{ isMobileRuntime() ? "导出" : "成功" }}</span>
                             </div>
                             <span>{{ output }}</span>
                           </button>

@@ -41,6 +41,14 @@
       "bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*": "ocr-models/PP-OCRv6_small_rec_onnx/",
       "bundle-resources/opencc/*": "opencc/"
     },
+    "fileAssociations": [
+      {
+        "name": "EPUB 电子书",
+        "ext": ["epub"],
+        "mimeType": "application/epub+zip",
+        "role": "Editor"
+      }
+    ],
     "icon": [
       "../assets/img/icon.png",
       "../assets/img/icon.ico",

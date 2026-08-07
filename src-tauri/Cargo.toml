@@ -6,6 +6,10 @@ description = "Tauri 2 shell for epub_tool"
 authors = ["cnwxi"]
 edition = "2021"
 
+[lib]
+name = "epub_tool_newui"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
 tauri-build = { version = "2.0.3", features = [] }
 prost-build = "0.13"
@@ -35,6 +39,7 @@ tauri-plugin-dialog = "2.2.0"
 webp = "0.3"
 write-fonts = { version = "0.51", features = ["read"] }
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
+tauri-plugin-fs = "2.5.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

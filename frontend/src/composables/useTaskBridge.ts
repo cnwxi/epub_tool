@@ -12,6 +12,11 @@ const isTauriRuntime = (): boolean =>
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 
+const isMobileRuntime = (): boolean =>
+  isTauriRuntime() &&
+  typeof navigator !== "undefined" &&
+  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 export function useTaskBridge() {
   const runTask = async (
     request: TaskRequest,
@@ -74,6 +79,13 @@ export function useTaskBridge() {
     return invoke<string>("get_persisted_store_path");
   };
 
+  const getOpenedUrls = async (): Promise<string[]> => {
+    if (!isMobileRuntime()) {
+      return [];
+    }
+    return invoke<string[]>("opened_urls");
+  };
+
   const getPythonWorkerStatus = async (): Promise<PythonWorkerStatus | null> => {
     if (!isTauriRuntime()) {
       return null;
@@ -117,6 +129,29 @@ export function useTaskBridge() {
     });
   };
 
+  const stageMobileSourceForTask = async (
+    sourcePath: string,
+    extension: string,
+  ): Promise<string> => {
+    if (!isMobileRuntime()) {
+      return sourcePath;
+    }
+    return invoke<string>("stage_mobile_source_for_task", {
+      sourcePath,
+      extension,
+    });
+  };
+
+  const exportMobileOutput = async (
+    sourcePath: string,
+    destinationPath: string,
+  ): Promise<void> => {
+    if (!isMobileRuntime()) {
+      return;
+    }
+    await invoke("export_mobile_output", { sourcePath, destinationPath });
+  };
+
   const validateOutputDirectory = async (directoryPath: string): Promise<void> => {
     if (!isTauriRuntime()) {
       return;
@@ -148,8 +183,10 @@ export function useTaskBridge() {
   return {
     collectEpubFiles,
     getLogPath,
+    getOpenedUrls,
     getPersistedStorePath,
     getPythonWorkerStatus,
+    isMobileRuntime,
     isTauriRuntime,
     listFontTargetsBatch,
     loadPersistedState,
@@ -158,6 +195,8 @@ export function useTaskBridge() {
     resolveInputSources,
     runTask,
     savePersistedState,
+    stageMobileSourceForTask,
+    exportMobileOutput,
     setPythonWorkerAutoRestartLimit,
     restartPythonWorker,
     validateOutputDirectory,

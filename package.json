@@ -16,6 +16,10 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run tauri -- build",
+    "tauri:android:dev": "npm run tauri -- android dev",
+    "tauri:android:build": "npm run tauri -- android build",
+    "tauri:ios:dev": "npm run tauri -- ios dev",
+    "tauri:ios:build": "npm run tauri -- ios build",
     "maintenance:fetch-ocr-model": "python scripts/prepare_ocr_models.py",
     "maintenance:convert-ocr-onnx": "python scripts/prepare_ocr_onnx_models.py"
   },

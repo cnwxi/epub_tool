@@ -1,3 +1,5 @@
+mod app;
+
 pub mod engine_adapter;
 pub mod engine_protocol;
 pub mod rust_backend;
@@ -15,6 +17,11 @@ pub struct FrontendTaskRequest {
     pub outputDir: Option<String>,
     #[serde(default)]
     pub options: Value,
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    app::run();
 }
 
 #[cfg(test)]
