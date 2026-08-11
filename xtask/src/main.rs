@@ -14,6 +14,7 @@ const ANDROID_SHA256: &str = "67397e4a970e75617f765d2015ceaf911917e1d822276cfb57
 const IOS_URL: &str = "https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.24.3.zip";
 const IOS_SHA256: &str = "b7eedc45932bac758ffd057cac0feb3f682269e47750b159e4c865145cbf0a8e";
 const DEFAULT_OCR_MODEL: &str = "PP-OCRv6_small_rec";
+const ANDROID_NDK_VERSION: &str = "29.0.13846066";
 
 fn main() -> ExitCode {
     match run(env::args().skip(1).collect()) {
@@ -165,6 +166,7 @@ fn configure_mobile_link_environment(
         "android" => {
             command.env("ORT_LIB_PATH", prepared);
             command.env("ORT_PREFER_DYNAMIC_LINK", "1");
+            command.env("DEP_Z_INCLUDE", android_zlib_include()?);
         }
         "ios" => {
             command.env("ORT_IOS_XCFWK_PATH", prepared);
@@ -172,6 +174,44 @@ fn configure_mobile_link_environment(
         _ => return Err(format!("不支持的移动平台: {platform}")),
     }
     Ok(())
+}
+
+fn android_zlib_include() -> Result<PathBuf, String> {
+    let mut ndk_roots = Vec::new();
+    for variable in ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"] {
+        if let Ok(value) = env::var(variable) {
+            if !value.trim().is_empty() {
+                ndk_roots.push(PathBuf::from(value));
+            }
+        }
+    }
+    if let Ok(sdk) = env::var("ANDROID_HOME").or_else(|_| env::var("ANDROID_SDK_ROOT")) {
+        ndk_roots.push(PathBuf::from(sdk).join("ndk").join(ANDROID_NDK_VERSION));
+    }
+
+    let host = if cfg!(target_os = "windows") {
+        "windows-x86_64"
+    } else if cfg!(target_os = "macos") {
+        "darwin-x86_64"
+    } else {
+        "linux-x86_64"
+    };
+    for root in ndk_roots {
+        let include = root
+            .join("toolchains")
+            .join("llvm")
+            .join("prebuilt")
+            .join(host)
+            .join("sysroot")
+            .join("usr")
+            .join("include");
+        if include.join("zlib.h").is_file() {
+            return Ok(include);
+        }
+    }
+    Err(format!(
+        "无法定位 Android NDK {ANDROID_NDK_VERSION} 的 zlib 头文件，请设置 ANDROID_NDK_HOME 或 ANDROID_HOME"
+    ))
 }
 
 fn npm_command() -> Command {
