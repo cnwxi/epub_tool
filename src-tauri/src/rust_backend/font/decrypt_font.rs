@@ -19,7 +19,7 @@ use super::{
 use crate::rust_backend::{
     epub::{workspace::relative_member_path, EpubWorkspace},
     text_encoding::{decode_epub_text, encode_epub_text, text_kind_for_path, TextKind},
-    EpubTask, TaskOutcome,
+    EpubTask, TaskOutcome, TaskUpdate,
 };
 use crate::task_types::{OcrCharPolicy, TaskOptions, TaskType};
 use icu_properties::{props::GeneralCategory, CodePointMapData};
@@ -35,6 +35,8 @@ const OCR_HANGUL_OBFUSCATION_END: u32 = 0xD7AF;
 pub const DEFAULT_OCR_MAX_IMAGE_WIDTH: usize = 3200;
 const DEFAULT_MIN_OCR_CONFIDENCE: f32 = 0.8;
 const OCR_TOP_K: usize = 5;
+const OCR_PROGRESS_INTERVAL: usize = 100;
+const OCR_TASK_PROGRESS_LIMIT: f64 = 99.0;
 const OCR_FAILURE_IMAGE_DIR: &str = "Images/ocr-failures";
 const OCR_FAILURE_STYLE_CLASS: &str = "epub-tool-ocr-failure-style";
 const OCR_FAILURE_STYLE_CSS: &str = ".ocr-failure{font-size:1em;white-space:nowrap;line-height:1;}.ocr-failure img.ocr-failure-glyph{height:1.18em!important;width:auto!important;max-width:none!important;max-height:none!important;vertical-align:-0.22em!important;display:inline-block!important;}";
@@ -81,7 +83,7 @@ impl EpubTask for DecryptFontTask {
         input: &Path,
         workspace: &mut EpubWorkspace,
         options: &TaskOptions,
-        log: &mut dyn FnMut(String),
+        update: &mut dyn FnMut(TaskUpdate),
     ) -> Result<TaskOutcome, String> {
         let plan = FontEncryptionPlan::build_for_decryption(workspace, input, options)?;
         if plan.target_fonts().is_empty() {
@@ -118,6 +120,7 @@ impl EpubTask for DecryptFontTask {
             minimum_confidence,
             char_policy,
             &workspace.opf_path,
+            update,
         )?;
         let processed_fonts: BTreeSet<_> = font_data_by_path
             .iter()
@@ -195,11 +198,11 @@ impl EpubTask for DecryptFontTask {
             workspace.members.remove(font_path);
         }
         workspace.members.extend(ocr_plan.failure_images);
-        log(format!(
+        update(TaskUpdate::message(format!(
             "Rust 字体 OCR 解密完成：处理 {} 个字体、{} 个 XHTML 文件。",
             processed_fonts.len(),
             plan.xhtml_members().len()
-        ));
+        )));
         Ok(TaskOutcome::Success)
     }
 }
@@ -587,6 +590,7 @@ fn build_ocr_replacement_plan(
     minimum_confidence: f32,
     char_policy: OcrCharPolicy,
     opf_path: &str,
+    update: &mut dyn FnMut(TaskUpdate),
 ) -> Result<OcrReplacementPlan, String> {
     if !(0.0..=1.0).contains(&minimum_confidence) {
         return Err("OCR 最低置信度必须在 0 到 1 之间".to_string());
@@ -594,11 +598,31 @@ fn build_ocr_replacement_plan(
     let mut backend =
         OnnxGlyphOcrBackend::from_model_dir(&resources.model_dir, DEFAULT_OCR_MAX_IMAGE_WIDTH)?;
     let mut plan = OcrReplacementPlan::default();
-    for (font_path, font_data) in font_data_by_path {
-        let cmap = unicode_cmap(font_data)
-            .map_err(|error| format!("读取待解密字体 cmap 失败 {font_path}: {error}"))?;
-        let text = text_by_font.get(font_path).map_or("", String::as_str);
-        let candidates = ocr_candidate_text(text, char_policy);
+    let prepared_fonts = font_data_by_path
+        .iter()
+        .map(|(font_path, font_data)| {
+            let cmap = unicode_cmap(font_data)
+                .map_err(|error| format!("读取待解密字体 cmap 失败 {font_path}: {error}"))?;
+            let text = text_by_font.get(font_path).map_or("", String::as_str);
+            let candidates = ocr_candidate_text(text, char_policy);
+            Ok((font_path, font_data, cmap, candidates))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let total_characters = prepared_fonts
+        .iter()
+        .map(|(_, _, cmap, candidates)| {
+            candidates
+                .chars()
+                .filter(|character| cmap.contains_key(&(*character as u32)))
+                .count()
+        })
+        .sum::<usize>();
+    update(TaskUpdate::progress(
+        format!("Rust 字体 OCR 解密：待识别 {total_characters} 个字符。"),
+        0.0,
+    ));
+    let mut processed_characters = 0_usize;
+    for (font_path, font_data, cmap, candidates) in prepared_fonts {
         let renderer = FontGlyphRenderer::new(font_data)?;
         let mut replacements = BTreeMap::new();
         let mut failures = BTreeMap::new();
@@ -606,6 +630,17 @@ fn build_ocr_replacement_plan(
         for character in candidates.chars() {
             if !cmap.contains_key(&(character as u32)) {
                 continue;
+            }
+            processed_characters += 1;
+            if should_report_ocr_progress(processed_characters, total_characters) {
+                update(TaskUpdate::progress(
+                    format!(
+                        "正在识别 U+{:04X}（字体 {font_path}）{}",
+                        character as u32,
+                        format_ocr_progress(processed_characters, total_characters)
+                    ),
+                    ocr_task_progress(processed_characters, total_characters),
+                ));
             }
             let image = match renderer.render(character) {
                 Ok(image) => image,
@@ -701,6 +736,20 @@ fn build_ocr_replacement_plan(
         plan.failures.insert(font_path.clone(), failures);
     }
     Ok(plan)
+}
+
+fn ocr_task_progress(processed_count: usize, total_count: usize) -> f64 {
+    if total_count == 0 {
+        0.0
+    } else {
+        processed_count.min(total_count) as f64 * OCR_TASK_PROGRESS_LIMIT / total_count as f64
+    }
+}
+
+fn should_report_ocr_progress(processed_count: usize, total_count: usize) -> bool {
+    processed_count == 1
+        || processed_count.is_multiple_of(OCR_PROGRESS_INTERVAL)
+        || processed_count == total_count
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1029,21 +1078,7 @@ fn run_onnx_ctc_session(
     let mut scores = Vec::with_capacity(steps);
     let mut top_k = Vec::with_capacity(steps);
     for timestep in values.chunks_exact(vocab) {
-        let mut ranked: Vec<_> = timestep
-            .iter()
-            .enumerate()
-            .map(|(token_id, score)| OcrTokenCandidate {
-                token_id,
-                score: *score,
-            })
-            .collect();
-        ranked.sort_by(|left, right| {
-            right
-                .score
-                .total_cmp(&left.score)
-                .then_with(|| left.token_id.cmp(&right.token_id))
-        });
-        ranked.truncate(OCR_TOP_K.min(ranked.len()));
+        let ranked = top_k_token_candidates(timestep, OCR_TOP_K);
         let selected = ranked
             .first()
             .ok_or_else(|| "ONNX OCR 输出 timestep 为空".to_string())?;
@@ -1057,6 +1092,31 @@ fn run_onnx_ctc_session(
         scores,
         top_k,
     })
+}
+
+fn top_k_token_candidates(scores: &[f32], limit: usize) -> Vec<OcrTokenCandidate> {
+    let limit = limit.min(scores.len());
+    let mut ranked = Vec::with_capacity(limit);
+    for (token_id, score) in scores.iter().copied().enumerate() {
+        let candidate = OcrTokenCandidate { token_id, score };
+        let insertion_index =
+            ranked.partition_point(|existing| token_candidate_order(existing, &candidate).is_lt());
+        if insertion_index < limit {
+            ranked.insert(insertion_index, candidate);
+            ranked.truncate(limit);
+        }
+    }
+    ranked
+}
+
+fn token_candidate_order(
+    left: &OcrTokenCandidate,
+    right: &OcrTokenCandidate,
+) -> std::cmp::Ordering {
+    right
+        .score
+        .total_cmp(&left.score)
+        .then_with(|| left.token_id.cmp(&right.token_id))
 }
 
 fn decode_ctc_argmax(
@@ -1103,21 +1163,7 @@ pub fn decode_ctc_prediction(prediction: &[Vec<f32>], characters: &[String]) -> 
     let mut previous = None;
     let mut top_k = Vec::with_capacity(prediction.len());
     for timestep in prediction {
-        let mut ranked: Vec<_> = timestep
-            .iter()
-            .enumerate()
-            .map(|(token_id, score)| OcrTokenCandidate {
-                token_id,
-                score: *score,
-            })
-            .collect();
-        ranked.sort_by(|left, right| {
-            right
-                .score
-                .total_cmp(&left.score)
-                .then_with(|| left.token_id.cmp(&right.token_id))
-        });
-        ranked.truncate(OCR_TOP_K.min(ranked.len()));
+        let ranked = top_k_token_candidates(timestep, OCR_TOP_K);
         let Some(selected) = ranked.first() else {
             continue;
         };
@@ -1348,7 +1394,9 @@ mod tests {
         clean_decrypted_css_font_references, clean_decrypted_opf_font_manifest,
         decode_ctc_prediction, filter_text_by_cmap, format_ocr_failure_placeholder,
         format_ocr_progress, is_ocr_obfuscation_hint_char, is_period_like_image,
-        normalize_ocr_text, ocr_candidate_text, parse_ocr_model_config, preprocess_ocr_image,
+        normalize_ocr_text, ocr_candidate_text, ocr_task_progress, parse_ocr_model_config,
+        preprocess_ocr_image, should_report_ocr_progress, token_candidate_order,
+        top_k_token_candidates, OcrTokenCandidate,
     };
     use crate::task_types::OcrCharPolicy;
     use image::{DynamicImage, Rgb, RgbImage};
@@ -1425,6 +1473,35 @@ mod tests {
     }
 
     #[test]
+    fn selects_stable_top_k_without_sorting_the_full_vocabulary() {
+        let scores = [0.5, f32::NAN, 0.5, f32::INFINITY, -0.0, 0.0, -1.0];
+        let actual = top_k_token_candidates(&scores, 5);
+        let mut expected = scores
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(token_id, score)| OcrTokenCandidate { token_id, score })
+            .collect::<Vec<_>>();
+        expected.sort_by(token_candidate_order);
+        expected.truncate(5);
+        assert_eq!(
+            actual.iter().map(|item| item.token_id).collect::<Vec<_>>(),
+            expected
+                .iter()
+                .map(|item| item.token_id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            top_k_token_candidates(&[0.8, 0.8, 0.7], 5)
+                .iter()
+                .map(|item| item.token_id)
+                .collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+        assert!(top_k_token_candidates(&scores, 0).is_empty());
+    }
+
+    #[test]
     fn parses_bundled_paddleocr_config() {
         let config = parse_ocr_model_config(include_str!(
             "../../../bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/inference.yml"
@@ -1485,6 +1562,14 @@ mod tests {
     fn formats_stable_ocr_progress() {
         assert_eq!(format_ocr_progress(3, 12), "，进度 3/12 (25.0%)");
         assert_eq!(format_ocr_progress(0, 0), "");
+        assert_eq!(ocr_task_progress(0, 0), 0.0);
+        assert_eq!(ocr_task_progress(3, 12), 24.75);
+        assert_eq!(ocr_task_progress(12, 12), 99.0);
+        assert_eq!(ocr_task_progress(13, 12), 99.0);
+        assert!(should_report_ocr_progress(1, 9493));
+        assert!(!should_report_ocr_progress(99, 9493));
+        assert!(should_report_ocr_progress(100, 9493));
+        assert!(should_report_ocr_progress(9493, 9493));
     }
 
     #[test]

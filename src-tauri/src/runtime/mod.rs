@@ -25,7 +25,7 @@ impl RuntimeServices {
     pub fn new(app: &AppHandle) -> Result<Self, String> {
         let resources = resources::prepare(app)?;
         Ok(Self {
-            engine: engine::create(resources.clone()),
+            engine: engine::create(),
             files: files::create(app.clone()),
             _resources: resources,
             capabilities: PlatformCapabilities::current(),

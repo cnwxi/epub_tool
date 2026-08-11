@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Node.js（版本见 `.nvmrc`） | 前端和 Tauri CLI | `node --version` |
 | npm | 安装依赖和运行脚本 | `npm --version` |
-| Rust stable / Cargo | 业务核心、Worker、Tauri、xtask | `rustc --version`、`cargo --version` |
+| Rust stable / Cargo | 业务核心、Tauri、xtask | `rustc --version`、`cargo --version` |
 
 ### macOS
 
@@ -72,10 +72,10 @@ npm --prefix frontend ci
 npm run tauri:dev
 ```
 
-启动顺序是：校验内置 ONNX OCR 模型、构建 debug Rust Worker、启动 Vite、启动 Tauri。桌面任务路径：
+启动顺序是：校验内置 ONNX OCR 模型、启动 Vite、启动 Tauri。桌面与移动任务路径一致：
 
 ```text
-Vue -> Tauri IPC -> EngineRuntime -> rust-task-runner -> rust_backend
+Vue -> Tauri IPC -> spawn_blocking -> in-process EngineRuntime -> rust_backend
 ```
 
 仅调试前端时：
@@ -85,14 +85,6 @@ npm run dev
 ```
 
 此模式没有 Tauri Runtime，不能执行 EPUB 任务。
-
-直接运行类型化 Rust 任务可使用：
-
-```bash
-cargo run --locked --manifest-path src-tauri/Cargo.toml \
-  --bin rust-task-runner -- \
-  --request-json '{"task_id":"debug","task_type":"reformat_epub","input_files":["/absolute/book.epub"],"output_dir":null,"options":{"kind":"empty"}}'
-```
 
 ## 验证
 
@@ -117,7 +109,7 @@ npm run build
 npm run build:verify-ocr-model
 ```
 
-`src-tauri/tests/core_regression.rs` 使用运行时生成的稳定 EPUB fixture 覆盖输出后缀、跳过行为、加密/解密往返、简繁转换、任务事件/结果和 Worker JSON Lines 协议。
+`src-tauri/tests/core_regression.rs` 使用运行时生成的稳定 EPUB fixture 覆盖输出后缀、跳过行为、加密/解密往返、简繁转换和任务事件/结果。
 
 ## 桌面构建
 
@@ -126,7 +118,7 @@ npm run build:bundle-assets
 npm run tauri:build
 ```
 
-`build:bundle-assets` 构建前端、验证 OCR 模型并构建 release Worker。安装包携带前端、Rust Worker、OCR 模型和 OpenCC 词典。
+`build:bundle-assets` 构建前端并验证 OCR 模型。安装包携带前端、进程内 Rust 核心、OCR 模型和 OpenCC 词典。
 
 ## Android 构建
 

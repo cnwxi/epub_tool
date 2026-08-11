@@ -19,7 +19,7 @@ EngineRequest / EngineEvent / EngineResponse (protobuf wire)
 TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 ```
 
-`engine_adapter` 是唯一 wire/core 转换边界。业务任务不接收 Protobuf message、Tauri command 参数或动态 JSON。桌面 Worker 传输序列化后的类型化 core contract；移动端直接调用相同 core，不做 wire -> 动态 JSON -> wire 往返。
+`engine_adapter` 是唯一 wire/core 转换边界。业务任务不接收 Protobuf message、Tauri command 参数或动态 JSON。所有平台的进程内运行时直接调用相同 core，不做 wire -> 动态 JSON -> wire 往返。
 
 ## 请求
 
@@ -94,6 +94,8 @@ TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 
 最后一个事件携带完整 `TaskResult`。单文件失败与跳过分别进入 `errors`、`skipped`；`summary` 包含 `total`、`success`、`failed`、`skipped`。`status` 为 `success`、`partial` 或 `error`。
 
+`progress` 始终表示整个批量任务的 `0..100` 进度。核心任务可通过类型化文件内进度更新推进 `task.log`；运行时按当前文件索引折算为总体进度并保证不回退。字体 OCR 在首个字符、每 100 个字符及最后一个字符更新进度，OCR 阶段最高到当前文件的 99%，文件改写和写盘完成后的 `task.file.finished` 才到达该文件终点。
+
 字体扫描用 `fontScanProgress` 流式返回每本 EPUB 的 `fontFamilies` 或结构化错误，终止响应使用 `fontScanResult`。
 
 ## 响应与错误
@@ -105,14 +107,3 @@ TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 - `error`
 
 协议/参数错误使用结构化 `EngineError`；任务处理错误按输入文件进入 `TaskResult.errors`。适配层当前使用的错误类别包括 `INVALID_ARGUMENT`、`IO_ERROR`、`DEPENDENCY_ERROR` 和 `INTERNAL`。
-
-## 桌面 Worker contract
-
-桌面隔离层每行一个 JSON envelope：
-
-- 请求：`requestId`、类型化 `TaskSpec`、`logPath`
-- 事件：`kind = event` 与类型化 `TaskEvent`
-- 成功：`kind = result` 与类型化 `TaskResult`
-- 失败：`kind = error` 与错误文本
-
-Worker 必须严格回显 `requestId`。Tauri 运行时遇到未知 envelope、ID 不匹配、Worker EOF 或无效字段时失败并执行受限恢复策略，不能把未知对象转回协议消息。

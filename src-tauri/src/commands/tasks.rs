@@ -71,7 +71,6 @@ pub async fn run_epub_task(
         return Err("任务命令只接受 runTask operation".to_string());
     };
     let execution = ExecutionRequest {
-        request_id: request_id.clone(),
         task: engine_adapter::task_spec(&run_request)?,
         log_path: resolve_log_path(&app)?,
     };

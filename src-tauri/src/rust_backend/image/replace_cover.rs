@@ -2,7 +2,7 @@ use super::image_processing::rewrite_references;
 use crate::rust_backend::{
     epub::workspace::{media_type_for, resolve_reference, EpubWorkspace},
     text_encoding::{decode_epub_text, encode_epub_text, TextKind},
-    EpubTask, TaskOutcome,
+    EpubTask, TaskOutcome, TaskUpdate,
 };
 use crate::task_types::{TaskOptions, TaskType};
 use image::{ImageFormat, ImageReader};
@@ -31,7 +31,7 @@ impl EpubTask for ReplaceCoverTask {
         input: &Path,
         workspace: &mut EpubWorkspace,
         options: &TaskOptions,
-        log: &mut dyn FnMut(String),
+        update: &mut dyn FnMut(TaskUpdate),
     ) -> Result<TaskOutcome, String> {
         let Some(cover_path) = cover_path_for(input, options) else {
             return Ok(TaskOutcome::Skip);
@@ -87,7 +87,7 @@ impl EpubTask for ReplaceCoverTask {
             rewrite_references(workspace, &[(old_path, new_path.clone())])?;
         }
         workspace.members.insert(new_path.clone(), raw_cover);
-        log(format!("封面已更换为 {new_path}"));
+        update(TaskUpdate::message(format!("封面已更换为 {new_path}")));
         Ok(TaskOutcome::Success)
     }
 }

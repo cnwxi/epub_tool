@@ -9,14 +9,12 @@ Vue / TypeScript
   -> Protobuf JSON IPC
   -> Tauri commands + engine_adapter
   -> typed TaskSpec
-  -> EngineRuntime
-       Windows/macOS/Linux: rust-task-runner Worker
-       Android/iOS: in-process
+  -> in-process EngineRuntime (spawn_blocking)
   -> rust_backend::run
   -> typed TaskEvent + TaskResult
 ```
 
-桌面 Worker 提供崩溃隔离与受限自动恢复；移动平台不启动子进程。二者不分叉业务实现。
+所有平台使用同一个进程内运行时，不启动任务子进程。Tauri 异步命令通过阻塞线程池调用业务核心，避免长任务阻塞 UI 事件循环。
 
 ## 核心 contract
 
@@ -90,14 +88,14 @@ Stylo 负责选择器、级联和计算样式。外链 CSS、递归 `@import`、
 
 | 平台 | 架构 / ABI | Runtime | OCR | CI 验证 |
 | --- | --- | --- | --- | --- |
-| Windows | x64、arm64 | Worker | ONNX Runtime | NSIS |
-| macOS | x64、arm64 | Worker | ONNX Runtime | app、DMG |
-| Linux | x64、arm64 | Worker | ONNX Runtime | deb、rpm |
+| Windows | x64、arm64 | in-process | ONNX Runtime | NSIS |
+| macOS | x64、arm64 | in-process | ONNX Runtime | app、DMG |
+| Linux | x64、arm64 | in-process | ONNX Runtime | deb、rpm |
 | Android | arm64-v8a、armeabi-v7a、x86、x86_64 | in-process | ORT Android 1.24.3 | unsigned debug APK |
 | iOS | arm64 device、arm64 simulator | in-process | ORT iOS 1.24.3 | device library、unsigned simulator app |
 
-目录选择、目录扫描、打开路径和 Worker 重启是桌面能力；移动端使用文件 URI、缓存暂存与结果导出。任务类型与字体 OCR 不因移动平台而禁用。
+目录选择、目录扫描和打开路径是桌面能力；移动端使用文件 URI、缓存暂存与结果导出。任务类型、运行时与字体 OCR 不因平台而分叉。
 
 ## 验证边界
 
-宿主单元/集成测试验证业务逻辑和 Worker contract。Android/iOS 必须由相应 SDK、NDK、Xcode 和 Rust target 完成真实交叉链接。CI 的移动产物不带生产签名；Android release keystore、Apple Team、证书、provisioning、device archive、IPA、商店上传和公证属于外部凭据边界。
+宿主单元/集成测试验证业务逻辑、类型化 contract 和进程内运行时。Android/iOS 必须由相应 SDK、NDK、Xcode 和 Rust target 完成真实交叉链接。CI 的移动产物不带生产签名；Android release keystore、Apple Team、证书、provisioning、device archive、IPA、商店上传和公证属于外部凭据边界。

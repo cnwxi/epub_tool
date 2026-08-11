@@ -136,14 +136,6 @@ const defaultSettings: AppSettings = {
   autoOpenLogFile: false,
   autoCheckUpdates: true,
   keepHistoryCount: 10,
-  engineAutoRestartLimit: 2,
-};
-const normalizeEngineAutoRestartLimit = (value: unknown): number => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return defaultSettings.engineAutoRestartLimit;
-  }
-  return Math.max(0, Math.min(5, Math.round(numeric)));
 };
 const ocrCharPolicyOptions: Array<{
   value: OcrCharPolicy;
@@ -261,9 +253,7 @@ const {
   readImagePreview,
   refreshPlatformCapabilities,
   resolveInputSources,
-  restartEngine,
   runTask,
-  setEngineAutoRestartLimit,
   stageSourceForTask,
   exportOutput,
   validateOutputDirectory,
@@ -371,9 +361,6 @@ const normalizeSettings = (value: unknown): AppSettings => {
       typeof raw.keepHistoryCount === "number"
         ? raw.keepHistoryCount
         : defaultSettings.keepHistoryCount,
-    engineAutoRestartLimit: normalizeEngineAutoRestartLimit(
-      raw.engineAutoRestartLimit,
-    ),
   };
 };
 
@@ -560,12 +547,7 @@ const engineStatus = ref<EngineStatus>({
   state: "starting",
   message: "正在启动处理引擎…",
   lastError: null,
-  pid: null,
-  recoveryAttempts: 0,
-  autoRestartLimit: defaultSettings.engineAutoRestartLimit,
-  manualRestartCount: 0,
 });
-const engineRestarting = ref(false);
 let engineStatusTimer = 0;
 let engineStatusRefreshInFlight = false;
 const fontLoading = ref(false);
@@ -576,6 +558,7 @@ const fontProgressCurrent = ref(0);
 const fontProgressTotal = ref(0);
 const fontProgressFileName = ref("");
 let fontLoadRequestId = 0;
+let fontLoadInFlight: Promise<void> | null = null;
 const currentVersion = ref(CURRENT_FALLBACK_VERSION);
 const latestVersion = ref(persistedUpdateCheckState.value.latestVersion);
 const latestReleaseUrl = ref(
@@ -1210,6 +1193,8 @@ const visibleProgressValue = computed(() => {
   return 0;
 });
 
+const formattedVisibleProgress = computed(() => visibleProgressValue.value.toFixed(1));
+
 const visibleProgressText = computed(() => {
   if (isViewingRunningTask.value && taskProgressTotal.value > 0) {
     return `已完成 ${taskProgressCurrent.value}/${taskProgressTotal.value} 本`;
@@ -1240,12 +1225,8 @@ const engineStatusLabel = computed(() => {
       return "处理引擎就绪";
     case "busy":
       return "处理引擎执行中";
-    case "recovering":
-      return "处理引擎恢复中";
     case "unavailable":
       return "处理引擎不可用";
-    case "stopped":
-      return "处理引擎未启动";
     default:
       return "处理引擎启动中";
   }
@@ -1270,53 +1251,6 @@ const refreshEngineStatus = async () => {
     };
   } finally {
     engineStatusRefreshInFlight = false;
-  }
-};
-
-const syncEngineAutoRestartLimit = async () => {
-  try {
-    const status = await setEngineAutoRestartLimit(
-      settings.value.engineAutoRestartLimit,
-    );
-    if (status) {
-      engineStatus.value = status;
-    }
-  } catch {
-    await refreshEngineStatus();
-  }
-};
-
-const normalizeEngineAutoRestartLimitInPlace = () => {
-  settings.value.engineAutoRestartLimit = normalizeEngineAutoRestartLimit(
-    settings.value.engineAutoRestartLimit,
-  );
-};
-
-const restartCurrentEngine = async () => {
-  if (engineRestarting.value) {
-    return;
-  }
-  if (
-    (taskRunning.value || fontLoading.value) &&
-    typeof window !== "undefined" &&
-    !window.confirm("终止当前处理请求并重启处理引擎？当前任务不会自动重跑。")
-  ) {
-    return;
-  }
-  engineRestarting.value = true;
-  try {
-    const status = await restartEngine();
-    if (status) {
-      engineStatus.value = status;
-    }
-  } catch (error) {
-    await refreshEngineStatus();
-    engineStatus.value = {
-      ...engineStatus.value,
-      lastError: toErrorMessage(error, "处理引擎重启失败。"),
-    };
-  } finally {
-    engineRestarting.value = false;
   }
 };
 
@@ -1746,6 +1680,10 @@ const loadFontFamilies = async (options?: {
     return;
   }
 
+  while (fontLoadInFlight) {
+    await fontLoadInFlight;
+  }
+
   const targets = options?.filePaths?.length
     ? files.value.filter((item) => options.filePaths?.includes(item.path))
     : files.value;
@@ -1755,6 +1693,12 @@ const loadFontFamilies = async (options?: {
   if (pendingTargets.length === 0) {
     return;
   }
+
+  let releaseFontLoad!: () => void;
+  const currentFontLoad = new Promise<void>((resolve) => {
+    releaseFontLoad = resolve;
+  });
+  fontLoadInFlight = currentFontLoad;
 
   const requestId = ++fontLoadRequestId;
   fontLoading.value = true;
@@ -1864,6 +1808,10 @@ const loadFontFamilies = async (options?: {
       fontProgressTotal.value = 0;
       fontProgressFileName.value = "";
     }
+    if (fontLoadInFlight === currentFontLoad) {
+      fontLoadInFlight = null;
+    }
+    releaseFontLoad();
   }
 
   if (requestId !== fontLoadRequestId) {
@@ -2218,7 +2166,7 @@ const pushLog = (event: TaskEvent) => {
 };
 
 const runSelectedTask = async () => {
-  if (files.value.length === 0 || taskRunning.value || !activeTask.value) {
+  if (files.value.length === 0 || taskRunning.value || fontLoading.value || !activeTask.value) {
     return;
   }
   const taskType = activeTask.value;
@@ -2380,13 +2328,6 @@ watch(activeTask, async () => {
   await measureMasonryBoard();
 }, { flush: "post" });
 
-watch(
-  () => settings.value.engineAutoRestartLimit,
-  () => {
-    void syncEngineAutoRestartLimit();
-  },
-);
-
 watch(() => masonryBoardRef.value, async () => {
   await measureMasonryBoard();
 }, { flush: "post" });
@@ -2423,44 +2364,12 @@ watch(() => sideNavScrollbarTrackRef.value, async () => {
 
 watch(
   () => files.value.map((item) => item.path).join("|"),
-  async (currentPaths, previousPaths) => {
+  async () => {
     ensureSelectedFile();
-    if (isFontTargetTask(activeSection.value)) {
-      const previous = new Set(
-        previousPaths
-          .split("|")
-          .map((path) => path.trim())
-          .filter(Boolean),
-      );
-      const addedPaths = currentPaths
-        .split("|")
-        .map((path) => path.trim())
-        .filter((path) => path && !previous.has(path));
-
-      if (addedPaths.length === 0) {
-        return;
-      }
-
-      await loadFontFamilies({
-        filePaths: addedPaths,
-        silent: true,
-      });
-    }
     await nextTick();
     scheduleCustomScrollbarUpdate();
   },
 );
-
-watch(selectedFilePath, async (path) => {
-  if (!isFontTargetTask(activeSection.value) || !path) {
-    return;
-  }
-
-  await loadFontFamilies({
-    filePaths: [path],
-    silent: true,
-  });
-});
 
 watch(
   () => [logs.value.length, result.value, activeSection.value, activeTask.value],
@@ -2570,7 +2479,6 @@ onMounted(async () => {
     } catch {
       // 能力发现失败时保留保守默认值，其它运行时信息仍可继续加载。
     }
-    await syncEngineAutoRestartLimit();
     await refreshEngineStatus();
     if (typeof window !== "undefined") {
       engineStatusTimer = window.setInterval(() => {
@@ -2958,7 +2866,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                       <div v-if="taskRunning || fontLoading" class="task-progress glass-soft">
                         <div class="task-progress-head">
                           <strong class="content-animated-value">{{ visibleProgressText }}</strong>
-                          <span class="content-animated-value">{{ visibleProgressValue }}%</span>
+                          <span class="content-animated-value">{{ formattedVisibleProgress }}%</span>
                         </div>
                         <div class="task-progress-track">
                           <div class="task-progress-fill" :style="{ width: `${visibleProgressValue}%` }" />
@@ -2973,7 +2881,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                         当前平台尚未接入 ONNX Runtime，字体 OCR 解密暂不可用。
                       </p>
                       <button class="primary-btn wide"
-                        :disabled="taskRunning || files.length === 0 || (activeTask === 'decrypt_font' && !platformCapabilities.supportsFontOcr)"
+                        :disabled="taskRunning || fontLoading || files.length === 0 || (activeTask === 'decrypt_font' && !platformCapabilities.supportsFontOcr)"
                         type="button"
                         @click="runSelectedTask">
                         {{ taskRunning ? "处理中..." : (activeTask === "decrypt_font" && !platformCapabilities.supportsFontOcr
@@ -3228,44 +3136,26 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <div>
                   <p class="eyebrow">处理引擎</p>
                   <h3>Rust 处理引擎</h3>
-                  <p class="muted">{{ platformCapabilities.runtime === "worker"
-                    ? "桌面端通过常驻 Worker 复用处理模块，并隔离原生库与主界面进程。"
-                    : "移动端在应用进程内直接执行共享 Rust 任务核心。" }}</p>
-                </div>
-                <div v-if="platformCapabilities.supportsEngineRestart" class="panel-actions">
-                  <button class="ghost-btn settings-action-btn engine-restart-btn" :disabled="engineRestarting"
-                    type="button" @click="restartCurrentEngine">
-                    {{ engineRestarting ? "重启中..." : "重启引擎" }}
-                  </button>
+                  <p class="muted">所有平台都在应用进程内直接执行同一个 Rust 任务核心。</p>
                 </div>
               </div>
-              <div class="worker-control-grid">
-                <article class="worker-status-card glass-medium" :class="`state-${engineStatus.state}`">
-                  <strong class="worker-card-title">运行状态</strong>
-                  <div class="worker-status-content">
-                    <span class="worker-card-value worker-status-value">
-                      <span class="worker-status-dot" aria-hidden="true"></span>
+              <div class="engine-control-grid">
+                <article class="engine-status-card glass-medium" :class="`state-${engineStatus.state}`">
+                  <strong class="engine-card-title">运行状态</strong>
+                  <div class="engine-status-content">
+                    <span class="engine-card-value engine-status-value">
+                      <span class="engine-status-dot" aria-hidden="true"></span>
                       {{ engineStatusLabel }}
                     </span>
                     <p>{{ engineStatus.message }}</p>
                   </div>
                 </article>
                 <div class="settings-log-card glass-medium">
-                  <strong class="worker-card-title">执行模式</strong>
-                  <span class="worker-card-value">{{ platformCapabilities.runtime === "worker"
-                    ? (engineStatus.pid ? `Worker · PID ${engineStatus.pid}` : "Worker 进程")
-                    : "应用进程内执行" }}</span>
+                  <strong class="engine-card-title">执行模式</strong>
+                  <span class="engine-card-value">应用进程内执行</span>
                 </div>
               </div>
-              <p v-if="platformCapabilities.supportsEngineRestart && engineStatus.recoveryAttempts > 0"
-                class="worker-recovery-note">
-                本次会话已自动恢复 {{ engineStatus.recoveryAttempts }}/{{ engineStatus.autoRestartLimit }} 次。
-              </p>
-              <p v-if="platformCapabilities.supportsEngineRestart && engineStatus.manualRestartCount > 0"
-                class="worker-recovery-note">
-                本次会话已手动重启 {{ engineStatus.manualRestartCount }} 次。
-              </p>
-              <p v-if="engineStatus.lastError" class="worker-error-message">
+              <p v-if="engineStatus.lastError" class="engine-error-message">
                 最近错误：{{ engineStatus.lastError }}
               </p>
             </section>
@@ -3352,7 +3242,7 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <div>
                   <p class="eyebrow">偏好设置</p>
                   <h3>使用偏好</h3>
-                  <p class="muted">控制任务完成后的自动行为、引擎自动恢复，以及最近任务的保留数量。</p>
+                  <p class="muted">控制任务完成后的自动行为和最近任务的保留数量。</p>
                 </div>
               </div>
               <div class="settings-preference-grid">
@@ -3383,15 +3273,6 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                     <p>控制最近任务列表的保留上限。</p>
                   </div>
                   <input v-model.number="settings.keepHistoryCount" min="1" max="30" type="number" />
-                </label>
-                <label
-                  class="settings-preference-card settings-preference-card-number settings-interactive-card glass-medium">
-                  <div>
-                    <strong>自动恢复次数</strong>
-                    <p>仅恢复引擎，不重试任务。</p>
-                  </div>
-                  <input v-model.number="settings.engineAutoRestartLimit" min="0" max="5" step="1"
-                    type="number" @change="normalizeEngineAutoRestartLimitInPlace" />
                 </label>
               </div>
             </section>

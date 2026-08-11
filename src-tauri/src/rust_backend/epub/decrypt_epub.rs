@@ -4,7 +4,7 @@ use super::{
     workspace::EpubWorkspace,
 };
 use crate::{
-    rust_backend::{EpubTask, TaskOutcome},
+    rust_backend::{EpubTask, TaskOutcome, TaskUpdate},
     task_types::{TaskOptions, TaskType},
 };
 use std::path::Path;
@@ -31,14 +31,16 @@ impl EpubTask for DecryptEpubTask {
         _input: &Path,
         workspace: &mut EpubWorkspace,
         _options: &TaskOptions,
-        log: &mut dyn FnMut(String),
+        update: &mut dyn FnMut(TaskUpdate),
     ) -> Result<TaskOutcome, String> {
         let book = ParsedBook::parse(workspace)?;
         if !is_encrypted_layout(&book, workspace) {
-            log("警告: 该文件未加密，无需处理！".to_string());
+            update(TaskUpdate::message("警告: 该文件未加密，无需处理！"));
             return Ok(TaskOutcome::Skip);
         }
-        rewrite(workspace, RewriteMode::Decrypt, log)?;
+        rewrite(workspace, RewriteMode::Decrypt, &mut |message| {
+            update(TaskUpdate::message(message));
+        })?;
         Ok(TaskOutcome::Success)
     }
 }

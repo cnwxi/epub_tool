@@ -89,7 +89,7 @@ jobs:
 
       - name: Setup Rust
         if: steps.asset.outputs.skip != 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.1
 
       - name: Checkout tap repo
         if: steps.asset.outputs.skip != 'true'

@@ -598,26 +598,26 @@ input {
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
 }
 
-.nav-worker-status {
+.nav-engine-status {
   display: flex;
   width: 100%;
   align-items: center;
   justify-content: space-between;
 }
 
-.nav-worker-name {
+.nav-engine-name {
   font-size: 15px;
   font-weight: 650;
 }
 
-.nav-worker-state {
+.nav-engine-state {
   display: inline-flex;
   gap: 8px;
   align-items: center;
   color: rgba(249, 242, 230, 0.74);
 }
 
-.nav-worker-dot {
+.nav-engine-dot {
   width: 8px;
   height: 8px;
   flex: 0 0 auto;
@@ -627,35 +627,33 @@ input {
   box-shadow: 0 0 0 3px rgba(152, 165, 184, 0.12);
 }
 
-.nav-worker-state strong {
+.nav-engine-state strong {
   font-size: 13px;
   font-weight: 650;
   line-height: 1.25;
 }
 
-.nav-worker-status.state-ready .nav-worker-dot {
+.nav-engine-status.state-ready .nav-engine-dot {
   background: #71d49d;
   box-shadow: 0 0 0 3px rgba(113, 212, 157, 0.14);
 }
 
-.nav-worker-status.state-busy .nav-worker-dot,
-.nav-worker-status.state-starting .nav-worker-dot,
-.nav-worker-status.state-recovering .nav-worker-dot {
+.nav-engine-status.state-busy .nav-engine-dot,
+.nav-engine-status.state-starting .nav-engine-dot {
   background: #f2bf5e;
   box-shadow: 0 0 0 3px rgba(242, 191, 94, 0.14);
 }
 
-.nav-worker-status.state-recovering .nav-worker-dot,
-.nav-worker-status.state-starting .nav-worker-dot {
-  animation: worker-status-pulse 1.2s ease-in-out infinite;
+.nav-engine-status.state-starting .nav-engine-dot {
+  animation: engine-status-pulse 1.2s ease-in-out infinite;
 }
 
-.nav-worker-status.state-unavailable .nav-worker-dot {
+.nav-engine-status.state-unavailable .nav-engine-dot {
   background: #ef8c8c;
   box-shadow: 0 0 0 3px rgba(239, 140, 140, 0.14);
 }
 
-@keyframes worker-status-pulse {
+@keyframes engine-status-pulse {
   50% { opacity: 0.35; transform: scale(0.78); }
 }
 
@@ -1450,13 +1448,13 @@ input {
   gap: var(--layout-gap-3);
 }
 
-.worker-control-grid {
+.engine-control-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--layout-gap-3);
 }
 
-.worker-status-card {
+.engine-status-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
@@ -1466,32 +1464,31 @@ input {
   border-radius: var(--layout-radius-md);
 }
 
-.worker-card-title {
+.engine-card-title {
   grid-column: 1 / -1;
   line-height: 1.35;
 }
 
-.worker-status-content {
+.engine-status-content {
   display: grid;
   align-content: center;
   gap: var(--layout-gap-1);
   min-width: 0;
 }
 
-.worker-recovery-note,
-.worker-error-message {
+.engine-error-message {
   margin: 0;
   color: var(--muted);
   line-height: 1.45;
 }
 
-.worker-card-value {
+.engine-card-value {
   font-size: 14px;
   font-weight: 400;
   line-height: 1.35;
 }
 
-.worker-status-card p {
+.engine-status-card p {
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 400;
@@ -1499,13 +1496,13 @@ input {
   margin: 0;
 }
 
-.worker-status-value {
+.engine-status-value {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.worker-status-dot {
+.engine-status-dot {
   width: 10px;
   height: 10px;
   flex: 0 0 auto;
@@ -1513,13 +1510,12 @@ input {
   background: #98a5b8;
 }
 
-.worker-status-card.state-ready .worker-status-dot { background: #4dbb7a; }
-.worker-status-card.state-busy .worker-status-dot,
-.worker-status-card.state-starting .worker-status-dot,
-.worker-status-card.state-recovering .worker-status-dot { background: #d99e2b; }
-.worker-status-card.state-unavailable .worker-status-dot { background: #d85a5a; }
+.engine-status-card.state-ready .engine-status-dot { background: #4dbb7a; }
+.engine-status-card.state-busy .engine-status-dot,
+.engine-status-card.state-starting .engine-status-dot { background: #d99e2b; }
+.engine-status-card.state-unavailable .engine-status-dot { background: #d85a5a; }
 
-.worker-error-message {
+.engine-error-message {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, #d85a5a 24%, var(--glass-soft-border));
   border-radius: 12px;
@@ -1699,17 +1695,17 @@ input {
   margin: 4px 0 0;
 }
 
-.worker-control-grid .settings-log-card {
+.engine-control-grid .settings-log-card {
   min-height: 96px;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.worker-card-value {
+.engine-card-value {
   align-self: center;
   color: var(--text-primary);
 }
 
-.worker-control-grid .settings-log-card .worker-card-value {
+.engine-control-grid .settings-log-card .engine-card-value {
   color: var(--text-primary);
 }
 
@@ -1861,24 +1857,6 @@ input {
   cursor: not-allowed;
   opacity: 0.62;
   box-shadow: none;
-}
-
-.engine-restart-btn {
-  border-color: color-mix(in srgb, #c85d3d 54%, white 46%);
-  background: linear-gradient(135deg, #c85d3d, #df7a58);
-  color: #fffaf6;
-  box-shadow: 0 10px 18px rgba(176, 73, 44, 0.22);
-}
-
-.engine-restart-btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, #c85d3d 68%, white 32%);
-  background: linear-gradient(135deg, #b94d32, #d96a4d);
-  box-shadow: 0 14px 24px rgba(176, 73, 44, 0.3);
-}
-
-.engine-restart-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, #c85d3d 58%, white 42%);
-  outline-offset: 3px;
 }
 
 .history-row.settings-interactive-card {

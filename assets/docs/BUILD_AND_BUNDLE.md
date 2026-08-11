@@ -4,8 +4,7 @@
 
 应用由 Vue 前端、Tauri 壳层、统一 Rust EPUB 核心和运行资源组成：
 
-- Windows、macOS、Linux 包含 `rust-task-runner`，由 Tauri 管理常驻 Worker；
-- Android、iOS 将同一 Rust 核心链接进应用进程；
+- Windows、macOS、Linux、Android、iOS 都将同一 Rust 核心链接进应用进程；
 - 所有平台携带 `PP-OCRv6_small_rec_onnx` 与 OpenCC 词典；
 - Protobuf 只用于 Tauri IPC，业务核心使用类型化 `TaskSpec`、`TaskOptions`、`TaskEvent`、`TaskResult`。
 
@@ -22,8 +21,7 @@ npm run tauri:build
 
 1. 构建 Vue 前端；
 2. 以真实 Rust ONNX Runtime session 校验 OCR 模型；
-3. 构建 release `rust-task-runner`；
-4. 由 Tauri 生成目标平台 bundle。
+3. 由 Tauri 生成包含 Rust 核心的目标平台 bundle。
 
 发布 workflow 的桌面矩阵：
 
@@ -69,7 +67,7 @@ npm run tauri:android:build -- aarch64 --debug --apk --ci
 | `i686` | `i686-linux-android` | `x86` |
 | `x86_64` | `x86_64-linux-android` | `x86_64` |
 
-CI 对四个 ABI 分别构建 debug APK，验证目标链接和 `jniLibs/<abi>/libonnxruntime.so` 已进入生成工程。这些 APK 是无签名编译产物；Play 发布需要 keystore、签名配置和商店凭据。
+CI 对四个 ABI 分别构建 debug APK，验证目标链接，并检查 `lib/<abi>/libonnxruntime.so` 已实际打入 APK。这些 APK 是无签名编译产物；Play 发布需要 keystore、签名配置和商店凭据。
 
 ## iOS
 

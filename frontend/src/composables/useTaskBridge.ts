@@ -21,7 +21,6 @@ export function useTaskBridge() {
     supportsDirectoryPicker: false,
     supportsDirectoryScan: false,
     supportsOpenPath: false,
-    supportsEngineRestart: false,
     requiresOutputExport: false,
     supportsFileAssociations: false,
     supportsFontOcr: false,
@@ -37,7 +36,8 @@ export function useTaskBridge() {
   };
 
   const isMobileRuntime = (): boolean =>
-    platformCapabilities.value.runtime === "inProcess";
+    platformCapabilities.value.platform === "android" ||
+    platformCapabilities.value.platform === "ios";
 
   const runTask = async (
     request: TaskRequest,
@@ -112,22 +112,6 @@ export function useTaskBridge() {
       return null;
     }
     return invoke<EngineStatus>("get_engine_status");
-  };
-
-  const setEngineAutoRestartLimit = async (
-    limit: number,
-  ): Promise<EngineStatus | null> => {
-    if (!isTauriRuntime()) {
-      return null;
-    }
-    return invoke<EngineStatus>("set_engine_auto_restart_limit", { limit });
-  };
-
-  const restartEngine = async (): Promise<EngineStatus | null> => {
-    if (!isTauriRuntime()) {
-      return null;
-    }
-    return invoke<EngineStatus>("restart_engine");
   };
 
   const loadPersistedState = async <T>(
@@ -219,8 +203,6 @@ export function useTaskBridge() {
     savePersistedState,
     stageSourceForTask,
     exportOutput,
-    setEngineAutoRestartLimit,
-    restartEngine,
     platformCapabilities,
     validateOutputDirectory,
   };

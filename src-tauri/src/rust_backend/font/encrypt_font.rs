@@ -11,7 +11,7 @@ use super::{
 use crate::rust_backend::text_encoding::{
     decode_epub_text, encode_epub_text, text_kind_for_path, TextKind,
 };
-use crate::rust_backend::{epub::EpubWorkspace, EpubTask, TaskOutcome};
+use crate::rust_backend::{epub::EpubWorkspace, EpubTask, TaskOutcome, TaskUpdate};
 use crate::task_types::{FontTaskOptions, TaskOptions, TaskType};
 use rand::Rng;
 use regex::Regex;
@@ -67,7 +67,7 @@ impl EpubTask for EncryptFontTask {
         input: &Path,
         workspace: &mut EpubWorkspace,
         options: &TaskOptions,
-        log: &mut dyn FnMut(String),
+        update: &mut dyn FnMut(TaskUpdate),
     ) -> Result<TaskOutcome, String> {
         let plan = FontEncryptionPlan::build(workspace, input, options)?;
         let text_by_font = plan.collect_target_text(workspace)?;
@@ -100,11 +100,11 @@ impl EpubTask for EncryptFontTask {
                 encode_epub_text(&rewritten, text_kind_for_path(member)),
             );
         }
-        log(format!(
+        update(TaskUpdate::message(format!(
             "Rust 字体加密完成：处理 {} 个字体、{} 个 XHTML 文件。",
             replacements.len(),
             plan.xhtml_members().len()
-        ));
+        )));
         Ok(TaskOutcome::Success)
     }
 }
@@ -115,7 +115,7 @@ impl FontEncryptionPlan {
         input: &Path,
         options: &TaskOptions,
     ) -> Result<Self, String> {
-        Self::build_for_font_formats(workspace, input, options, false)
+        Self::build_for_font_formats(workspace, selected_families(input, options)?, false, false)
     }
 
     pub(crate) fn build_for_decryption(
@@ -123,16 +123,19 @@ impl FontEncryptionPlan {
         input: &Path,
         options: &TaskOptions,
     ) -> Result<Self, String> {
-        Self::build_for_font_formats(workspace, input, options, true)
+        Self::build_for_font_formats(workspace, selected_families(input, options)?, true, false)
+    }
+
+    pub(crate) fn build_for_target_scan(workspace: &EpubWorkspace) -> Result<Self, String> {
+        Self::build_for_font_formats(workspace, None, true, true)
     }
 
     fn build_for_font_formats(
         workspace: &EpubWorkspace,
-        input: &Path,
-        options: &TaskOptions,
+        requested_families: Option<BTreeSet<String>>,
         tolerate_missing_fonts: bool,
+        allow_empty_xhtml: bool,
     ) -> Result<Self, String> {
-        let requested_families = selected_families(input, options)?;
         for (member, data) in &workspace.members {
             if !member.to_ascii_lowercase().ends_with(".css") {
                 continue;
@@ -144,11 +147,11 @@ impl FontEncryptionPlan {
             .keys()
             .filter(|member| {
                 let lower = member.to_ascii_lowercase();
-                lower.ends_with(".xhtml") || lower.ends_with(".html")
+                lower.ends_with(".xhtml") || lower.ends_with(".html") || lower.ends_with(".htm")
             })
             .cloned()
             .collect();
-        if xhtml_members.is_empty() {
+        if xhtml_members.is_empty() && !allow_empty_xhtml {
             return Err("EPUB 没有 XHTML 文件，当前 Rust 实现暂不支持".to_string());
         }
         let mut computed_fonts = BTreeMap::new();
@@ -220,7 +223,7 @@ impl FontEncryptionPlan {
                 &self.available_font_paths,
                 &BTreeMap::new(),
                 None,
-                |font: &str, text: &str| {
+                |font: &str, _family: &str, text: &str| {
                     if self.target_fonts.contains(font) {
                         text_by_font
                             .entry(font.to_string())
@@ -231,6 +234,30 @@ impl FontEncryptionPlan {
             )?;
         }
         Ok(text_by_font)
+    }
+
+    pub(crate) fn used_target_families(
+        &self,
+        workspace: &EpubWorkspace,
+    ) -> Result<BTreeSet<String>, String> {
+        let mut families = BTreeSet::new();
+        for member in &self.xhtml_members {
+            let source = text_member(workspace, member, "XHTML")?;
+            transform_xhtml(
+                &source,
+                self.computed_font_map(member)?,
+                self.font_resolver(member)?,
+                &self.available_font_paths,
+                &BTreeMap::new(),
+                None,
+                |font, family, _text| {
+                    if self.target_fonts.contains(font) {
+                        families.insert(family.to_string());
+                    }
+                },
+            )?;
+        }
+        Ok(families)
     }
 
     pub(crate) fn target_fonts(&self) -> &BTreeSet<String> {
@@ -258,7 +285,7 @@ impl FontEncryptionPlan {
             &self.available_font_paths,
             replacements,
             None,
-            |_, _| {},
+            |_, _, _| {},
         )
     }
 
@@ -276,7 +303,7 @@ impl FontEncryptionPlan {
             &self.available_font_paths,
             replacements,
             Some(failure_markup),
-            |_, _| {},
+            |_, _, _| {},
         )
     }
 
@@ -362,7 +389,7 @@ fn transform_xhtml(
     available_font_paths: &BTreeSet<String>,
     replacements: &BTreeMap<String, BTreeMap<char, char>>,
     failure_markup: Option<&BTreeMap<String, BTreeMap<char, String>>>,
-    mut visit_text: impl FnMut(&str, &str),
+    mut visit_text: impl FnMut(&str, &str, &str),
 ) -> Result<String, String> {
     static HTML_ENTITY: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"&(?:#[0-9]+|#[xX][0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9._-]*);")
@@ -378,20 +405,20 @@ fn transform_xhtml(
         let text = &source[cursor..text_end];
         if let Some(context) = stack.last() {
             if context.rewrites_text {
-                if let Some(request) = context.font_request.as_ref() {
-                    result.push_str(&rewrite_text_with_resolver(
-                        text,
-                        request,
-                        font_resolver,
-                        available_font_paths,
-                        replacements,
-                        failure_markup,
-                        &HTML_ENTITY,
-                        &mut visit_text,
-                    ));
-                } else {
-                    result.push_str(text);
-                }
+                let request = context
+                    .font_request
+                    .as_ref()
+                    .ok_or_else(|| format!("Stylo 未返回 <{}> 的计算字体样式", context.name))?;
+                result.push_str(&rewrite_text_with_resolver(
+                    text,
+                    request,
+                    font_resolver,
+                    available_font_paths,
+                    replacements,
+                    failure_markup,
+                    &HTML_ENTITY,
+                    &mut visit_text,
+                ));
             } else {
                 result.push_str(text);
             }
@@ -438,13 +465,9 @@ fn transform_xhtml(
         let current_marker = marker;
         marker += 1;
         if !empty {
-            let font_request = computed_fonts.get(current_marker).cloned().or_else(|| {
-                stack
-                    .last()
-                    .and_then(|context| context.font_request.clone())
-            });
+            let font_request = computed_fonts.get(current_marker).cloned();
             stack.push(ElementContext {
-                rewrites_text: !matches!(name.as_str(), "script" | "style"),
+                rewrites_text: !is_non_rendered_text_element(&name),
                 name,
                 font_request,
             });
@@ -467,7 +490,7 @@ fn rewrite_text_with_resolver(
     replacements: &BTreeMap<String, BTreeMap<char, char>>,
     failure_markup: Option<&BTreeMap<String, BTreeMap<char, String>>>,
     entity: &Regex,
-    visit_text: &mut impl FnMut(&str, &str),
+    visit_text: &mut impl FnMut(&str, &str, &str),
 ) -> String {
     let mut result = String::with_capacity(text.len());
     let mut cursor = 0;
@@ -507,30 +530,28 @@ fn rewrite_resolved_fragment(
     available_font_paths: &BTreeSet<String>,
     replacements: &BTreeMap<String, BTreeMap<char, char>>,
     failure_markup: Option<&BTreeMap<String, BTreeMap<char, String>>>,
-    visit_text: &mut impl FnMut(&str, &str),
+    visit_text: &mut impl FnMut(&str, &str, &str),
 ) {
     for character in text.chars() {
-        let path = resolver
-            .resolve(request, character, |source| {
-                available_font_paths.contains(source)
-            })
-            .map(str::to_owned);
-        let Some(path) = path else {
+        let resolved = resolver.resolve_match(request, character, |source| {
+            available_font_paths.contains(source)
+        });
+        let Some(resolved) = resolved else {
             output.push(character);
             continue;
         };
         let mut visible = String::new();
         visible.push(character);
-        visit_text(&path, &visible);
+        visit_text(resolved.source, resolved.family, &visible);
         if let Some(markup) = failure_markup
-            .and_then(|failures| failures.get(path.as_str()))
+            .and_then(|failures| failures.get(resolved.source))
             .and_then(|failures| failures.get(&character))
         {
             output.push_str(markup);
         } else {
             output.push(
                 replacements
-                    .get(path.as_str())
+                    .get(resolved.source)
                     .and_then(|mapping| mapping.get(&character))
                     .copied()
                     .unwrap_or(character),
@@ -599,6 +620,12 @@ fn is_void_element(name: &str) -> bool {
             | "track"
             | "wbr"
     )
+}
+
+/// Text in document metadata and stylesheet/script source is not rendered by
+/// the EPUB reading surface, so it must not participate in font glyph mapping.
+fn is_non_rendered_text_element(name: &str) -> bool {
+    matches!(name, "script" | "style" | "title")
 }
 
 /// Moves glyph bindings from source text codepoints to generated obfuscation
@@ -699,7 +726,7 @@ mod tests {
             &available,
             &replacements,
             None,
-            |_, _| {},
+            |_, _, _| {},
         )
         .expect("rewrite XHTML");
         assert_eq!(
@@ -709,7 +736,7 @@ mod tests {
     }
 
     #[test]
-    fn stylo_rewrite_inherits_when_metadata_node_has_no_primary_style() {
+    fn stylo_rewrite_skips_title_without_a_computed_style() {
         let xhtml = r#"<html><head><title>Title</title></head><body><p>甲</p></body></html>"#;
         let css = r#"
             @font-face { font-family: Target; src: url(../Fonts/target.ttf); }
@@ -731,11 +758,43 @@ mod tests {
             &available,
             &replacements,
             None,
-            |_, _| {},
+            |_, _, _| {},
         )
-        .expect("metadata nodes inherit their nearest Stylo font request");
+        .expect("title metadata does not need a computed font style");
 
-        assert!(rewritten.contains("<title>Title</title>"));
-        assert!(rewritten.contains("<p>乙</p>"));
+        assert_eq!(
+            rewritten,
+            r#"<html><head><title>Title</title></head><body><p>乙</p></body></html>"#
+        );
+    }
+
+    #[test]
+    fn stylo_rewrite_rejects_missing_body_style_without_manual_fallback() {
+        let xhtml = r#"<html><head><title>Title</title></head><body><p>甲</p></body></html>"#;
+        let css = r#"
+            @font-face { font-family: Target; src: url(../Fonts/target.ttf); }
+            p { font-family: Target; }
+        "#;
+        let mut computed = compute_font_map(xhtml, &[css]).expect("Stylo styles");
+        computed.remove_marker(4);
+        let resolver = FontFaceResolver::new(
+            parse_font_faces(css, "OPS/Styles/style.css", 0).expect("font faces"),
+        );
+        let path = "OPS/Fonts/target.ttf".to_string();
+        let available = BTreeSet::from([path.clone()]);
+        let replacements = BTreeMap::from([(path, BTreeMap::from([('甲', '乙')]))]);
+
+        let error = transform_xhtml(
+            xhtml,
+            &computed,
+            &resolver,
+            &available,
+            &replacements,
+            None,
+            |_, _, _| {},
+        )
+        .expect_err("missing body styles must not use a manual inheritance fallback");
+
+        assert!(error.contains("Stylo 未返回 <p> 的计算字体样式"));
     }
 }

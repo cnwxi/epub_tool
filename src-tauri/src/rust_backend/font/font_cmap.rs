@@ -141,6 +141,20 @@ mod tests {
     use super::{rewrite_unicode_cmap, sfnt_data, unicode_cmap};
     use std::collections::BTreeMap;
 
+    fn true_type_fixture() -> Vec<u8> {
+        let hex = include_str!("../../../tests/data/ttf-parser-demo.ttf.hex")
+            .bytes()
+            .filter(|byte| !byte.is_ascii_whitespace())
+            .collect::<Vec<_>>();
+        assert_eq!(hex.len() % 2, 0, "TrueType fixture hex must be even");
+        hex.chunks_exact(2)
+            .map(|pair| {
+                let pair = std::str::from_utf8(pair).expect("ASCII hex fixture");
+                u8::from_str_radix(pair, 16).expect("valid TrueType fixture hex")
+            })
+            .collect()
+    }
+
     #[test]
     fn rejects_non_font_bytes() {
         assert!(unicode_cmap(b"not-a-font").is_err());
@@ -151,6 +165,22 @@ mod tests {
         let mut replacements = BTreeMap::new();
         replacements.insert(0x11_0000, 1);
         assert!(rewrite_unicode_cmap(b"not-a-font", &replacements, &[]).is_err());
+    }
+
+    #[test]
+    fn reads_and_rewrites_ttf_and_otf_in_the_original_sfnt_flavor() {
+        let ttf = true_type_fixture();
+        for (signature, font) in [
+            (b"\0\x01\0\0".as_slice(), ttf.as_slice()),
+            (b"OTTO".as_slice(), blitz_dom::BULLET_FONT),
+        ] {
+            let cmap = unicode_cmap(font).expect("source cmap");
+            assert!(!cmap.is_empty());
+            let rewritten = rewrite_unicode_cmap(font, &BTreeMap::new(), &[])
+                .expect("rewrite uncompressed font");
+            assert_eq!(&rewritten[..4], signature);
+            assert!(unicode_cmap(&rewritten).is_ok());
+        }
     }
 
     #[test]

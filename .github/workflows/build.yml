@@ -84,7 +84,7 @@ jobs:
             frontend/package-lock.json
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
 
@@ -203,7 +203,7 @@ jobs:
           node-version-file: ".nvmrc"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.1
 
       - name: Install Linux dependencies
         if: matrix.target.platform == 'linux'
@@ -422,7 +422,7 @@ jobs:
           java-version: "17"
 
       - name: Setup Rust Android target
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: ${{ matrix.rust_target }}
 
@@ -464,7 +464,19 @@ jobs:
 
       - name: Verify packaged ONNX Runtime library
         shell: bash
-        run: test -f "src-tauri/gen/android/app/src/main/jniLibs/${{ matrix.abi }}/libonnxruntime.so"
+        env:
+          ANDROID_ABI: ${{ matrix.abi }}
+        run: |
+          set -euo pipefail
+          source_library="src-tauri/gen/android/app/src/main/jniLibs/${ANDROID_ABI}/libonnxruntime.so"
+          test -f "$source_library"
+
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)
+          if [ -z "$apk" ]; then
+            echo "Android 构建未生成 APK" >&2
+            exit 1
+          fi
+          jar tf "$apk" | grep -Fx "lib/${ANDROID_ABI}/libonnxruntime.so"
 
       - name: Upload unsigned Android compile artifact
         uses: actions/upload-artifact@v7
@@ -493,7 +505,7 @@ jobs:
             frontend/package-lock.json
 
       - name: Setup Rust iOS targets
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
 
@@ -704,7 +716,7 @@ jobs:
           path: source-repo
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.1
 
       - name: Find macOS dmg assets
         id: asset

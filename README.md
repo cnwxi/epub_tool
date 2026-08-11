@@ -11,7 +11,7 @@
   <a href="https://github.com/cnwxi/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-cnwxi%2Ftap-FBB040" alt="Homebrew Tap"></a>
 </p>
 
-一个面向 EPUB 批量处理的跨平台工具，采用 `Tauri 2 + Vue 3 + TypeScript + Rust`。Linux、macOS、Windows 通过隔离的 Rust Worker 执行任务；Android/iOS 在应用进程内执行相同的 Rust 任务核心。开发、测试、构建和发布使用 Rust/Node 工具链。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
+一个面向 EPUB 批量处理的跨平台工具，采用 `Tauri 2 + Vue 3 + TypeScript + Rust`。Linux、macOS、Windows、Android、iOS 均在应用进程内执行相同的 Rust 任务核心。开发、测试、构建和发布使用 Rust/Node 工具链。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
 
 ![Epub Tool 桌面端界面预览](./assets/img/epub_tool_newui.png)
 
@@ -30,7 +30,7 @@
 
 ## 当前实现
 
-各平台复用统一任务界面、类型化任务协议和 Rust 业务核心。平台差异集中在运行时适配层：桌面端负责 Worker 生命周期、目录扫描和路径打开；移动端负责系统文件 URI、缓存暂存和结果导出。
+各平台复用统一任务界面、类型化任务协议、进程内运行时和 Rust 业务核心。平台差异只集中在权限与文件适配层：桌面端负责目录扫描和路径打开；移动端负责系统文件 URI、缓存暂存和结果导出。
 
 字体扫描、加密和解密共用 `EPUB/XHTML/CSS → Stylo computed style → FontRequest → FontFaceResolver → 字符级字体分配` 流水线。Stylo 是唯一生产 CSS 选择器、级联与计算样式路径；字体容器支持 TTF、OTF、WOFF、WOFF2。桌面与移动均携带 ONNX OCR 模型并启用字体解密，低置信度结果会保留 Top-K 候选、置信度和字形图片供复核，不会猜测替换。
 
@@ -38,9 +38,9 @@
 
 | 平台 | 架构 / ABI | 任务运行方式 | 构建状态 |
 | --- | --- | --- | --- |
-| Windows | x64、arm64 | Rust Worker | NSIS |
-| macOS | x64、arm64 | Rust Worker | app、DMG |
-| Linux | x64、arm64 | Rust Worker | deb、rpm |
+| Windows | x64、arm64 | 进程内 | NSIS |
+| macOS | x64、arm64 | 进程内 | app、DMG |
+| Linux | x64、arm64 | 进程内 | deb、rpm |
 | Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | CI 无签名 debug APK |
 | iOS | arm64 device、arm64 simulator | 进程内 | CI device library / simulator app |
 
@@ -98,7 +98,7 @@ brew upgrade --cask epub-tool-newui
 - `frontend/`：Vue 3 跨平台前端
 - `src-tauri/`：Tauri 壳层、Rust 任务引擎、ONNX/OpenCC 资源与打包配置
 - `src-tauri/src/rust_backend/`：按 `epub`、`image`、`text`、`font` 分类的任务实现
-- `src-tauri/tests/`：核心任务、输出、事件和桌面 Worker 协议集成回归
+- `src-tauri/tests/`：核心任务、输出、事件和进程内运行时集成回归
 - `xtask/`：OCR 模型校验、移动 ONNX Runtime、移动构建和发布维护工具
 - `proto/`：Tauri IPC Protobuf wire contract
 - `assets/docs/`：架构、构建、协议与发布说明

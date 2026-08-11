@@ -19,6 +19,28 @@ use std::{
 };
 use text::ChineseConvertTask;
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskUpdate {
+    pub message: String,
+    pub file_progress: Option<f64>,
+}
+
+impl TaskUpdate {
+    pub fn message(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            file_progress: None,
+        }
+    }
+
+    pub fn progress(message: impl Into<String>, file_progress: f64) -> Self {
+        Self {
+            message: message.into(),
+            file_progress: Some(file_progress),
+        }
+    }
+}
+
 pub trait EpubTask: Send + Sync {
     fn task_type(&self) -> TaskType;
     fn supports_options(&self, options: &TaskOptions) -> bool;
@@ -33,7 +55,7 @@ pub trait EpubTask: Send + Sync {
         input: &Path,
         workspace: &mut epub::EpubWorkspace,
         options: &TaskOptions,
-        log: &mut dyn FnMut(String),
+        update: &mut dyn FnMut(TaskUpdate),
     ) -> Result<TaskOutcome, String>;
 }
 
@@ -60,9 +82,11 @@ impl EpubTask for ImageTask {
         _input: &Path,
         workspace: &mut epub::EpubWorkspace,
         options: &TaskOptions,
-        log: &mut dyn FnMut(String),
+        update: &mut dyn FnMut(TaskUpdate),
     ) -> Result<TaskOutcome, String> {
-        match self.process(workspace, options, log)? {
+        match self.process(workspace, options, &mut |message| {
+            update(TaskUpdate::message(message));
+        })? {
             ImageProcessOutcome::Success => Ok(TaskOutcome::Success),
             ImageProcessOutcome::Skip => Ok(TaskOutcome::Skip),
         }
@@ -268,35 +292,80 @@ fn run_file(
     if input_has_output_suffix(input, output_suffix) {
         return Ok(TaskOutcome::Skip);
     }
-    let mut log = |message: String| -> Result<(), String> {
-        append_log(log_path, &message)?;
-        emit(event(
-            "task.log",
-            request,
-            "running",
-            progress(index.saturating_sub(1), total_files),
-            message,
-            Some(input.to_string_lossy().to_string()),
-            index,
-            total_files,
-            Some(output.to_string_lossy().to_string()),
-            Some("info"),
-        ))
+    let last_file_progress = std::cell::Cell::new(0.0);
+    let update_error = std::cell::RefCell::new(None);
+    let mut update = |update: TaskUpdate| {
+        if update_error.borrow().is_some() {
+            return;
+        }
+        let file_progress = match update.file_progress {
+            Some(candidate) => match monotonic_file_progress(last_file_progress.get(), candidate) {
+                Ok(progress) => progress,
+                Err(error) => {
+                    *update_error.borrow_mut() = Some(error);
+                    return;
+                }
+            },
+            None => last_file_progress.get(),
+        };
+        last_file_progress.set(file_progress);
+        let result = append_log(log_path, &update.message).and_then(|()| {
+            emit(event(
+                "task.log",
+                request,
+                "running",
+                task_progress_for_file(index, total_files, file_progress),
+                update.message,
+                Some(input.to_string_lossy().to_string()),
+                index,
+                total_files,
+                Some(output.to_string_lossy().to_string()),
+                Some("info"),
+            ))
+        });
+        if let Err(error) = result {
+            *update_error.borrow_mut() = Some(error);
+        }
     };
     let mut workspace = epub::EpubWorkspace::load(input, |message| {
-        let _ = log(message);
+        update(TaskUpdate::message(message));
     })?;
-    let outcome = task.process(input, &mut workspace, options, &mut |message| {
-        let _ = log(message);
-    })?;
+    take_update_error(&update_error)?;
+    let outcome = task.process(input, &mut workspace, options, &mut update)?;
+    take_update_error(&update_error)?;
     if matches!(outcome, TaskOutcome::Skip) {
         return Ok(TaskOutcome::Skip);
     }
     workspace.mark_generated_by_tool()?;
     workspace.write(output, |message| {
-        let _ = log(message);
+        update(TaskUpdate::message(message));
     })?;
+    take_update_error(&update_error)?;
     Ok(TaskOutcome::Success)
+}
+
+fn monotonic_file_progress(previous: f64, candidate: f64) -> Result<f64, String> {
+    if !candidate.is_finite() || !(0.0..=100.0).contains(&candidate) {
+        return Err(format!(
+            "文件处理进度必须是 0 到 100 的有限数值: {candidate}"
+        ));
+    }
+    Ok(previous.max(candidate))
+}
+
+fn task_progress_for_file(index: usize, total_files: usize, file_progress: f64) -> f64 {
+    if total_files == 0 {
+        return 0.0;
+    }
+    let completed_files = index.saturating_sub(1) as f64;
+    (completed_files + file_progress / 100.0) * 100.0 / total_files as f64
+}
+
+fn take_update_error(error: &std::cell::RefCell<Option<String>>) -> Result<(), String> {
+    match error.borrow_mut().take() {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn task_for(task_type: TaskType) -> Option<Box<dyn EpubTask>> {
@@ -408,15 +477,111 @@ fn append_log(log_path: &Path, message: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{run, supports};
+    use super::{
+        monotonic_file_progress, run, run_file, supports, task_progress_for_file, EpubTask,
+        TaskOutcome, TaskUpdate,
+    };
     use crate::task_types::{FontTaskOptions, ImageTaskOptions, TaskOptions, TaskSpec, TaskType};
     use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
     use std::{
         fs,
         io::{Cursor, Write},
+        path::Path,
         time::{SystemTime, UNIX_EPOCH},
     };
     use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
+
+    #[test]
+    fn file_progress_is_monotonic_and_maps_into_batch_progress() {
+        assert_eq!(monotonic_file_progress(40.0, 25.0).unwrap(), 40.0);
+        assert_eq!(monotonic_file_progress(40.0, 75.0).unwrap(), 75.0);
+        assert!(monotonic_file_progress(0.0, f64::NAN).is_err());
+        assert!(monotonic_file_progress(0.0, 100.1).is_err());
+
+        assert_eq!(task_progress_for_file(1, 1, 25.0), 25.0);
+        assert_eq!(task_progress_for_file(2, 4, 0.0), 25.0);
+        assert_eq!(task_progress_for_file(2, 4, 50.0), 37.5);
+        assert_eq!(task_progress_for_file(2, 4, 100.0), 50.0);
+    }
+
+    struct ProgressTask;
+
+    impl EpubTask for ProgressTask {
+        fn task_type(&self) -> TaskType {
+            TaskType::ReformatEpub
+        }
+
+        fn supports_options(&self, options: &TaskOptions) -> bool {
+            matches!(options, TaskOptions::Empty)
+        }
+
+        fn process(
+            &self,
+            _input: &Path,
+            _workspace: &mut super::epub::EpubWorkspace,
+            _options: &TaskOptions,
+            update: &mut dyn FnMut(TaskUpdate),
+        ) -> Result<TaskOutcome, String> {
+            update(TaskUpdate::progress("first", 30.0));
+            update(TaskUpdate::progress("regression", 20.0));
+            update(TaskUpdate::progress("last", 99.0));
+            Ok(TaskOutcome::Success)
+        }
+    }
+
+    #[test]
+    fn typed_file_updates_emit_monotonic_overall_task_progress() {
+        let directory = std::env::temp_dir().join(format!(
+            "epub-tool-progress-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let input = directory.join("book.epub");
+        let output = directory.join("book_progress.epub");
+        let log_path = directory.join("progress.log");
+        write_image_epub(&input);
+        fs::write(&log_path, "").unwrap();
+        let request = TaskSpec {
+            task_id: "progress-test".to_string(),
+            task_type: TaskType::ReformatEpub,
+            input_files: vec![input.clone(); 4],
+            output_dir: Some(directory.clone()),
+            options: TaskOptions::Empty,
+        };
+        let mut events = Vec::new();
+
+        let outcome = run_file(
+            &ProgressTask,
+            &input,
+            &output,
+            "_progress.epub",
+            &TaskOptions::Empty,
+            &log_path,
+            &request,
+            2,
+            4,
+            &mut |event| {
+                events.push(event);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TaskOutcome::Success));
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.progress)
+                .collect::<Vec<_>>(),
+            [32.5, 32.5, 49.75]
+        );
+        assert!(events.iter().all(|event| event.event == "task.log"));
+        fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn font_capability_probe_leaves_epub_validation_to_each_file() {

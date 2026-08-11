@@ -1,13 +1,14 @@
 # 更新日志
 
 ### 26.8.11
-完成纯 Rust 统一业务内核重构：桌面端使用隔离的 `rust-task-runner` Worker，Android 与 iOS 在应用进程内执行，所有平台共享同一套 `TaskSpec`、`TaskOptions`、`TaskEvent` 与 `TaskResult`。<br>
+完成纯 Rust 统一业务内核重构：Windows、macOS、Linux、Android 与 iOS 全部在应用进程内执行同一个 Rust 核心，共享同一套 `TaskSpec`、`TaskOptions`、`TaskEvent` 与 `TaskResult`，不再启动任务子进程。<br>
 全部现有 EPUB、字体、图片和简繁转换任务迁移至 Rust；删除 Python 后端、sidecar、依赖、生成代码、测试脚本及构建发布链路中的 Python 运行时要求。<br>
 字体扫描、加密与 OCR 解密统一使用 Stylo 计算样式和共享字体决策计划，支持 family stack、weight、style、stretch、`unicode-range`、多 `src`、继承、CSS 变量、`!important` 与复杂选择器。<br>
 完善 TTF、OTF、WOFF、WOFF2 的 cmap 读取、改写与原容器格式回写；OCR 解密保留置信度、Top-K 候选、失败状态和字形图片，低置信度结果不再猜测替换。<br>
 接入 Android 与 iOS 的 ONNX Runtime 和 OCR 资源准备流程，移动端启用字体解密；新增 Rust `xtask` 负责模型校验、移动 ORT 下载校验、目标库提取和移动构建。<br>
 重建 CI 质量门禁与跨平台构建矩阵：桌面覆盖 Windows、macOS、Linux 的 x64/arm64，Android 覆盖四种 ABI，iOS 覆盖 device Rust library 与 arm64 simulator app 编译验证。<br>
-补充 Rust 单元测试、统一核心集成测试、桌面 Worker 协议回归和真实 EPUB 全任务回归；同步更新架构、协议、本地开发、构建与发布文档。<br>
+补充 Rust 单元测试、统一核心集成测试、进程内运行时回归，以及真实加密字体 EPUB 的 OCR 解密回归；同步更新架构、协议、本地开发、构建与发布文档。<br>
+字体 OCR 进度改为首个字符、每 100 个字符及最后一个字符更新，类型化核心进度按批量文件位置折算为总体 `0..100`，并保证界面进度不回退；百分比统一显示一位小数。<br>
 保持既有发布产物范围：Linux 仅生成 `deb/rpm`，Windows 仅生成 NSIS `Setup.exe`，macOS 生成 app/DMG。<br>
 
 ### 26.7.29

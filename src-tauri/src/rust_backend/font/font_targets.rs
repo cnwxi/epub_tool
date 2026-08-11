@@ -1,9 +1,6 @@
-use super::font_style::compute_epub_font_document;
+use super::encrypt_font::FontEncryptionPlan;
 use crate::rust_backend::epub::EpubWorkspace;
-use crate::rust_backend::text_encoding::{decode_epub_text, text_kind_for_path};
-use std::{collections::BTreeSet, path::Path};
-
-const FONT_EXTENSIONS: [&str; 4] = [".ttf", ".otf", ".woff", ".woff2"];
+use std::path::Path;
 
 /// Lists packaged font families from the same document-scoped Stylo results
 /// used by font encryption and decryption.
@@ -13,37 +10,9 @@ pub fn list_font_targets(input: &Path) -> Result<Vec<String>, String> {
 }
 
 fn list_workspace_font_targets(workspace: &EpubWorkspace) -> Result<Vec<String>, String> {
-    let mut families = BTreeSet::new();
-    for (member, data) in &workspace.members {
-        if !is_xhtml(member) {
-            continue;
-        }
-        let source = decode_epub_text(data, text_kind_for_path(member), member)?;
-        let document = compute_epub_font_document(&source, member, &workspace.members)?;
-        for face in document.faces {
-            if face
-                .sources
-                .iter()
-                .any(|source| is_packaged_font(source, workspace))
-            {
-                families.insert(face.family);
-            }
-        }
-    }
-    Ok(families.into_iter().collect())
-}
-
-fn is_xhtml(path: &str) -> bool {
-    let path = path.to_ascii_lowercase();
-    path.ends_with(".xhtml") || path.ends_with(".html") || path.ends_with(".htm")
-}
-
-fn is_packaged_font(path: &str, workspace: &EpubWorkspace) -> bool {
-    let lower = path.to_ascii_lowercase();
-    FONT_EXTENSIONS
-        .iter()
-        .any(|extension| lower.ends_with(extension))
-        && workspace.members.contains_key(path)
+    FontEncryptionPlan::build_for_target_scan(workspace)?
+        .used_target_families(workspace)
+        .map(|families| families.into_iter().collect())
 }
 
 #[cfg(test)]
@@ -67,15 +36,15 @@ mod tests {
         let workspace = workspace([
             (
                 "OPS/chapter.xhtml",
-                r#"<html><head><link rel="stylesheet" href="styles/main.css"/></head><body><p>text</p></body></html>"#,
+                r#"<html><head><link rel="stylesheet" href="styles/main.css"/></head><body><p class="first">first</p><p class="nested">nested</p></body></html>"#,
             ),
             (
                 "OPS/styles/main.css",
-                r#"@import url("nested.css"); @font-face { font-family: MissingFirst; src: url("missing.ttf"), url("../Fonts/target.woff2"); }"#,
+                r#"@import url("nested.css"); @font-face { font-family: MissingFirst; src: url("missing.ttf"), url("../Fonts/target.woff2"); } @font-face { font-family: DeclaredUnused; src: url("../Fonts/unused.ttf"); } .first { font-family: MissingFirst; }"#,
             ),
             (
                 "OPS/styles/nested.css",
-                r#"@media screen { @font-face { font-family: ActiveNested; src: url("../Fonts/nested.otf"); } }"#,
+                r#"@media screen { @font-face { font-family: ActiveNested; src: url("../Fonts/nested.otf"); } .nested { font-family: ActiveNested; } }"#,
             ),
             (
                 "OPS/styles/unlinked.css",
@@ -83,6 +52,7 @@ mod tests {
             ),
             ("OPS/Fonts/target.woff2", "font"),
             ("OPS/Fonts/nested.otf", "font"),
+            ("OPS/Fonts/unused.ttf", "font"),
             ("OPS/Fonts/unlinked.ttf", "font"),
         ]);
 
@@ -97,7 +67,7 @@ mod tests {
         let workspace = workspace([
             (
                 "chapter.xhtml",
-                r#"<html><head><style>@font-face { font-family: Inline; src: url("Fonts/inline.ttf"); } @font-face { font-family: Missing; src: url("Fonts/missing.ttf"); }</style></head><body/></html>"#,
+                r#"<html><head><title>Metadata title</title><style>@font-face { font-family: Inline; src: url("Fonts/inline.ttf"); } @font-face { font-family: Missing; src: url("Fonts/missing.ttf"); }</style></head><body style="font-family: Inline">text</body></html>"#,
             ),
             ("Fonts/inline.ttf", "font"),
         ]);

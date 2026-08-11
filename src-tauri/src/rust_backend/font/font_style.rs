@@ -55,17 +55,33 @@ pub struct FontFaceResolver {
     faces: Vec<FontFace>,
 }
 
+pub(crate) struct ResolvedFont<'a> {
+    pub family: &'a str,
+    pub source: &'a str,
+}
+
 impl FontFaceResolver {
     pub fn new(faces: Vec<FontFace>) -> Self {
         Self { faces }
     }
 
+    #[cfg(test)]
     pub fn resolve<'a>(
         &'a self,
         request: &FontRequest,
         character: char,
         source_exists: impl Fn(&str) -> bool,
     ) -> Option<&'a str> {
+        self.resolve_match(request, character, source_exists)
+            .map(|resolved| resolved.source)
+    }
+
+    pub(crate) fn resolve_match<'a>(
+        &'a self,
+        request: &FontRequest,
+        character: char,
+        source_exists: impl Fn(&str) -> bool,
+    ) -> Option<ResolvedFont<'a>> {
         for family in &request.families {
             let normalized = normalize_font_family(family);
             let mut candidates = self
@@ -88,7 +104,10 @@ impl FontFaceResolver {
             });
             for face in candidates {
                 if let Some(source) = face.sources.iter().find(|source| source_exists(source)) {
-                    return Some(source);
+                    return Some(ResolvedFont {
+                        family: &face.family,
+                        source,
+                    });
                 }
             }
         }

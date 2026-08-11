@@ -13,11 +13,9 @@ export type SectionKey = TaskType | "overview" | "engine" | "settings" | "about"
 export type FontLoadStatus = "idle" | "loading" | "loaded" | "error";
 export type OcrCharPolicy = "strict" | "compatible";
 export type EngineState =
-  | "stopped"
   | "starting"
   | "ready"
   | "busy"
-  | "recovering"
   | "unavailable";
 export type TaskOutputDirectoryMap = Record<TaskType, string>;
 
@@ -98,26 +96,20 @@ export interface AppSettings {
   autoOpenLogFile: boolean;
   autoCheckUpdates: boolean;
   keepHistoryCount: number;
-  engineAutoRestartLimit: number;
 }
 
 export interface EngineStatus {
   state: EngineState;
   message: string;
   lastError?: string | null;
-  pid?: number | null;
-  recoveryAttempts: number;
-  autoRestartLimit: number;
-  manualRestartCount: number;
 }
 
 export interface PlatformCapabilities {
   platform: "linux" | "macos" | "windows" | "android" | "ios" | "unknown";
-  runtime: "worker" | "inProcess" | "browser";
+  runtime: "inProcess" | "browser";
   supportsDirectoryPicker: boolean;
   supportsDirectoryScan: boolean;
   supportsOpenPath: boolean;
-  supportsEngineRestart: boolean;
   requiresOutputExport: boolean;
   supportsFileAssociations: boolean;
   supportsFontOcr: boolean;

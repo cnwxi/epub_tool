@@ -1,5 +1,5 @@
 use crate::rust_backend::text_encoding::{decode_epub_text, encode_epub_text, text_kind_for_path};
-use crate::rust_backend::{epub::EpubWorkspace, EpubTask, TaskOutcome};
+use crate::rust_backend::{epub::EpubWorkspace, EpubTask, TaskOutcome, TaskUpdate};
 use crate::task_types::{ChineseConversionDirection, TaskOptions, TaskType};
 use regex::{Captures, Regex};
 use std::{
@@ -234,7 +234,7 @@ impl EpubTask for ChineseConvertTask {
         _input: &Path,
         workspace: &mut EpubWorkspace,
         options: &TaskOptions,
-        log: &mut dyn FnMut(String),
+        update: &mut dyn FnMut(TaskUpdate),
     ) -> Result<TaskOutcome, String> {
         let direction = options
             .chinese_direction()
@@ -259,7 +259,9 @@ impl EpubTask for ChineseConvertTask {
                 changed_files += 1;
             }
         }
-        log(format!("简繁转换完成：更新 {changed_files} 个文本文件"));
+        update(TaskUpdate::message(format!(
+            "简繁转换完成：更新 {changed_files} 个文本文件"
+        )));
         Ok(TaskOutcome::Success)
     }
 }

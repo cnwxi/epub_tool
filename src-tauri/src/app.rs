@@ -68,10 +68,8 @@ pub fn run() {
             commands::files::open_path,
             commands::files::read_image_preview,
             commands::files::resolve_input_sources,
-            commands::engine::restart_engine,
             commands::tasks::run_epub_task,
             commands::state::save_persisted_state,
-            commands::engine::set_engine_auto_restart_limit,
             commands::files::stage_source_for_task,
             commands::files::take_opened_sources,
             commands::files::validate_output_directory,
@@ -79,12 +77,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| match event {
-        tauri::RunEvent::Exit => {
-            app_handle.state::<RuntimeServices>().engine().shutdown();
-        }
+    app.run(|app_handle, event| {
         #[cfg(mobile)]
-        tauri::RunEvent::Opened { urls } => {
+        if let tauri::RunEvent::Opened { urls } = event {
             use tauri::Emitter;
 
             let opened_sources = urls
@@ -96,6 +91,8 @@ pub fn run() {
                 .extend(opened_sources.iter().cloned());
             let _ = app_handle.emit("opened", opened_sources);
         }
-        _ => {}
+
+        #[cfg(not(mobile))]
+        let _ = (app_handle, event);
     });
 }

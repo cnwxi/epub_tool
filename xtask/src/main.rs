@@ -77,9 +77,8 @@ fn verify_ocr_model(model_name: Option<&str>) -> Result<(), String> {
             "--manifest-path",
             "src-tauri/Cargo.toml",
             "--bin",
-            "rust-task-runner",
+            "verify-ocr-model",
             "--",
-            "--verify-ocr-model-dir",
         ])
         .arg(&model_dir)
         .status()
