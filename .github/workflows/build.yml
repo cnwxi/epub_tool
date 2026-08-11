@@ -531,7 +531,7 @@ jobs:
 
   mobile_ios:
     name: iOS Unsigned Compile Validation
-    runs-on: macos-14
+    runs-on: macos-15
     needs: quality
     permissions:
       contents: read
