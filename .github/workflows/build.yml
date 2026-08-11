@@ -425,27 +425,11 @@ jobs:
           if-no-files-found: error
 
   mobile_android:
-    name: Android ${{ matrix.target }} Unsigned Compile Validation
+    name: Android arm64-v8a Unsigned Compile Validation
     runs-on: ubuntu-24.04
     needs: quality
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64
-            rust_target: aarch64-linux-android
-            abi: arm64-v8a
-          - target: armv7
-            rust_target: armv7-linux-androideabi
-            abi: armeabi-v7a
-          - target: i686
-            rust_target: i686-linux-android
-            abi: x86
-          - target: x86_64
-            rust_target: x86_64-linux-android
-            abi: x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -468,7 +452,7 @@ jobs:
       - name: Setup Rust Android target
         uses: dtolnay/rust-toolchain@1.97.1
         with:
-          targets: ${{ matrix.rust_target }}
+          targets: aarch64-linux-android
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -504,12 +488,12 @@ jobs:
       - name: Build unsigned debug APK with bundled ONNX Runtime
         run: >-
           cargo run --locked --manifest-path xtask/Cargo.toml --
-          mobile-build android ${{ matrix.target }} --debug --apk --ci
+          mobile-build android aarch64 --debug --apk --ci
 
       - name: Verify packaged ONNX Runtime library
         shell: bash
         env:
-          ANDROID_ABI: ${{ matrix.abi }}
+          ANDROID_ABI: arm64-v8a
         run: |
           set -euo pipefail
           source_library="src-tauri/gen/android/app/src/main/jniLibs/${ANDROID_ABI}/libonnxruntime.so"
@@ -525,7 +509,7 @@ jobs:
       - name: Upload unsigned Android compile artifact
         uses: actions/upload-artifact@v7
         with:
-          name: android-${{ matrix.abi }}-unsigned-debug
+          name: android-arm64-v8a-unsigned-debug
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 

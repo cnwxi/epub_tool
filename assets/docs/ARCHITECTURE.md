@@ -91,7 +91,7 @@ Stylo 负责选择器、级联和计算样式。外链 CSS、递归 `@import`、
 | Windows | x64、arm64 | in-process | ONNX Runtime | NSIS |
 | macOS | x64、arm64 | in-process | ONNX Runtime | app、DMG |
 | Linux | x64、arm64 | in-process | ONNX Runtime | deb、rpm |
-| Android | arm64-v8a、armeabi-v7a、x86、x86_64 | in-process | ORT Android 1.24.3 | unsigned debug APK |
+| Android | arm64-v8a | in-process | ORT Android 1.24.3 | unsigned debug APK |
 | iOS | arm64 device、arm64 simulator | in-process | ORT iOS 1.24.3 | device library、unsigned simulator app |
 
 目录选择、目录扫描和打开路径是桌面能力；移动端使用文件 URI、缓存暂存与结果导出。任务类型、运行时与字体 OCR 不因平台而分叉。

@@ -55,7 +55,7 @@ Android 使用动态 `libonnxruntime.so`，由 `ORT_LIB_PATH` 与 `ORT_PREFER_DY
 
 ```bash
 npm run tauri:android:init -- --ci
-npm run tauri:android:build -- aarch64 --debug --apk --ci
+npm run tauri:android:build -- --debug --apk --ci
 ```
 
 目标映射：
@@ -63,11 +63,8 @@ npm run tauri:android:build -- aarch64 --debug --apk --ci
 | Tauri target | Rust target | APK ABI |
 | --- | --- | --- |
 | `aarch64` | `aarch64-linux-android` | `arm64-v8a` |
-| `armv7` | `armv7-linux-androideabi` | `armeabi-v7a` |
-| `i686` | `i686-linux-android` | `x86` |
-| `x86_64` | `x86_64-linux-android` | `x86_64` |
 
-CI 对四个 ABI 分别构建 debug APK，验证目标链接，并检查 `lib/<abi>/libonnxruntime.so` 已实际打入 APK。这些 APK 是无签名编译产物；Play 发布需要 keystore、签名配置和商店凭据。
+本地与 CI 均固定构建 `aarch64`（`arm64-v8a`），避免生成包含全部 ABI 的 universal APK。CI 会检查 `lib/arm64-v8a/libonnxruntime.so` 已实际打入 APK。该 APK 是无签名编译产物；Play 发布需要 keystore、签名配置和商店凭据。
 
 ## iOS
 

@@ -41,7 +41,7 @@
 | Windows | x64、arm64 | 进程内 | NSIS |
 | macOS | x64、arm64 | 进程内 | app、DMG |
 | Linux | x64、arm64 | 进程内 | deb、rpm |
-| Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | CI 无签名 debug APK |
+| Android | arm64-v8a | 进程内 | CI 无签名 debug APK |
 | iOS | arm64 device、arm64 simulator | 进程内 | CI device library / simulator app |
 
 移动商店包、真实设备发布和生产签名需要平台凭据；CI 中的移动产物是编译与链接验证，不代表已签名发布。
