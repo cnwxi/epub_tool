@@ -6,7 +6,7 @@ import type {
   EngineResponse,
   ImagePreviewResponse,
   PlatformCapabilities,
-  PythonWorkerStatus,
+  EngineStatus,
   TaskRequest,
 } from "../types";
 
@@ -107,27 +107,27 @@ export function useTaskBridge() {
     return invoke<string[]>("take_opened_sources");
   };
 
-  const getPythonWorkerStatus = async (): Promise<PythonWorkerStatus | null> => {
+  const getEngineStatus = async (): Promise<EngineStatus | null> => {
     if (!isTauriRuntime()) {
       return null;
     }
-    return invoke<PythonWorkerStatus>("get_python_worker_status");
+    return invoke<EngineStatus>("get_engine_status");
   };
 
-  const setPythonWorkerAutoRestartLimit = async (
+  const setEngineAutoRestartLimit = async (
     limit: number,
-  ): Promise<PythonWorkerStatus | null> => {
+  ): Promise<EngineStatus | null> => {
     if (!isTauriRuntime()) {
       return null;
     }
-    return invoke<PythonWorkerStatus>("set_python_worker_auto_restart_limit", { limit });
+    return invoke<EngineStatus>("set_engine_auto_restart_limit", { limit });
   };
 
-  const restartPythonWorker = async (): Promise<PythonWorkerStatus | null> => {
+  const restartEngine = async (): Promise<EngineStatus | null> => {
     if (!isTauriRuntime()) {
       return null;
     }
-    return invoke<PythonWorkerStatus>("restart_python_worker");
+    return invoke<EngineStatus>("restart_engine");
   };
 
   const loadPersistedState = async <T>(
@@ -206,7 +206,7 @@ export function useTaskBridge() {
     getLogPath,
     takeOpenedSources,
     getPersistedStorePath,
-    getPythonWorkerStatus,
+    getEngineStatus,
     isMobileRuntime,
     isTauriRuntime,
     listFontTargetsBatch,
@@ -219,8 +219,8 @@ export function useTaskBridge() {
     savePersistedState,
     stageSourceForTask,
     exportOutput,
-    setPythonWorkerAutoRestartLimit,
-    restartPythonWorker,
+    setEngineAutoRestartLimit,
+    restartEngine,
     platformCapabilities,
     validateOutputDirectory,
   };

@@ -1,7 +1,7 @@
 use crate::rust_backend::{epub::EpubWorkspace, EpubTask, TaskOutcome};
+use crate::task_types::{TaskOptions, TaskType};
 use encoding_rs::Encoding;
 use regex::{Captures, Regex};
-use serde_json::Value;
 use std::{
     collections::HashMap,
     fs,
@@ -206,21 +206,19 @@ fn match_dictionary_segment(
 }
 
 impl EpubTask for ChineseConvertTask {
-    fn task_type(&self) -> &'static str {
-        "chinese_convert"
+    fn task_type(&self) -> TaskType {
+        TaskType::ChineseConvert
     }
 
-    fn supports_options(&self, options: &Value) -> bool {
-        matches!(
-            options.get("direction").and_then(Value::as_str),
-            Some("s2t" | "t2s")
-        ) && resource_dir().is_some_and(|directory| {
+    fn supports_options(&self, options: &TaskOptions) -> bool {
+        matches!(options.chinese_direction(), Some("s2t" | "t2s"))
+            && resource_dir().is_some_and(|directory| {
             directory.join("s2t.json").is_file() && directory.join("t2s.json").is_file()
         })
     }
 
-    fn output_suffix(&self, options: &Value) -> Result<String, String> {
-        match options.get("direction").and_then(Value::as_str) {
+    fn output_suffix(&self, options: &TaskOptions) -> Result<String, String> {
+        match options.chinese_direction() {
             Some("s2t") => Ok("_chinese_convert_tc.epub".to_string()),
             Some("t2s") => Ok("_chinese_convert_sc.epub".to_string()),
             _ => Err("direction 必须是 s2t 或 t2s".to_string()),
@@ -231,12 +229,11 @@ impl EpubTask for ChineseConvertTask {
         &self,
         _input: &Path,
         workspace: &mut EpubWorkspace,
-        options: &Value,
+        options: &TaskOptions,
         log: &mut dyn FnMut(String),
     ) -> Result<TaskOutcome, String> {
         let direction = options
-            .get("direction")
-            .and_then(Value::as_str)
+            .chinese_direction()
             .ok_or_else(|| "direction 必须是 s2t 或 t2s".to_string())?;
         let converter = converter(direction)?;
         let member_names: Vec<String> = workspace.members.keys().cloned().collect();
@@ -409,7 +406,13 @@ fn extension_of(path: &str) -> String {
 mod tests {
     use super::{convert_xml, converter, ChineseConvertTask};
     use crate::rust_backend::EpubTask;
-    use serde_json::json;
+    use crate::task_types::TaskOptions;
+
+    fn options(direction: &str) -> TaskOptions {
+        TaskOptions::ChineseConvert {
+            direction: Some(direction.to_string()),
+        }
+    }
 
     #[test]
     fn converts_visible_text_and_attributes_without_touching_script_or_css() {
@@ -425,7 +428,7 @@ mod tests {
         assert!(converted.contains("id=\"简体\""));
         assert!(converted.contains(".简体"));
         assert!(converted.contains("const text = '汉语'"));
-        assert!(ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
+        assert!(ChineseConvertTask.supports_options(&options("s2t")));
     }
 
     #[test]
@@ -435,7 +438,7 @@ mod tests {
             converter.convert("游移不定 却才华洋溢 反取憀栗 其中很多只能 看成一出面对"),
             "遊移不定 卻才華洋溢 反取憀慄 其中很多隻能 看成一出面對"
         );
-        assert!(ChineseConvertTask.supports_options(&json!({"direction": "s2t"})));
+        assert!(ChineseConvertTask.supports_options(&options("s2t")));
     }
 
     #[test]
@@ -443,6 +446,6 @@ mod tests {
         let converter = converter("t2s").unwrap();
         assert_eq!(converter.convert("射覆"), "射复");
         assert_eq!(converter.convert("於戲曲 乾隆御用"), "於戏曲 乾隆御用");
-        assert!(ChineseConvertTask.supports_options(&json!({"direction": "t2s"})));
+        assert!(ChineseConvertTask.supports_options(&options("t2s")));
     }
 }

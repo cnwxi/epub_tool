@@ -16,7 +16,7 @@ import type {
   NewTaskSettings,
   FontTargetResult,
   OcrCharPolicy,
-  PythonWorkerStatus,
+  EngineStatus,
   QueuedFile,
   SectionKey,
   TaskAggregateStats,
@@ -136,12 +136,12 @@ const defaultSettings: AppSettings = {
   autoOpenLogFile: false,
   autoCheckUpdates: true,
   keepHistoryCount: 10,
-  pythonWorkerAutoRestartLimit: 2,
+  engineAutoRestartLimit: 2,
 };
-const normalizePythonWorkerAutoRestartLimit = (value: unknown): number => {
+const normalizeEngineAutoRestartLimit = (value: unknown): number => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
-    return defaultSettings.pythonWorkerAutoRestartLimit;
+    return defaultSettings.engineAutoRestartLimit;
   }
   return Math.max(0, Math.min(5, Math.round(numeric)));
 };
@@ -252,7 +252,7 @@ const {
   getLogPath,
   takeOpenedSources,
   getPersistedStorePath,
-  getPythonWorkerStatus,
+  getEngineStatus,
   isMobileRuntime,
   isTauriRuntime,
   listFontTargetsBatch,
@@ -261,9 +261,9 @@ const {
   readImagePreview,
   refreshPlatformCapabilities,
   resolveInputSources,
-  restartPythonWorker,
+  restartEngine,
   runTask,
-  setPythonWorkerAutoRestartLimit,
+  setEngineAutoRestartLimit,
   stageSourceForTask,
   exportOutput,
   validateOutputDirectory,
@@ -371,8 +371,8 @@ const normalizeSettings = (value: unknown): AppSettings => {
       typeof raw.keepHistoryCount === "number"
         ? raw.keepHistoryCount
         : defaultSettings.keepHistoryCount,
-    pythonWorkerAutoRestartLimit: normalizePythonWorkerAutoRestartLimit(
-      raw.pythonWorkerAutoRestartLimit,
+    engineAutoRestartLimit: normalizeEngineAutoRestartLimit(
+      raw.engineAutoRestartLimit,
     ),
   };
 };
@@ -556,18 +556,18 @@ const progress = ref(0);
 const taskRunning = ref(false);
 const runningTaskType = ref<TaskType | null>(null);
 const taskStatus = ref("待命");
-const pythonWorkerStatus = ref<PythonWorkerStatus>({
+const engineStatus = ref<EngineStatus>({
   state: "starting",
   message: "正在启动处理引擎…",
   lastError: null,
   pid: null,
   recoveryAttempts: 0,
-  autoRestartLimit: defaultSettings.pythonWorkerAutoRestartLimit,
+  autoRestartLimit: defaultSettings.engineAutoRestartLimit,
   manualRestartCount: 0,
 });
-const pythonWorkerRestarting = ref(false);
-let pythonWorkerStatusTimer = 0;
-let pythonWorkerStatusRefreshInFlight = false;
+const engineRestarting = ref(false);
+let engineStatusTimer = 0;
+let engineStatusRefreshInFlight = false;
 const fontLoading = ref(false);
 const taskProgressCurrent = ref(0);
 const taskProgressTotal = ref(0);
@@ -1234,8 +1234,8 @@ const visibleProgressMessage = computed(() => {
   return "";
 });
 
-const pythonWorkerStatusLabel = computed(() => {
-  switch (pythonWorkerStatus.value.state) {
+const engineStatusLabel = computed(() => {
+  switch (engineStatus.value.state) {
     case "ready":
       return "处理引擎就绪";
     case "busy":
@@ -1251,49 +1251,49 @@ const pythonWorkerStatusLabel = computed(() => {
   }
 });
 
-const refreshPythonWorkerStatus = async () => {
-  if (pythonWorkerStatusRefreshInFlight) {
+const refreshEngineStatus = async () => {
+  if (engineStatusRefreshInFlight) {
     return;
   }
-  pythonWorkerStatusRefreshInFlight = true;
+  engineStatusRefreshInFlight = true;
   try {
-    const status = await getPythonWorkerStatus();
+    const status = await getEngineStatus();
     if (status) {
-      pythonWorkerStatus.value = status;
+      engineStatus.value = status;
     }
   } catch (error) {
-    pythonWorkerStatus.value = {
-      ...pythonWorkerStatus.value,
+    engineStatus.value = {
+      ...engineStatus.value,
       state: "unavailable",
       message: "无法获取处理引擎状态",
       lastError: toErrorMessage(error, "无法获取处理引擎状态。"),
     };
   } finally {
-    pythonWorkerStatusRefreshInFlight = false;
+    engineStatusRefreshInFlight = false;
   }
 };
 
-const syncPythonWorkerAutoRestartLimit = async () => {
+const syncEngineAutoRestartLimit = async () => {
   try {
-    const status = await setPythonWorkerAutoRestartLimit(
-      settings.value.pythonWorkerAutoRestartLimit,
+    const status = await setEngineAutoRestartLimit(
+      settings.value.engineAutoRestartLimit,
     );
     if (status) {
-      pythonWorkerStatus.value = status;
+      engineStatus.value = status;
     }
   } catch {
-    await refreshPythonWorkerStatus();
+    await refreshEngineStatus();
   }
 };
 
-const normalizePythonWorkerAutoRestartLimitInPlace = () => {
-  settings.value.pythonWorkerAutoRestartLimit = normalizePythonWorkerAutoRestartLimit(
-    settings.value.pythonWorkerAutoRestartLimit,
+const normalizeEngineAutoRestartLimitInPlace = () => {
+  settings.value.engineAutoRestartLimit = normalizeEngineAutoRestartLimit(
+    settings.value.engineAutoRestartLimit,
   );
 };
 
-const restartCurrentPythonWorker = async () => {
-  if (pythonWorkerRestarting.value) {
+const restartCurrentEngine = async () => {
+  if (engineRestarting.value) {
     return;
   }
   if (
@@ -1303,20 +1303,20 @@ const restartCurrentPythonWorker = async () => {
   ) {
     return;
   }
-  pythonWorkerRestarting.value = true;
+  engineRestarting.value = true;
   try {
-    const status = await restartPythonWorker();
+    const status = await restartEngine();
     if (status) {
-      pythonWorkerStatus.value = status;
+      engineStatus.value = status;
     }
   } catch (error) {
-    await refreshPythonWorkerStatus();
-    pythonWorkerStatus.value = {
-      ...pythonWorkerStatus.value,
+    await refreshEngineStatus();
+    engineStatus.value = {
+      ...engineStatus.value,
       lastError: toErrorMessage(error, "处理引擎重启失败。"),
     };
   } finally {
-    pythonWorkerRestarting.value = false;
+    engineRestarting.value = false;
   }
 };
 
@@ -2381,9 +2381,9 @@ watch(activeTask, async () => {
 }, { flush: "post" });
 
 watch(
-  () => settings.value.pythonWorkerAutoRestartLimit,
+  () => settings.value.engineAutoRestartLimit,
   () => {
-    void syncPythonWorkerAutoRestartLimit();
+    void syncEngineAutoRestartLimit();
   },
 );
 
@@ -2570,11 +2570,11 @@ onMounted(async () => {
     } catch {
       // 能力发现失败时保留保守默认值，其它运行时信息仍可继续加载。
     }
-    await syncPythonWorkerAutoRestartLimit();
-    await refreshPythonWorkerStatus();
+    await syncEngineAutoRestartLimit();
+    await refreshEngineStatus();
     if (typeof window !== "undefined") {
-      pythonWorkerStatusTimer = window.setInterval(() => {
-        void refreshPythonWorkerStatus();
+      engineStatusTimer = window.setInterval(() => {
+        void refreshEngineStatus();
       }, 1000);
     }
     try {
@@ -2645,9 +2645,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   Object.values(taskFilesByType.value).flat().forEach(releaseCoverPreview);
-  if (pythonWorkerStatusTimer && typeof window !== "undefined") {
-    window.clearInterval(pythonWorkerStatusTimer);
-    pythonWorkerStatusTimer = 0;
+  if (engineStatusTimer && typeof window !== "undefined") {
+    window.clearInterval(engineStatusTimer);
+    engineStatusTimer = 0;
   }
   if (aboutAnimationFrame && typeof window !== "undefined") {
     window.cancelAnimationFrame(aboutAnimationFrame);
@@ -2689,8 +2689,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             :brand-easter-active="brandEasterActive"
             :handle-brand-easter-click="handleBrandEasterClick"
             :trigger-brand-easter-animation="triggerBrandEasterAnimation"
-            :python-worker-status="pythonWorkerStatus"
-            :python-worker-status-label="pythonWorkerStatusLabel"
+            :python-worker-status="engineStatus"
+            :python-worker-status-label="engineStatusLabel"
             @select="activeSection = $event"
           />
         </div>
@@ -3233,40 +3233,40 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                     : "移动端在应用进程内直接执行共享 Rust 任务核心。" }}</p>
                 </div>
                 <div v-if="platformCapabilities.supportsEngineRestart" class="panel-actions">
-                  <button class="ghost-btn settings-action-btn engine-restart-btn" :disabled="pythonWorkerRestarting"
-                    type="button" @click="restartCurrentPythonWorker">
-                    {{ pythonWorkerRestarting ? "重启中..." : "重启引擎" }}
+                  <button class="ghost-btn settings-action-btn engine-restart-btn" :disabled="engineRestarting"
+                    type="button" @click="restartCurrentEngine">
+                    {{ engineRestarting ? "重启中..." : "重启引擎" }}
                   </button>
                 </div>
               </div>
               <div class="worker-control-grid">
-                <article class="worker-status-card glass-medium" :class="`state-${pythonWorkerStatus.state}`">
+                <article class="worker-status-card glass-medium" :class="`state-${engineStatus.state}`">
                   <strong class="worker-card-title">运行状态</strong>
                   <div class="worker-status-content">
                     <span class="worker-card-value worker-status-value">
                       <span class="worker-status-dot" aria-hidden="true"></span>
-                      {{ pythonWorkerStatusLabel }}
+                      {{ engineStatusLabel }}
                     </span>
-                    <p>{{ pythonWorkerStatus.message }}</p>
+                    <p>{{ engineStatus.message }}</p>
                   </div>
                 </article>
                 <div class="settings-log-card glass-medium">
                   <strong class="worker-card-title">执行模式</strong>
                   <span class="worker-card-value">{{ platformCapabilities.runtime === "worker"
-                    ? (pythonWorkerStatus.pid ? `Worker · PID ${pythonWorkerStatus.pid}` : "Worker 进程")
+                    ? (engineStatus.pid ? `Worker · PID ${engineStatus.pid}` : "Worker 进程")
                     : "应用进程内执行" }}</span>
                 </div>
               </div>
-              <p v-if="platformCapabilities.supportsEngineRestart && pythonWorkerStatus.recoveryAttempts > 0"
+              <p v-if="platformCapabilities.supportsEngineRestart && engineStatus.recoveryAttempts > 0"
                 class="worker-recovery-note">
-                本次会话已自动恢复 {{ pythonWorkerStatus.recoveryAttempts }}/{{ pythonWorkerStatus.autoRestartLimit }} 次。
+                本次会话已自动恢复 {{ engineStatus.recoveryAttempts }}/{{ engineStatus.autoRestartLimit }} 次。
               </p>
-              <p v-if="platformCapabilities.supportsEngineRestart && pythonWorkerStatus.manualRestartCount > 0"
+              <p v-if="platformCapabilities.supportsEngineRestart && engineStatus.manualRestartCount > 0"
                 class="worker-recovery-note">
-                本次会话已手动重启 {{ pythonWorkerStatus.manualRestartCount }} 次。
+                本次会话已手动重启 {{ engineStatus.manualRestartCount }} 次。
               </p>
-              <p v-if="pythonWorkerStatus.lastError" class="worker-error-message">
-                最近错误：{{ pythonWorkerStatus.lastError }}
+              <p v-if="engineStatus.lastError" class="worker-error-message">
+                最近错误：{{ engineStatus.lastError }}
               </p>
             </section>
             <section class="settings-block section-animated-block glass-medium">
@@ -3390,8 +3390,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                     <strong>自动恢复次数</strong>
                     <p>仅恢复引擎，不重试任务。</p>
                   </div>
-                  <input v-model.number="settings.pythonWorkerAutoRestartLimit" min="0" max="5" step="1"
-                    type="number" @change="normalizePythonWorkerAutoRestartLimitInPlace" />
+                  <input v-model.number="settings.engineAutoRestartLimit" min="0" max="5" step="1"
+                    type="number" @change="normalizeEngineAutoRestartLimitInPlace" />
                 </label>
               </div>
             </section>

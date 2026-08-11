@@ -19,10 +19,10 @@ use crate::rust_backend::{
     epub::{workspace::relative_member_path, EpubWorkspace},
     EpubTask, TaskOutcome,
 };
+use crate::task_types::{TaskOptions, TaskType};
 use image::{imageops::FilterType, DynamicImage, ImageFormat, Rgb, RgbImage};
 use ort::{session::Session, value::TensorRef};
 use regex::Regex;
-use serde_json::Value;
 use sha1::{Digest, Sha1};
 
 const OCR_PERIOD_ALIASES: [char; 3] = ['.', '．', '｡'];
@@ -53,36 +53,23 @@ struct OcrReplacementPlan {
 pub struct DecryptFontTask;
 
 impl EpubTask for DecryptFontTask {
-    fn task_type(&self) -> &'static str {
-        "decrypt_font"
+    fn task_type(&self) -> TaskType {
+        TaskType::DecryptFont
     }
 
-    fn supports_options(&self, options: &Value) -> bool {
-        let Some(values) = options.as_object() else {
-            return false;
-        };
-        if !values.keys().all(|key| {
-            matches!(
-                key.as_str(),
-                "target_font_families_by_file" | "min_ocr_confidence" | "ocr_char_policy"
-            )
-        }) {
-            return false;
-        }
-        values
-            .get("target_font_families_by_file")
-            .is_none_or(Value::is_object)
-            && values
-                .get("min_ocr_confidence")
-                .and_then(Value::as_f64)
+    fn supports_options(&self, options: &TaskOptions) -> bool {
+        options.font().is_some_and(|options| {
+            options
+                .min_ocr_confidence
                 .is_none_or(|value| (0.0..=1.0).contains(&value))
-            && values
-                .get("ocr_char_policy")
-                .and_then(Value::as_str)
-                .is_none_or(|value| value == "strict")
+                && options
+                    .ocr_char_policy
+                    .as_deref()
+                    .is_none_or(|value| value == "strict")
+        })
     }
 
-    fn supports_input(&self, input: &Path, options: &Value) -> bool {
+    fn supports_input(&self, input: &Path, options: &TaskOptions) -> bool {
         configured_ocr_resources().is_some()
             && EpubWorkspace::load(input, |_| {})
                 .and_then(|workspace| {
@@ -95,7 +82,7 @@ impl EpubTask for DecryptFontTask {
         &self,
         input: &Path,
         workspace: &mut EpubWorkspace,
-        options: &Value,
+        options: &TaskOptions,
         log: &mut dyn FnMut(String),
     ) -> Result<TaskOutcome, String> {
         let plan = FontEncryptionPlan::build_for_decryption(workspace, input, options)?;
@@ -118,8 +105,8 @@ impl EpubTask for DecryptFontTask {
             .collect::<Result<BTreeMap<_, _>, _>>()?;
         let text_by_font = plan.collect_target_text(workspace)?;
         let minimum_confidence = options
-            .get("min_ocr_confidence")
-            .and_then(Value::as_f64)
+            .font()
+            .and_then(|options| options.min_ocr_confidence)
             .map(|value| value as f32)
             .unwrap_or(DEFAULT_MIN_OCR_CONFIDENCE);
         let ocr_plan = build_ocr_replacement_plan(

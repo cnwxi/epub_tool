@@ -17,6 +17,8 @@ protoc-bin-vendored = "3"
 pbjson-build = "0.7"
 
 [dependencies]
+blitz-dom = { version = "=0.3.0-beta.1", default-features = false }
+blitz-html = { version = "=0.3.0-beta.1", default-features = false }
 encoding_rs = "0.8"
 dom_query = { version = "0.27", default-features = false }
 fontdue = "0.9"
@@ -29,6 +31,7 @@ regex = "1.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha1 = "0.10"
+style = { package = "stylo", version = "0.19" }
 prost = "0.13"
 pbjson = "0.7"
 ttf-parser = "0.25"
@@ -36,6 +39,7 @@ tauri = { version = "2.2.5", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2.2.0"
 webp = "0.3"
 write-fonts = { version = "0.51", features = ["read"] }
+woff = "0.6.3"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 tauri-plugin-fs = "2.5.1"
 

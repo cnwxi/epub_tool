@@ -3,22 +3,24 @@ use super::{
     task_base::ParsedBook,
     workspace::EpubWorkspace,
 };
-use crate::rust_backend::{EpubTask, TaskOutcome};
-use serde_json::Value;
+use crate::{
+    rust_backend::{EpubTask, TaskOutcome},
+    task_types::{TaskOptions, TaskType},
+};
 use std::path::Path;
 
 pub struct EncryptEpubTask;
 
 impl EpubTask for EncryptEpubTask {
-    fn task_type(&self) -> &'static str {
-        "encrypt_epub"
+    fn task_type(&self) -> TaskType {
+        TaskType::EncryptEpub
     }
 
-    fn supports_options(&self, options: &Value) -> bool {
-        options.as_object().is_none_or(|values| values.is_empty())
+    fn supports_options(&self, options: &TaskOptions) -> bool {
+        matches!(options, TaskOptions::Empty)
     }
 
-    fn supports_input(&self, input: &Path, _options: &Value) -> bool {
+    fn supports_input(&self, input: &Path, _options: &TaskOptions) -> bool {
         EpubWorkspace::load(input, |_| {})
             .and_then(|workspace| supports_rewrite(&workspace))
             .is_ok()
@@ -28,7 +30,7 @@ impl EpubTask for EncryptEpubTask {
         &self,
         _input: &Path,
         workspace: &mut EpubWorkspace,
-        _options: &Value,
+        _options: &TaskOptions,
         log: &mut dyn FnMut(String),
     ) -> Result<TaskOutcome, String> {
         let book = ParsedBook::parse(workspace)?;

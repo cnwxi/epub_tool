@@ -1,9 +1,9 @@
 use crate::rust_backend::epub::workspace::{
     media_type_for, resolve_reference, rewrite_reference, EpubWorkspace,
 };
+use crate::task_types::{TaskOptions, TaskType};
 use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageFormat, ImageReader};
 use regex::{Captures, Regex};
-use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Cursor,
@@ -30,54 +30,44 @@ impl ImageTask {
         Self { mode }
     }
 
-    pub const fn task_type(&self) -> &'static str {
+    pub const fn task_type(&self) -> TaskType {
         match self.mode {
-            ImageMode::Compress => "image_compress",
-            ImageMode::ToWebp => "image_to_webp",
-            ImageMode::WebpToImage => "webp_to_img",
+            ImageMode::Compress => TaskType::ImageCompress,
+            ImageMode::ToWebp => TaskType::ImageToWebp,
+            ImageMode::WebpToImage => TaskType::WebpToImg,
         }
     }
 
-    pub fn is_supported_options(&self, options: &Value) -> bool {
-        let png_quantize = options.get("png_quantize");
-        if png_quantize.is_some_and(|value| !value.is_boolean())
-            || !quality_option_is_valid(options, "quality")
-            || !quality_option_is_valid(options, "jpeg_quality")
-            || !quality_option_is_valid(options, "webp_quality")
-        {
-            return false;
-        }
-        options.get("png_to_jpg").is_none_or(Value::is_boolean)
+    pub fn is_supported_options(&self, options: &TaskOptions) -> bool {
+        options.image().is_some_and(|options| {
+            [options.quality, options.jpeg_quality, options.webp_quality]
+                .into_iter()
+                .flatten()
+                .all(|quality| (1..=100).contains(&quality))
+        })
     }
 
-    pub fn is_supported_input(&self, _input: &Path, _options: &Value) -> bool {
+    pub fn is_supported_input(&self, _input: &Path, _options: &TaskOptions) -> bool {
         true
     }
 
     pub fn process(
         &self,
         workspace: &mut EpubWorkspace,
-        options: &Value,
+        options: &TaskOptions,
         mut log: impl FnMut(String),
     ) -> Result<ImageProcessOutcome, String> {
-        let quality = option_quality(
-            options,
-            if matches!(self.mode, ImageMode::Compress) {
-                "jpeg_quality"
-            } else {
-                "quality"
-            },
-            82,
-        )?;
-        let webp_quality = option_quality(options, "webp_quality", 82)?;
-        let png_to_jpg = options
-            .get("png_to_jpg")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let png_quantize = options
-            .get("png_quantize")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let options = options
+            .image()
+            .ok_or_else(|| "图片任务需要 image options".to_string())?;
+        let quality = if matches!(self.mode, ImageMode::Compress) {
+            options.jpeg_quality.unwrap_or(82)
+        } else {
+            options.quality.unwrap_or(82)
+        };
+        let webp_quality = options.webp_quality.unwrap_or(82);
+        let png_to_jpg = options.png_to_jpg.unwrap_or(false);
+        let png_quantize = options.png_quantize.unwrap_or(false);
 
         let mut replacements = Vec::new();
         let mut existing: BTreeSet<String> = workspace.members.keys().cloned().collect();
@@ -357,27 +347,6 @@ fn nearest_alpha(value: u8, alpha_levels: &[u8]) -> u8 {
         .unwrap_or(u8::MAX)
 }
 
-fn option_quality(options: &Value, key: &str, default: u8) -> Result<u8, String> {
-    let Some(value) = options.get(key) else {
-        return Ok(default);
-    };
-    let Some(value) = value.as_u64() else {
-        return Err(format!("{key} 必须是 1 到 100 的整数"));
-    };
-    if !(1..=100).contains(&value) {
-        return Err(format!("{key} 必须是 1 到 100 的整数"));
-    }
-    Ok(value as u8)
-}
-
-fn quality_option_is_valid(options: &Value, key: &str) -> bool {
-    options.get(key).is_none_or(|value| {
-        value
-            .as_u64()
-            .is_some_and(|quality| (1..=100).contains(&quality))
-    })
-}
-
 fn extension_of(path: &str) -> String {
     path.rsplit_once('.')
         .map_or_else(String::new, |(_, extension)| extension.to_ascii_lowercase())
@@ -573,8 +542,8 @@ fn rewrite_opf_manifest(opf: &str, opf_path: &str, replacements: &[(String, Stri
 mod tests {
     use super::{convert_image, ImageMode, ImageProcessOutcome, ImageTask};
     use crate::rust_backend::epub::EpubWorkspace;
+    use crate::task_types::{ImageTaskOptions, TaskOptions};
     use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
-    use serde_json::json;
     use std::{collections::BTreeMap, io::Cursor};
 
     #[test]
@@ -604,7 +573,14 @@ mod tests {
         };
 
         let outcome = ImageTask::new(ImageMode::WebpToImage)
-            .process(&mut workspace, &json!({"quality": 82}), |_| {})
+            .process(
+                &mut workspace,
+                &TaskOptions::Image(ImageTaskOptions {
+                    quality: Some(82),
+                    ..ImageTaskOptions::default()
+                }),
+                |_| {},
+            )
             .unwrap();
 
         assert!(matches!(outcome, ImageProcessOutcome::Success));

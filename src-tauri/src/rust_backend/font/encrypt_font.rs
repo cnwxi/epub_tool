@@ -14,9 +14,9 @@ use crate::rust_backend::{
     epub::{workspace::resolve_reference, EpubWorkspace},
     EpubTask, TaskOutcome,
 };
+use crate::task_types::{FontTaskOptions, TaskOptions, TaskType};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use regex::Regex;
-use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
@@ -183,22 +183,15 @@ impl CompoundSelector {
 }
 
 impl EpubTask for EncryptFontTask {
-    fn task_type(&self) -> &'static str {
-        "encrypt_font"
+    fn task_type(&self) -> TaskType {
+        TaskType::EncryptFont
     }
 
-    fn supports_options(&self, options: &Value) -> bool {
-        options.as_object().is_some_and(|values| {
-            values
-                .keys()
-                .all(|key| key == "target_font_families_by_file")
-                && values
-                    .get("target_font_families_by_file")
-                    .is_none_or(Value::is_object)
-        })
+    fn supports_options(&self, options: &TaskOptions) -> bool {
+        options.font().is_some()
     }
 
-    fn supports_input(&self, input: &Path, options: &Value) -> bool {
+    fn supports_input(&self, input: &Path, options: &TaskOptions) -> bool {
         EpubWorkspace::load(input, |_| {})
             .and_then(|workspace| {
                 let plan = FontEncryptionPlan::build(&workspace, input, options)?;
@@ -211,7 +204,7 @@ impl EpubTask for EncryptFontTask {
         &self,
         input: &Path,
         workspace: &mut EpubWorkspace,
-        options: &Value,
+        options: &TaskOptions,
         log: &mut dyn FnMut(String),
     ) -> Result<TaskOutcome, String> {
         let plan = FontEncryptionPlan::build(workspace, input, options)?;
@@ -257,7 +250,7 @@ impl FontEncryptionPlan {
     pub(crate) fn build(
         workspace: &EpubWorkspace,
         input: &Path,
-        options: &Value,
+        options: &TaskOptions,
     ) -> Result<Self, String> {
         Self::build_for_font_formats(workspace, input, options, true, false)
     }
@@ -265,7 +258,7 @@ impl FontEncryptionPlan {
     pub(crate) fn build_for_decryption(
         workspace: &EpubWorkspace,
         input: &Path,
-        options: &Value,
+        options: &TaskOptions,
     ) -> Result<Self, String> {
         Self::build_for_font_formats(workspace, input, options, true, true)
     }
@@ -273,7 +266,7 @@ impl FontEncryptionPlan {
     fn build_for_font_formats(
         workspace: &EpubWorkspace,
         input: &Path,
-        options: &Value,
+        options: &TaskOptions,
         allow_opentype: bool,
         tolerate_missing_fonts: bool,
     ) -> Result<Self, String> {
@@ -473,32 +466,39 @@ impl FontEncryptionPlan {
     }
 }
 
-fn selected_families(input: &Path, options: &Value) -> Result<Option<BTreeSet<String>>, String> {
-    let Some(values) = options.as_object() else {
-        return Err("字体任务选项必须是对象".to_string());
-    };
-    let Some(by_file) = values.get("target_font_families_by_file") else {
-        return Ok(None);
-    };
-    let by_file = by_file
-        .as_object()
-        .ok_or_else(|| "target_font_families_by_file 必须是对象".to_string())?;
-    let Some(families) = by_file.get(&input.to_string_lossy().to_string()) else {
-        return Ok(None);
-    };
-    let families = families
-        .as_array()
-        .ok_or_else(|| "目标字体列表必须是数组".to_string())?;
+fn selected_families(
+    input: &Path,
+    options: &TaskOptions,
+) -> Result<Option<BTreeSet<String>>, String> {
+    let FontTaskOptions {
+        target_font_families_by_file,
+        target_font_families,
+        ..
+    } = options
+        .font()
+        .ok_or_else(|| "字体任务需要 font options".to_string())?;
+    let input_text = input.to_string_lossy();
+    let families = target_font_families_by_file
+        .get(input_text.as_ref())
+        .or_else(|| {
+            let canonical_input = std::fs::canonicalize(input).ok()?;
+            target_font_families_by_file
+                .iter()
+                .find(|(source, _)| {
+                    std::fs::canonicalize(source).ok().as_ref() == Some(&canonical_input)
+                })
+                .map(|(_, families)| families)
+        })
+        .unwrap_or(target_font_families);
     if families.is_empty() {
         return Ok(None);
     }
     families
         .iter()
         .map(|value| {
-            value
-                .as_str()
-                .map(normalize_font_family)
-                .filter(|value| !value.is_empty())
+            let value = normalize_font_family(value);
+            (!value.is_empty())
+                .then_some(value)
                 .ok_or_else(|| "目标字体 family 必须是非空字符串".to_string())
         })
         .collect::<Result<BTreeSet<_>, _>>()

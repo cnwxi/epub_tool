@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 import brandEasterIconUrl from "../../../assets/img/icon.png";
 
-import type { PythonWorkerStatus, SectionKey } from "../types";
+import type { EngineStatus, SectionKey } from "../types";
 
 const props = defineProps<{
   active: SectionKey;
@@ -10,8 +10,8 @@ const props = defineProps<{
   brandEasterActive: boolean;
   handleBrandEasterClick: () => void;
   triggerBrandEasterAnimation: () => void;
-  pythonWorkerStatus: PythonWorkerStatus;
-  pythonWorkerStatusLabel: string;
+  engineStatus: EngineStatus;
+  engineStatusLabel: string;
 }>();
 
 const emit = defineEmits<{
@@ -47,8 +47,8 @@ const utilityItems = computed(() =>
 const executionOpen = ref(true);
 const overviewOpen = ref(true);
 const utilityOpen = ref(true);
-const pythonWorkerStateLabel = computed(() =>
-  props.pythonWorkerStatusLabel.replace(/^处理引擎/, "") || props.pythonWorkerStatusLabel,
+const engineStateLabel = computed(() =>
+  props.engineStatusLabel.replace(/^处理引擎/, "") || props.engineStatusLabel,
 );
 
 watch(
@@ -110,13 +110,13 @@ watch(
           type="button" @click="emit('select', overviewItem.key)">
           <span>{{ overviewItem.label }}</span>
         </button>
-        <button class="nav-item nav-worker-status" :class="`state-${props.pythonWorkerStatus.state}`"
-          type="button" :title="`${props.pythonWorkerStatusLabel}：${props.pythonWorkerStatus.message}`"
+        <button class="nav-item nav-worker-status" :class="`state-${props.engineStatus.state}`"
+          type="button" :title="`${props.engineStatusLabel}：${props.engineStatus.message}`"
           @click="emit('select', 'engine')">
           <span class="nav-worker-name">处理引擎</span>
           <span class="nav-worker-state">
             <span class="nav-worker-dot" aria-hidden="true"></span>
-            <strong>{{ pythonWorkerStateLabel }}</strong>
+            <strong>{{ engineStateLabel }}</strong>
           </span>
         </button>
       </nav>

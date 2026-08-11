@@ -12,7 +12,7 @@ export type TaskType =
 export type SectionKey = TaskType | "overview" | "engine" | "settings" | "about";
 export type FontLoadStatus = "idle" | "loading" | "loaded" | "error";
 export type OcrCharPolicy = "strict" | "compatible";
-export type PythonWorkerState =
+export type EngineState =
   | "stopped"
   | "starting"
   | "ready"
@@ -98,11 +98,11 @@ export interface AppSettings {
   autoOpenLogFile: boolean;
   autoCheckUpdates: boolean;
   keepHistoryCount: number;
-  pythonWorkerAutoRestartLimit: number;
+  engineAutoRestartLimit: number;
 }
 
-export interface PythonWorkerStatus {
-  state: PythonWorkerState;
+export interface EngineStatus {
+  state: EngineState;
   message: string;
   lastError?: string | null;
   pid?: number | null;

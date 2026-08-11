@@ -3,24 +3,24 @@ use crate::rust_backend::{
     epub::workspace::{media_type_for, resolve_reference, EpubWorkspace},
     EpubTask, TaskOutcome,
 };
+use crate::task_types::{TaskOptions, TaskType};
 use image::{ImageFormat, ImageReader};
 use regex::Regex;
-use serde_json::Value;
 use std::{fs, io::Cursor, path::Path, sync::LazyLock};
 
 pub struct ReplaceCoverTask;
 
 impl EpubTask for ReplaceCoverTask {
-    fn task_type(&self) -> &'static str {
-        "replace_cover"
+    fn task_type(&self) -> TaskType {
+        TaskType::ReplaceCover
     }
 
-    fn supports_options(&self, options: &Value) -> bool {
-        let Some(mapping) = options.get("cover_path_by_file").and_then(Value::as_object) else {
+    fn supports_options(&self, options: &TaskOptions) -> bool {
+        let Some(options) = options.replace_cover() else {
             return false;
         };
-        mapping.iter().all(|(input, cover)| {
-            !input.is_empty() && cover.as_str().is_some_and(|path| Path::new(path).is_file())
+        options.cover_path_by_file.iter().all(|(input, cover)| {
+            !input.is_empty() && Path::new(cover).is_file()
         })
     }
 
@@ -28,7 +28,7 @@ impl EpubTask for ReplaceCoverTask {
         &self,
         input: &Path,
         workspace: &mut EpubWorkspace,
-        options: &Value,
+        options: &TaskOptions,
         log: &mut dyn FnMut(String),
     ) -> Result<TaskOutcome, String> {
         let Some(cover_path) = cover_path_for(input, options) else {
@@ -98,19 +98,17 @@ struct CoverItem {
     href: Option<String>,
 }
 
-fn cover_path_for(input: &Path, options: &Value) -> Option<std::path::PathBuf> {
-    let mapping = options.get("cover_path_by_file")?.as_object()?;
+fn cover_path_for(input: &Path, options: &TaskOptions) -> Option<std::path::PathBuf> {
+    let mapping = &options.replace_cover()?.cover_path_by_file;
     let input_text = input.to_string_lossy();
     mapping
         .get(input_text.as_ref())
-        .and_then(Value::as_str)
         .map(std::path::PathBuf::from)
         .or_else(|| {
             let canonical_input = fs::canonicalize(input).ok()?;
             mapping.iter().find_map(|(source, cover)| {
                 (fs::canonicalize(source).ok().as_ref() == Some(&canonical_input))
-                    .then(|| cover.as_str().map(std::path::PathBuf::from))
-                    .flatten()
+                    .then(|| std::path::PathBuf::from(cover))
             })
         })
 }

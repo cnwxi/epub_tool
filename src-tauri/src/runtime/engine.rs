@@ -1,15 +1,13 @@
 use std::{path::PathBuf, sync::Arc};
 
 use serde::Serialize;
-use serde_json::Value;
-
-use crate::FrontendTaskRequest;
+use crate::task_types::{TaskEvent, TaskResult, TaskSpec};
 
 use super::RuntimeResources;
 
 pub struct ExecutionRequest {
     pub request_id: String,
-    pub task: FrontendTaskRequest,
+    pub task: TaskSpec,
     pub log_path: PathBuf,
 }
 
@@ -57,8 +55,8 @@ pub trait EngineRuntime: Send + Sync {
     fn execute(
         &self,
         request: ExecutionRequest,
-        emit: &mut dyn FnMut(Value) -> Result<(), String>,
-    ) -> Result<Value, String>;
+        emit: &mut dyn FnMut(TaskEvent) -> Result<(), String>,
+    ) -> Result<TaskResult, String>;
 
     fn status(&self) -> Result<EngineStatus, String>;
 
@@ -91,7 +89,7 @@ mod desktop {
     };
 
     use serde::{Deserialize, Serialize};
-    use serde_json::Value;
+    use crate::task_types::{TaskEvent, TaskResult};
 
     #[cfg(unix)]
     use std::os::unix::process::CommandExt;
@@ -131,7 +129,7 @@ mod desktop {
     #[serde(rename_all = "camelCase")]
     struct RustWorkerRequest<'a> {
         request_id: &'a str,
-        request: &'a crate::FrontendTaskRequest,
+        request: &'a crate::task_types::TaskSpec,
         log_path: String,
     }
 
@@ -140,8 +138,8 @@ mod desktop {
     struct RustWorkerEnvelope {
         kind: String,
         request_id: String,
-        event: Option<Value>,
-        result: Option<Value>,
+        event: Option<TaskEvent>,
+        result: Option<TaskResult>,
         error: Option<String>,
     }
 
@@ -363,8 +361,8 @@ mod desktop {
         fn execute(
             &self,
             request: ExecutionRequest,
-            emit: &mut dyn FnMut(Value) -> Result<(), String>,
-        ) -> Result<Value, String> {
+            emit: &mut dyn FnMut(TaskEvent) -> Result<(), String>,
+        ) -> Result<TaskResult, String> {
             let worker_request = RustWorkerRequest {
                 request_id: &request.request_id,
                 request: &request.task,
@@ -517,8 +515,8 @@ mod desktop {
         worker: &mut RustWorker,
         request_id: &str,
         request_line: &str,
-        emit: &mut dyn FnMut(Value) -> Result<(), String>,
-    ) -> Result<Value, String> {
+        emit: &mut dyn FnMut(TaskEvent) -> Result<(), String>,
+    ) -> Result<TaskResult, String> {
         worker
             .stdin
             .write_all(request_line.as_bytes())
@@ -625,7 +623,7 @@ mod desktop {
 mod mobile {
     use std::sync::Mutex;
 
-    use serde_json::Value;
+    use crate::task_types::{TaskEvent, TaskResult};
 
     use super::{EngineRuntime, EngineStatus, ExecutionRequest};
 
@@ -650,8 +648,8 @@ mod mobile {
         fn execute(
             &self,
             request: ExecutionRequest,
-            emit: &mut dyn FnMut(Value) -> Result<(), String>,
-        ) -> Result<Value, String> {
+            emit: &mut dyn FnMut(TaskEvent) -> Result<(), String>,
+        ) -> Result<TaskResult, String> {
             if let Ok(mut status) = self.status.lock() {
                 status.state = "busy".to_string();
                 status.message = "Rust 处理引擎正在执行请求".to_string();

@@ -3,7 +3,7 @@ use tauri::State;
 use crate::runtime::{EngineStatus, PlatformCapabilities, RuntimeServices};
 
 #[tauri::command]
-pub async fn get_python_worker_status(
+pub async fn get_engine_status(
     services: State<'_, RuntimeServices>,
 ) -> Result<EngineStatus, String> {
     let engine = services.engine();
@@ -13,7 +13,7 @@ pub async fn get_python_worker_status(
 }
 
 #[tauri::command]
-pub fn set_python_worker_auto_restart_limit(
+pub fn set_engine_auto_restart_limit(
     services: State<'_, RuntimeServices>,
     limit: u8,
 ) -> Result<EngineStatus, String> {
@@ -21,7 +21,7 @@ pub fn set_python_worker_auto_restart_limit(
 }
 
 #[tauri::command]
-pub async fn restart_python_worker(
+pub async fn restart_engine(
     services: State<'_, RuntimeServices>,
 ) -> Result<EngineStatus, String> {
     let engine = services.engine();

@@ -72,13 +72,13 @@ pub async fn run_epub_task(
     };
     let execution = ExecutionRequest {
         request_id: request_id.clone(),
-        task: engine_adapter::frontend_task_request(&run_request)?,
+        task: engine_adapter::task_spec(&run_request)?,
         log_path: resolve_log_path(&app)?,
     };
     let engine = services.engine();
     tauri::async_runtime::spawn_blocking(move || -> Result<EngineResponse, String> {
         let result = engine.execute(execution, &mut |event| {
-            let task_event = engine_adapter::task_event_from_value(event)?;
+            let task_event = engine_adapter::task_event(event)?;
             on_event
                 .send(EngineEvent {
                     protocol_version: ProtocolVersion::V1 as i32,
@@ -90,9 +90,7 @@ pub async fn run_epub_task(
         Ok(EngineResponse {
             protocol_version: ProtocolVersion::V1 as i32,
             request_id,
-            payload: Some(engine_adapter::task_result_response(
-                engine_adapter::task_result_from_value(result)?,
-            )),
+            payload: Some(engine_adapter::task_result_response(result)?),
         })
     })
     .await

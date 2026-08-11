@@ -4,13 +4,13 @@ pub mod image;
 pub mod text;
 pub mod util;
 
-use crate::FrontendTaskRequest;
+use crate::task_types::{
+    FileIssue, TaskEvent, TaskOptions, TaskResult, TaskSpec, TaskSummary, TaskType,
+};
 use epub::{DecryptEpubTask, EncryptEpubTask, ReformatEpubTask};
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use font::DecryptFontTask;
 use font::EncryptFontTask;
 use image::{ImageProcessOutcome, ImageTask, ReplaceCoverTask};
-use serde_json::{json, Value};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -19,19 +19,19 @@ use std::{
 use text::ChineseConvertTask;
 
 pub trait EpubTask: Send + Sync {
-    fn task_type(&self) -> &'static str;
-    fn supports_options(&self, options: &Value) -> bool;
-    fn supports_input(&self, _input: &Path, _options: &Value) -> bool {
+    fn task_type(&self) -> TaskType;
+    fn supports_options(&self, options: &TaskOptions) -> bool;
+    fn supports_input(&self, _input: &Path, _options: &TaskOptions) -> bool {
         true
     }
-    fn output_suffix(&self, _options: &Value) -> Result<String, String> {
-        Ok(format!("_{}.epub", self.task_type()))
+    fn output_suffix(&self, _options: &TaskOptions) -> Result<String, String> {
+        Ok(format!("_{}.epub", self.task_type().as_str()))
     }
     fn process(
         &self,
         input: &Path,
         workspace: &mut epub::EpubWorkspace,
-        options: &Value,
+        options: &TaskOptions,
         log: &mut dyn FnMut(String),
     ) -> Result<TaskOutcome, String>;
 }
@@ -42,15 +42,15 @@ pub enum TaskOutcome {
 }
 
 impl EpubTask for ImageTask {
-    fn task_type(&self) -> &'static str {
+    fn task_type(&self) -> TaskType {
         self.task_type()
     }
 
-    fn supports_options(&self, options: &Value) -> bool {
+    fn supports_options(&self, options: &TaskOptions) -> bool {
         self.is_supported_options(options)
     }
 
-    fn supports_input(&self, input: &Path, options: &Value) -> bool {
+    fn supports_input(&self, input: &Path, options: &TaskOptions) -> bool {
         self.is_supported_input(input, options)
     }
 
@@ -58,7 +58,7 @@ impl EpubTask for ImageTask {
         &self,
         _input: &Path,
         workspace: &mut epub::EpubWorkspace,
-        options: &Value,
+        options: &TaskOptions,
         log: &mut dyn FnMut(String),
     ) -> Result<TaskOutcome, String> {
         match self.process(workspace, options, log)? {
@@ -68,26 +68,26 @@ impl EpubTask for ImageTask {
     }
 }
 
-pub fn supports(request: &FrontendTaskRequest) -> bool {
-    task_for(&request.taskType).is_some_and(|task| {
+pub fn supports(request: &TaskSpec) -> bool {
+    task_for(request.task_type).is_some_and(|task| {
         task.supports_options(&request.options)
             && request
-                .inputFiles
+                .input_files
                 .iter()
-                .all(|input| task.supports_input(Path::new(input), &request.options))
+                .all(|input| task.supports_input(input, &request.options))
     })
 }
 
 pub fn run(
-    request: &FrontendTaskRequest,
+    request: &TaskSpec,
     log_path: &Path,
-    emit: &mut dyn FnMut(Value) -> Result<(), String>,
-) -> Result<Value, String> {
-    let task = task_for(&request.taskType)
-        .ok_or_else(|| format!("Rust 后端暂不支持任务类型: {}", request.taskType))?;
-    let total_files = request.inputFiles.len();
-    if let Some(output_dir) = &request.outputDir {
-        let output_dir = Path::new(output_dir);
+    emit: &mut dyn FnMut(TaskEvent) -> Result<(), String>,
+) -> Result<TaskResult, String> {
+    let task = task_for(request.task_type).ok_or_else(|| {
+        format!("Rust 后端暂不支持任务类型: {}", request.task_type.as_str())
+    })?;
+    let total_files = request.input_files.len();
+    if let Some(output_dir) = &request.output_dir {
         if output_dir.exists() && !output_dir.is_dir() {
             return Err(format!("输出路径不是目录: {}", output_dir.display()));
         }
@@ -100,7 +100,7 @@ pub fn run(
         request,
         "started",
         0.0,
-        format!("正在加载{} Rust 处理模块…", task_label(&request.taskType)),
+        format!("正在加载{} Rust 处理模块…", task_label(request.task_type)),
         None,
         0,
         total_files,
@@ -111,19 +111,18 @@ pub fn run(
     let mut outputs = Vec::new();
     let mut errors = Vec::new();
     let mut skipped = Vec::new();
-    for (position, input_file) in request.inputFiles.iter().enumerate() {
+    for (position, input) in request.input_files.iter().enumerate() {
         let index = position + 1;
-        let input = PathBuf::from(input_file);
         let normalized = input.to_string_lossy().to_string();
         let output_suffix = task.output_suffix(&request.options)?;
-        let output = output_path(&input, request.outputDir.as_deref(), &output_suffix)?;
+        let output = output_path(input, request.output_dir.as_deref(), &output_suffix)?;
         let output_text = output.to_string_lossy().to_string();
         emit(event(
             "task.file.started",
             request,
             "running",
             progress(position, total_files),
-            format!("开始处理 {}", display_name(&input)),
+            format!("开始处理 {}", display_name(input)),
             Some(normalized.clone()),
             index,
             total_files,
@@ -134,7 +133,7 @@ pub fn run(
         let output_existed_before = output.exists();
         let result = run_file(
             task.as_ref(),
-            &input,
+            input,
             &output,
             &output_suffix,
             &request.options,
@@ -163,7 +162,10 @@ pub fn run(
             }
             Ok(TaskOutcome::Skip) => {
                 let message = "该文件在当前模式下无需处理，或未选择字体目标。".to_string();
-                skipped.push(json!({"input_file": normalized, "message": message}));
+                skipped.push(FileIssue {
+                    input_file: normalized,
+                    message: message.clone(),
+                });
                 emit(event(
                     "task.file.finished",
                     request,
@@ -181,7 +183,10 @@ pub fn run(
                 if !output_existed_before {
                     let _ = fs::remove_file(&output);
                 }
-                errors.push(json!({"input_file": normalized, "message": message}));
+                errors.push(FileIssue {
+                    input_file: normalized,
+                    message: message.clone(),
+                });
                 emit(event(
                     "task.file.finished",
                     request,
@@ -205,29 +210,35 @@ pub fn run(
     } else {
         "error"
     };
-    let result = json!({
-        "ok": errors.is_empty(),
-        "status": status,
-        "outputs": outputs,
-        "errors": errors,
-        "skipped": skipped,
-        "summary": {
-            "total": total_files,
-            "success": success,
-            "failed": errors.len(),
-            "skipped": skipped.len(),
+    let failed = errors.len();
+    let skipped_count = skipped.len();
+    let result = TaskResult {
+        ok: errors.is_empty(),
+        status: status.to_string(),
+        outputs,
+        errors,
+        skipped,
+        summary: TaskSummary {
+            total: total_files,
+            success,
+            failed,
+            skipped: skipped_count,
         },
-        "log_path": log_path,
-    });
-    emit(json!({
-        "event": "task.finished",
-        "task_id": request.taskId,
-        "status": status,
-        "progress": 100,
-        "message": "任务执行完成",
-        "total_files": total_files,
-        "result": result,
-    }))?;
+        log_path: Some(log_path.to_string_lossy().into_owned()),
+    };
+    emit(TaskEvent {
+        event: "task.finished".to_string(),
+        task_id: request.task_id.clone(),
+        status: status.to_string(),
+        progress: 100.0,
+        message: "任务执行完成".to_string(),
+        current_file: None,
+        current_index: None,
+        total_files: Some(total_files),
+        output_path: None,
+        level: None,
+        result: Some(result.clone()),
+    })?;
     Ok(result)
 }
 
@@ -236,12 +247,12 @@ fn run_file(
     input: &Path,
     output: &Path,
     output_suffix: &str,
-    options: &Value,
+    options: &TaskOptions,
     log_path: &Path,
-    request: &FrontendTaskRequest,
+    request: &TaskSpec,
     index: usize,
     total_files: usize,
-    emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    emit: &mut dyn FnMut(TaskEvent) -> Result<(), String>,
 ) -> Result<TaskOutcome, String> {
     if input
         .extension()
@@ -287,35 +298,24 @@ fn run_file(
     Ok(TaskOutcome::Success)
 }
 
-fn task_for(task_type: &str) -> Option<Box<dyn EpubTask>> {
+fn task_for(task_type: TaskType) -> Option<Box<dyn EpubTask>> {
     match task_type {
-        "reformat_epub" => Some(Box::new(ReformatEpubTask)),
-        "decrypt_epub" => Some(Box::new(DecryptEpubTask)),
-        "encrypt_epub" => Some(Box::new(EncryptEpubTask)),
-        "encrypt_font" => Some(Box::new(EncryptFontTask)),
-        "decrypt_font" => decrypt_font_task(),
-        "image_compress" => Some(Box::new(image::image_compress::task())),
-        "image_to_webp" => Some(Box::new(image::image_to_webp::task())),
-        "webp_to_img" => Some(Box::new(image::webp_to_img::task())),
-        "replace_cover" => Some(Box::new(ReplaceCoverTask)),
-        "chinese_convert" => Some(Box::new(ChineseConvertTask)),
-        _ => None,
+        TaskType::ReformatEpub => Some(Box::new(ReformatEpubTask)),
+        TaskType::DecryptEpub => Some(Box::new(DecryptEpubTask)),
+        TaskType::EncryptEpub => Some(Box::new(EncryptEpubTask)),
+        TaskType::EncryptFont => Some(Box::new(EncryptFontTask)),
+        TaskType::DecryptFont => Some(Box::new(DecryptFontTask)),
+        TaskType::ImageCompress => Some(Box::new(image::image_compress::task())),
+        TaskType::ImageToWebp => Some(Box::new(image::image_to_webp::task())),
+        TaskType::WebpToImg => Some(Box::new(image::webp_to_img::task())),
+        TaskType::ReplaceCover => Some(Box::new(ReplaceCoverTask)),
+        TaskType::ChineseConvert => Some(Box::new(ChineseConvertTask)),
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn decrypt_font_task() -> Option<Box<dyn EpubTask>> {
-    Some(Box::new(DecryptFontTask))
-}
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-fn decrypt_font_task() -> Option<Box<dyn EpubTask>> {
-    None
-}
-
-fn output_path(input: &Path, output_dir: Option<&str>, suffix: &str) -> Result<PathBuf, String> {
+fn output_path(input: &Path, output_dir: Option<&Path>, suffix: &str) -> Result<PathBuf, String> {
     let parent = output_dir
-        .map(PathBuf::from)
+        .map(Path::to_path_buf)
         .or_else(|| input.parent().map(Path::to_path_buf))
         .ok_or_else(|| format!("无法确定输出目录: {}", input.display()))?;
     let stem = input
@@ -332,20 +332,20 @@ fn input_has_output_suffix(input: &Path, suffix: &str) -> bool {
         .is_some_and(|name| name.ends_with(suffix))
 }
 
-fn task_label(task_type: &str) -> String {
+fn task_label(task_type: TaskType) -> String {
     match task_type {
-        "image_compress" => "图片压缩".to_string(),
-        "image_to_webp" => "图片转 WebP".to_string(),
-        "webp_to_img" => "WebP 转图片".to_string(),
-        "replace_cover" => "更换封面".to_string(),
-        "chinese_convert" => "简繁转换".to_string(),
-        _ => task_type.to_string(),
+        TaskType::ImageCompress => "图片压缩".to_string(),
+        TaskType::ImageToWebp => "图片转 WebP".to_string(),
+        TaskType::WebpToImg => "WebP 转图片".to_string(),
+        TaskType::ReplaceCover => "更换封面".to_string(),
+        TaskType::ChineseConvert => "简繁转换".to_string(),
+        _ => task_type.as_str().to_string(),
     }
 }
 
 fn event(
     event: &str,
-    request: &FrontendTaskRequest,
+    request: &TaskSpec,
     status: &str,
     progress: f64,
     message: String,
@@ -354,22 +354,20 @@ fn event(
     total_files: usize,
     output_path: Option<String>,
     level: Option<&str>,
-) -> Value {
-    let mut value = json!({
-        "event": event,
-        "task_id": request.taskId,
-        "status": status,
-        "progress": progress,
-        "message": message,
-        "current_file": current_file,
-        "current_index": current_index,
-        "total_files": total_files,
-        "output_path": output_path,
-    });
-    if let Some(level) = level {
-        value["level"] = Value::String(level.to_string());
+) -> TaskEvent {
+    TaskEvent {
+        event: event.to_string(),
+        task_id: request.task_id.clone(),
+        status: status.to_string(),
+        progress,
+        message,
+        current_file,
+        current_index: Some(current_index),
+        total_files: Some(total_files),
+        output_path,
+        level: level.map(str::to_string),
+        result: None,
     }
-    value
 }
 
 fn progress(index: usize, total: usize) -> f64 {
@@ -409,9 +407,8 @@ fn append_log(log_path: &Path, message: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::run;
-    use crate::FrontendTaskRequest;
+    use crate::task_types::{ImageTaskOptions, TaskOptions, TaskSpec, TaskType};
     use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
-    use serde_json::json;
     use std::{
         fs,
         io::{Cursor, Write},
@@ -431,12 +428,15 @@ mod tests {
         fs::create_dir_all(&directory).unwrap();
         let input = directory.join("book.epub");
         write_image_epub(&input);
-        let request = FrontendTaskRequest {
-            taskId: "native-image-test".to_string(),
-            taskType: "image_to_webp".to_string(),
-            inputFiles: vec![input.to_string_lossy().to_string()],
-            outputDir: Some(directory.to_string_lossy().to_string()),
-            options: json!({"quality": 75}),
+        let request = TaskSpec {
+            task_id: "native-image-test".to_string(),
+            task_type: TaskType::ImageToWebp,
+            input_files: vec![input.clone()],
+            output_dir: Some(directory.clone()),
+            options: TaskOptions::Image(ImageTaskOptions {
+                quality: Some(75),
+                ..ImageTaskOptions::default()
+            }),
         };
         let mut events = Vec::new();
 
@@ -446,18 +446,15 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(result["status"], "success");
-        assert_eq!(
-            result["summary"],
-            json!({"total": 1, "success": 1, "failed": 0, "skipped": 0})
-        );
-        assert_eq!(events.first().unwrap()["event"], "task.started");
-        assert_eq!(events.last().unwrap()["event"], "task.finished");
+        assert_eq!(result.status, "success");
+        assert_eq!(result.summary.total, 1);
+        assert_eq!(result.summary.success, 1);
+        assert_eq!(events.first().unwrap().event, "task.started");
+        assert_eq!(events.last().unwrap().event, "task.finished");
         for event in &events {
-            assert_eq!(event["task_id"], "native-image-test");
-            assert!(event.get("status").is_some());
-            assert!(event.get("progress").is_some());
-            assert!(event.get("message").is_some());
+            assert_eq!(event.task_id, "native-image-test");
+            assert!(!event.status.is_empty());
+            assert!(!event.message.is_empty());
         }
         let output = directory.join("book_image_to_webp.epub");
         let mut archive = ZipArchive::new(fs::File::open(&output).unwrap()).unwrap();

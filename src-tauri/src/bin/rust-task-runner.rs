@@ -1,7 +1,7 @@
-use epub_tool_newui::{rust_backend, FrontendTaskRequest};
+use epub_tool_newui::{rust_backend, TaskEvent, TaskResult, TaskSpec};
 use rand::{rngs::StdRng, SeedableRng};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::{
     collections::BTreeMap,
     env,
@@ -14,7 +14,7 @@ use std::{
 #[serde(rename_all = "camelCase")]
 struct WorkerRequest {
     request_id: String,
-    request: FrontendTaskRequest,
+    request: TaskSpec,
     log_path: String,
 }
 
@@ -24,9 +24,9 @@ struct WorkerEnvelope {
     kind: &'static str,
     request_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    event: Option<Value>,
+    event: Option<TaskEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
+    result: Option<TaskResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -366,24 +366,24 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     let request_json = request_json.ok_or_else(|| "缺少 --request-json".to_string())?;
-    let request: FrontendTaskRequest = serde_json::from_str(&request_json)
+    let request: TaskSpec = serde_json::from_str(&request_json)
         .map_err(|error| format!("TaskRequest JSON 无效: {error}"))?;
     if !rust_backend::supports(&request) {
         return Err(format!(
             "Rust 后端暂不支持此任务或选项: {}",
-            request.taskType
+            request.task_type.as_str()
         ));
     }
     let log_path = log_path.map(PathBuf::from).unwrap_or_else(|| {
         request
-            .outputDir
+            .output_dir
             .as_deref()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
             .join("rust-task-runner.log")
     });
     let result = rust_backend::run(&request, &log_path, &mut emit_json_line)?;
-    if result.get("ok").and_then(Value::as_bool) == Some(true) {
+    if result.ok {
         Ok(())
     } else {
         Err("Rust 任务执行失败".to_string())
@@ -455,12 +455,12 @@ fn configure_runtime_resources() -> Result<(), String> {
 
 fn run_worker_request(
     worker_request: WorkerRequest,
-    emit: impl FnMut(Value) -> Result<(), String>,
-) -> Result<Value, String> {
+    emit: impl FnMut(TaskEvent) -> Result<(), String>,
+) -> Result<TaskResult, String> {
     if !rust_backend::supports(&worker_request.request) {
         return Err(format!(
             "Rust 后端暂不支持此任务或选项: {}",
-            worker_request.request.taskType
+            worker_request.request.task_type.as_str()
         ));
     }
     let mut emit = emit;
@@ -481,7 +481,7 @@ fn write_worker_envelope(envelope: WorkerEnvelope) -> Result<(), String> {
         .map_err(|error| format!("刷新 Worker 输出失败: {error}"))
 }
 
-fn emit_json_line(event: Value) -> Result<(), String> {
+fn emit_json_line(event: TaskEvent) -> Result<(), String> {
     println!(
         "{}",
         serde_json::to_string(&event).map_err(|error| format!("序列化任务事件失败: {error}"))?
