@@ -5,6 +5,7 @@ use std::fs;
 
 use tauri::{AppHandle, Manager};
 
+#[cfg(not(mobile))]
 use super::paths::workspace_root;
 
 #[derive(Debug, Clone)]
@@ -97,7 +98,6 @@ const OCR_FILES: [&str; 2] = ["inference.onnx", "inference.yml"];
 #[cfg(mobile)]
 pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
     use tauri::path::BaseDirectory;
-    use tauri_plugin_fs::FsExt;
 
     let root = app
         .path()

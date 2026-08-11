@@ -11,6 +11,7 @@ use tauri::AppHandle;
 #[cfg(mobile)]
 use tauri::Manager;
 
+#[cfg(not(mobile))]
 use super::paths::resolve_path;
 
 pub trait PlatformFiles: Send + Sync {
@@ -195,10 +196,12 @@ impl PlatformFiles for MobileFiles {
             Ok(source) => source,
             Err(never) => match never {},
         };
+        let mut source_options = OpenOptions::new();
+        source_options.read(true);
         let mut source = self
             .app
             .fs()
-            .open(source, OpenOptions::new().read(true))
+            .open(source, source_options)
             .map_err(|error| format!("读取所选文件失败: {error}"))?;
         let extension = extension
             .trim_start_matches('.')
@@ -232,13 +235,12 @@ impl PlatformFiles for MobileFiles {
             Ok(destination) => destination,
             Err(never) => match never {},
         };
+        let mut destination_options = OpenOptions::new();
+        destination_options.write(true).truncate(true).create(true);
         let mut output = self
             .app
             .fs()
-            .open(
-                destination,
-                OpenOptions::new().write(true).truncate(true).create(true),
-            )
+            .open(destination, destination_options)
             .map_err(|error| format!("创建导出文件失败: {error}"))?;
         std::io::copy(&mut source, &mut output)
             .map_err(|error| format!("导出处理结果失败: {error}"))?;

@@ -15,7 +15,7 @@
     "build:mobile-assets": "npm run build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "npm run tauri -- build",
+    "tauri:build": "cargo run --locked --manifest-path xtask/Cargo.toml -- desktop-build",
     "tauri:android:init": "npm run tauri -- android init",
     "tauri:android:dev": "cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-dev android",
     "tauri:android:build": "cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build android",

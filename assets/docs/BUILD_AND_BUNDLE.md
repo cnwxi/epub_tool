@@ -21,7 +21,7 @@ npm run tauri:build
 
 1. 构建 Vue 前端；
 2. 以真实 Rust ONNX Runtime session 校验 OCR 模型；
-3. 由 Tauri 生成包含 Rust 核心的目标平台 bundle。
+3. 由 Tauri 生成包含 Rust 核心的目标平台 bundle；macOS 会先准备官方 ONNX Runtime xcframework 并静态链接其通用切片，因此 Intel 与 Apple Silicon 都不依赖 `ort-sys` 的预编译下载。
 
 发布 workflow 的桌面矩阵：
 

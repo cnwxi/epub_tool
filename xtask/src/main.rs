@@ -36,6 +36,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
             let target = arguments.get(2).map(String::as_str);
             prepare_mobile_ort(platform, target).map(|_| ())
         }
+        "desktop-build" => desktop_build(&arguments[1..]),
         "mobile-build" => mobile_build(&arguments[1..]),
         "mobile-dev" => mobile_dev(&arguments[1..]),
         "update-homebrew-cask" => update_homebrew_cask(&arguments[1..]),
@@ -44,7 +45,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "Usage:\n  cargo run --locked --manifest-path xtask/Cargo.toml -- verify-ocr-model [model-name]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- prepare-mobile-ort android <aarch64|armv7|i686|x86_64>\n  cargo run --locked --manifest-path xtask/Cargo.toml -- prepare-mobile-ort ios\n  cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build android <target> [Tauri build options]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build ios <target> [Tauri build options]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-dev android <target> [Tauri dev options/device]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-dev ios <target> [Tauri dev options/device]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- update-homebrew-cask <formula> <version> <arm64-sha256> <x64-sha256> <url>".to_string()
+    "Usage:\n  cargo run --locked --manifest-path xtask/Cargo.toml -- verify-ocr-model [model-name]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- prepare-mobile-ort android <aarch64|armv7|i686|x86_64>\n  cargo run --locked --manifest-path xtask/Cargo.toml -- prepare-mobile-ort ios\n  cargo run --locked --manifest-path xtask/Cargo.toml -- desktop-build [Tauri build options]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build android <target> [Tauri build options]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build ios <target> [Tauri build options]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-dev android <target> [Tauri dev options/device]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-dev ios <target> [Tauri dev options/device]\n  cargo run --locked --manifest-path xtask/Cargo.toml -- update-homebrew-cask <formula> <version> <arm64-sha256> <x64-sha256> <url>".to_string()
 }
 
 fn repo_root() -> Result<PathBuf, String> {
@@ -69,17 +70,20 @@ fn verify_ocr_model(model_name: Option<&str>) -> Result<(), String> {
     let model_dir = repo_root()?
         .join("src-tauri/bundle-resources/ocr-models")
         .join(format!("{model_name}_onnx"));
-    let status = Command::new("cargo")
-        .current_dir(repo_root()?)
-        .args([
-            "run",
-            "--locked",
-            "--manifest-path",
-            "src-tauri/Cargo.toml",
-            "--bin",
-            "verify-ocr-model",
-            "--",
-        ])
+    let mut command = Command::new("cargo");
+    command.current_dir(repo_root()?).args([
+        "run",
+        "--locked",
+        "--manifest-path",
+        "src-tauri/Cargo.toml",
+        "--bin",
+        "verify-ocr-model",
+        "--",
+    ]);
+    if cfg!(target_os = "macos") {
+        command.env("ORT_LIB_PATH", prepare_macos_ort()?);
+    }
+    let status = command
         .arg(&model_dir)
         .status()
         .map_err(|error| format!("启动 Rust OCR 模型校验失败: {error}"))?;
@@ -87,6 +91,25 @@ fn verify_ocr_model(model_name: Option<&str>) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("Rust OCR 模型校验失败: {status}"))
+    }
+}
+
+fn desktop_build(arguments: &[String]) -> Result<(), String> {
+    let mut command = npm_command();
+    command
+        .current_dir(repo_root()?)
+        .args(["run", "tauri", "--", "build"])
+        .args(arguments);
+    if cfg!(target_os = "macos") {
+        command.env("ORT_LIB_PATH", prepare_macos_ort()?);
+    }
+    let status = command
+        .status()
+        .map_err(|error| format!("启动桌面 Tauri 构建失败: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("桌面 Tauri 构建失败: {status}"))
     }
 }
 
@@ -296,6 +319,7 @@ fn prepare_ios_ort() -> Result<PathBuf, String> {
     let framework = destination.join("onnxruntime.xcframework");
     for prefix in [
         "onnxruntime.xcframework/Info.plist",
+        "onnxruntime.xcframework/macos-arm64_x86_64/",
         "onnxruntime.xcframework/ios-arm64/",
         "onnxruntime.xcframework/ios-arm64_x86_64-simulator/",
     ] {
@@ -314,6 +338,43 @@ fn prepare_ios_ort() -> Result<PathBuf, String> {
         framework.display()
     );
     Ok(framework)
+}
+
+fn macos_onnx_runtime_library(framework: &Path) -> Result<PathBuf, String> {
+    let library = framework
+        .join("macos-arm64_x86_64")
+        .join("onnxruntime.framework")
+        .join("Versions")
+        .join("A")
+        .join("onnxruntime");
+    if library.is_file() {
+        Ok(library)
+    } else {
+        Err(format!(
+            "macOS ONNX Runtime 切片不完整: {}",
+            library.display()
+        ))
+    }
+}
+
+fn prepare_macos_ort() -> Result<PathBuf, String> {
+    let framework = prepare_ios_ort()?;
+    let library = macos_onnx_runtime_library(&framework)?;
+    let destination = framework
+        .parent()
+        .ok_or_else(|| {
+            format!(
+                "macOS ONNX Runtime 框架路径无父目录: {}",
+                framework.display()
+            )
+        })?
+        .join("macos-static");
+    copy_if_changed(&library, &destination.join("libonnxruntime.a"))?;
+    println!(
+        "macOS ONNX Runtime prepared: ORT_LIB_PATH={}",
+        destination.display()
+    );
+    Ok(destination)
 }
 
 fn download_verified(url: &str, expected_sha256: &str, destination: &Path) -> Result<(), String> {
@@ -435,10 +496,34 @@ fn write_zip_entry(entry: &mut zip::read::ZipFile<'_>, destination: &Path) -> Re
         .ok_or_else(|| format!("解压路径无父目录: {}", destination.display()))?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("创建解压目录失败 {}: {error}", parent.display()))?;
+    #[cfg(unix)]
+    if entry.is_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let mut target = String::new();
+        entry
+            .read_to_string(&mut target)
+            .map_err(|error| format!("读取符号链接失败 {}: {error}", destination.display()))?;
+        if destination.exists() || destination.is_symlink() {
+            fs::remove_file(destination).map_err(|error| {
+                format!("移除旧符号链接失败 {}: {error}", destination.display())
+            })?;
+        }
+        symlink(target, destination)
+            .map_err(|error| format!("创建符号链接失败 {}: {error}", destination.display()))?;
+        return Ok(());
+    }
     let mut output = File::create(destination)
         .map_err(|error| format!("创建解压文件失败 {}: {error}", destination.display()))?;
     io::copy(entry, &mut output)
         .map_err(|error| format!("解压文件失败 {}: {error}", destination.display()))?;
+    #[cfg(unix)]
+    if let Some(mode) = entry.unix_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(destination, fs::Permissions::from_mode(mode))
+            .map_err(|error| format!("设置解压文件权限失败 {}: {error}", destination.display()))?;
+    }
     Ok(())
 }
 

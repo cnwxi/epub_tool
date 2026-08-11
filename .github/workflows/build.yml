@@ -256,7 +256,7 @@ jobs:
 
       - name: Build macOS app bundle
         if: matrix.target.platform == 'macos'
-        run: npm run tauri -- build --bundles app
+        run: npm run tauri:build -- --bundles app
 
       - name: Create macOS DMG
         if: matrix.target.platform == 'macos'
@@ -316,7 +316,7 @@ jobs:
           ls -lh "$dmg_path"
 
       - name: Prepare renamed release assets
-        if: inputs.release
+        if: inputs.release && matrix.target.platform != 'windows'
         shell: bash
         env:
           ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
@@ -363,6 +363,50 @@ jobs:
           fi
 
           ls -la "$release_dir"
+
+      - name: Prepare renamed release assets (Windows)
+        if: inputs.release && matrix.target.platform == 'windows'
+        shell: pwsh
+        env:
+          ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
+          PLATFORM: ${{ matrix.target.platform }}
+          ARCH: ${{ matrix.target.arch }}
+          OCR_VARIANT: ${{ matrix.ocr.variant }}
+          PRODUCT_STEM: Epub.Tool.NewUI
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundleDir = 'src-tauri/target/release/bundle'
+          $releaseDir = 'release-assets'
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+
+          Get-ChildItem -Path $bundleDir -File -Recurse | ForEach-Object {
+            $target = $null
+            switch -Regex ($_.Name) {
+              '\.deb$' {
+                $target = '{0}_{1}_{2}_{3}_{4}.deb' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+              }
+              '\.rpm$' {
+                $target = '{0}_{1}_{2}_{3}_{4}.rpm' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+              }
+              '\.dmg$' {
+                $target = '{0}_{1}_{2}_{3}_{4}.dmg' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+              }
+              '\.app\.tar\.gz$' {
+                $target = '{0}_{1}_{2}_{3}_{4}.app.tar.gz' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+              }
+              '-setup\.exe$' {
+                $target = '{0}_{1}_{2}_{3}_{4}_setup.exe' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+              }
+            }
+            if ($null -ne $target) {
+              Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $releaseDir $target)
+            }
+          }
+
+          if (-not (Get-ChildItem -Path $releaseDir -File)) {
+            throw '未找到可上传的 release 资产'
+          }
+          Get-ChildItem -Path $releaseDir -File
 
       - name: Upload renamed release assets
         if: inputs.release

@@ -10,7 +10,6 @@
     }
   },
   "app": {
-    "macOSPrivateApi": false,
     "windows": [
       {
         "label": "main",
