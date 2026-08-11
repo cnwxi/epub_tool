@@ -1,6 +1,7 @@
 use super::image_processing::rewrite_references;
 use crate::rust_backend::{
     epub::workspace::{media_type_for, resolve_reference, EpubWorkspace},
+    text_encoding::{decode_epub_text, encode_epub_text, TextKind},
     EpubTask, TaskOutcome,
 };
 use crate::task_types::{TaskOptions, TaskType};
@@ -19,9 +20,10 @@ impl EpubTask for ReplaceCoverTask {
         let Some(options) = options.replace_cover() else {
             return false;
         };
-        options.cover_path_by_file.iter().all(|(input, cover)| {
-            !input.is_empty() && Path::new(cover).is_file()
-        })
+        options
+            .cover_path_by_file
+            .iter()
+            .all(|(input, cover)| !input.is_empty() && Path::new(cover).is_file())
     }
 
     fn process(
@@ -42,9 +44,8 @@ impl EpubTask for ReplaceCoverTask {
             .members
             .get(&opf_path)
             .ok_or_else(|| format!("EPUB 缺少 OPF 文件: {opf_path}"))?;
-        let opf = std::str::from_utf8(original_opf)
-            .map_err(|_| "OPF 不是 UTF-8，无法更换封面".to_string())?;
-        let existing_cover = find_cover_item(opf, &opf_path)?;
+        let opf = decode_epub_text(original_opf, TextKind::Xml, &opf_path)?;
+        let existing_cover = find_cover_item(&opf, &opf_path)?;
         let old_path = existing_cover
             .as_ref()
             .and_then(|item| item.href.as_deref())
@@ -65,22 +66,23 @@ impl EpubTask for ReplaceCoverTask {
         let preferred_path = format!("{preferred_dir}/cover{extension}");
         let new_path = unique_path(&preferred_path, workspace, old_path.as_deref());
         let (updated_opf, cover_id) = if let Some(item) = existing_cover {
-            let cover_id = item.id.clone().unwrap_or_else(|| next_cover_id(opf));
+            let cover_id = item.id.clone().unwrap_or_else(|| next_cover_id(&opf));
             (
-                replace_item(opf, &opf_path, &item, &cover_id, &new_path),
+                replace_item(&opf, &opf_path, &item, &cover_id, &new_path),
                 cover_id,
             )
         } else {
-            let cover_id = next_cover_id(opf);
+            let cover_id = next_cover_id(&opf);
             (
-                insert_cover_item(opf, &opf_path, &cover_id, &new_path)?,
+                insert_cover_item(&opf, &opf_path, &cover_id, &new_path)?,
                 cover_id,
             )
         };
         let updated_opf = ensure_cover_metadata(&updated_opf, &cover_id)?;
-        workspace
-            .members
-            .insert(opf_path.clone(), updated_opf.into_bytes());
+        workspace.members.insert(
+            opf_path.clone(),
+            encode_epub_text(&updated_opf, TextKind::Xml),
+        );
         if let Some(old_path) = old_path.filter(|old_path| old_path != &new_path) {
             rewrite_references(workspace, &[(old_path, new_path.clone())])?;
         }

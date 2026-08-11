@@ -65,10 +65,79 @@ jobs:
           echo "asset_version=$asset_version" >> "$GITHUB_OUTPUT"
           echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
 
+  quality:
+    name: Pure Rust Quality Gate
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Install JavaScript dependencies
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Verify generated protocol code
+        run: npm run protocol:check
+
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+          cargo fmt --manifest-path xtask/Cargo.toml -- --check
+
+      - name: Run Rust tests
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml
+          cargo test --locked --manifest-path xtask/Cargo.toml
+
+      - name: Run Rust clippy
+        run: |
+          cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Verify bundled ONNX OCR model with Rust
+        run: npm run build:verify-ocr-model
+
   build:
     name: Build ${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.ocr.variant }}
     runs-on: ${{ matrix.target.runner }}
-    needs: prepare
+    needs:
+      - prepare
+      - quality
     permissions:
       contents: read
     env:
@@ -109,18 +178,13 @@ jobs:
         ocr:
           - variant: small
             model_name: PP-OCRv6_small_rec
-          # medium 版发布产物暂时关闭；保留模型配置与本地维护脚本，避免发布资产体积翻倍。
+          # medium 版发布产物暂时关闭；保留模型配置，避免发布资产体积翻倍。
           # - variant: medium
           #   model_name: PP-OCRv6_medium_rec
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
 
       - name: Setup Node.js with npm cache
         if: github.ref == 'refs/heads/main'
@@ -165,18 +229,6 @@ jobs:
       - name: Verify generated protocol code
         run: npm run protocol:check
 
-      - name: Install Python golden-reference dependencies
-        run: python -m pip install -r requirements/requirements.txt
-
-      - name: Configure OCR bundle variant
-        run: python scripts/configure_ocr_bundle_variant.py
-
-      - name: Verify bundled ONNX OCR model
-        run: python scripts/verify_ocr_onnx_models.py
-
-      - name: Run Python tests
-        run: python -m unittest discover -s tests
-
       - name: Fetch Rust dependencies
         shell: bash
         run: |
@@ -191,21 +243,6 @@ jobs:
             sleep "$delay"
           done
           cargo fetch --locked
-
-      - name: Build Rust task runner
-        working-directory: src-tauri
-        run: cargo build --locked --bin rust-task-runner
-
-      # `cargo test` invokes Tauri's build script directly, bypassing
-      # `beforeBuildCommand`; verify the bundled Rust runtime resources first.
-      - name: Verify Rust runtime resources for tests
-        run: npm run dev:bundle-assets
-
-      - name: Run Rust tests
-        working-directory: src-tauri
-        env:
-          EPUB_TOOL_TEST_PYTHON: python
-        run: cargo test --locked
 
       - name: Build Tauri app
         if: matrix.target.platform != 'macos'
@@ -297,9 +334,6 @@ jobs:
           while IFS= read -r -d '' file; do
             filename="$(basename "$file")"
             case "$filename" in
-              *.AppImage)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.AppImage"
-                ;;
               *.deb)
                 target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.deb"
                 ;;
@@ -314,9 +348,6 @@ jobs:
                 ;;
               *-setup.exe)
                 target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}_setup.exe"
-                ;;
-              *.msi)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.msi"
                 ;;
               *)
                 continue
@@ -349,12 +380,159 @@ jobs:
           path: src-tauri/target/release/bundle
           if-no-files-found: error
 
+  mobile_android:
+    name: Android ${{ matrix.target }} Unsigned Compile Validation
+    runs-on: ubuntu-22.04
+    needs: quality
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64
+            rust_target: aarch64-linux-android
+            abi: arm64-v8a
+          - target: armv7
+            rust_target: armv7-linux-androideabi
+            abi: armeabi-v7a
+          - target: i686
+            rust_target: i686-linux-android
+            abi: x86
+          - target: x86_64
+            rust_target: x86_64-linux-android
+            abi: x86_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Rust Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36 and NDK 29
+        shell: bash
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "ndk;29.0.13846066"
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Install JavaScript dependencies
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Initialize generated Android project
+        run: npm run tauri -- android init --ci --skip-targets-install
+
+      - name: Build unsigned debug APK with bundled ONNX Runtime
+        run: >-
+          cargo run --locked --manifest-path xtask/Cargo.toml --
+          mobile-build android ${{ matrix.target }} --debug --apk --ci
+
+      - name: Verify packaged ONNX Runtime library
+        shell: bash
+        run: test -f "src-tauri/gen/android/app/src/main/jniLibs/${{ matrix.abi }}/libonnxruntime.so"
+
+      - name: Upload unsigned Android compile artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-${{ matrix.abi }}-unsigned-debug
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+  mobile_ios:
+    name: iOS Unsigned Compile Validation
+    runs-on: macos-14
+    needs: quality
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Setup Rust iOS targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Install JavaScript dependencies
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Initialize generated iOS project
+        run: npm run tauri -- ios init --ci --skip-targets-install
+
+      - name: Prepare verified iOS ONNX Runtime framework
+        run: cargo run --locked --manifest-path xtask/Cargo.toml -- prepare-mobile-ort ios
+
+      - name: Compile device Rust library without signing
+        env:
+          ORT_IOS_XCFWK_PATH: ${{ github.workspace }}/src-tauri/.mobile-runtime/onnxruntime-c-1.24.3/onnxruntime.xcframework
+        run: cargo build --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios --lib
+
+      - name: Build unsigned simulator app with bundled ONNX Runtime
+        run: >-
+          cargo run --locked --manifest-path xtask/Cargo.toml --
+          mobile-build ios aarch64-sim --debug --ci
+
+      - name: Upload unsigned iOS simulator artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-arm64-simulator-unsigned-debug
+          path: src-tauri/gen/apple/build/**/*.app
+          if-no-files-found: error
+
   cleanup_node_cache:
     name: Cleanup npm caches
     if: always()
     runs-on: ubuntu-22.04
     needs:
       - build
+      - mobile_android
+      - mobile_ios
     permissions:
       actions: write
       contents: read
@@ -491,18 +669,11 @@ jobs:
 
           ### Linux
 
-          下载下方 `linux_x64_small.AppImage` 或 `linux_arm64_small.AppImage`，添加执行权限后运行：
-
-          ```bash
-          chmod +x Epub.Tool.NewUI_*.AppImage
-          ./Epub.Tool.NewUI_*.AppImage
-          ```
-
-          也可使用 `.deb` 或 `.rpm` 包安装。
+          下载与架构匹配的 `linux_x64_small.deb` / `linux_arm64_small.deb`，或对应 `.rpm` 包安装。
 
           ### Windows
 
-          下载下方 `windows_x64_small_setup.exe` / `windows_arm64_small_setup.exe` 或对应 `.msi`，双击安装。
+          下载下方 `windows_x64_small_setup.exe` / `windows_arm64_small_setup.exe`，双击安装。
           MARKDOWN
 
       - name: Publish GitHub release
@@ -527,6 +698,14 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout Rust release tooling
+        uses: actions/checkout@v6
+        with:
+          path: source-repo
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Find macOS dmg assets
         id: asset
         env:
@@ -607,41 +786,13 @@ jobs:
           echo "  sha256 intel: $SHA_INTEL"
           echo "  url:          $URL"
 
-          export VERSION SHA_ARM SHA_INTEL URL
-          python - "$FORMULA" <<'PY'
-          import os
-          import re
-          import sys
-          from pathlib import Path
-
-          formula = Path(sys.argv[1])
-          text = formula.read_text()
-          version = os.environ["VERSION"]
-          sha_arm = os.environ["SHA_ARM"]
-          sha_intel = os.environ["SHA_INTEL"]
-          url = os.environ["URL"]
-
-          arch_line = '  arch arm: "arm64", intel: "x64"'
-          sha_block = f'  sha256 arm: "{sha_arm}",\n         intel: "{sha_intel}"'
-          url_line = f'  url "{url}"'
-
-          text = re.sub(r'(?m)^  version ".*"$', f'  version "{version}"', text, count=1)
-          if re.search(r'(?m)^  arch ', text):
-              text = re.sub(r'(?m)^  arch .*$', arch_line, text, count=1)
-          else:
-              text = re.sub(r'(?m)^(  version ".*"\n)', r'\1' + arch_line + '\n', text, count=1)
-          text = re.sub(r'(?ms)^  sha256 .+?(?=\n  url )', sha_block, text, count=1)
-          text = re.sub(r'(?m)^  url ".*"$', url_line, text, count=1)
-
-          missing = [
-              needle
-              for needle in (arch_line, sha_block, url_line)
-              if needle not in text
-          ]
-          if missing:
-              raise SystemExit(f"公式更新失败，缺少片段: {missing}")
-          formula.write_text(text)
-          PY
+          cargo run --locked --manifest-path source-repo/xtask/Cargo.toml -- \
+            update-homebrew-cask \
+            "$FORMULA" \
+            "$VERSION" \
+            "$SHA_ARM" \
+            "$SHA_INTEL" \
+            "$URL"
 
           echo "--- 更新后的公式 ---"
           cat "$FORMULA"

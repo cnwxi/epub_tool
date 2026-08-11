@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
-use serde::Serialize;
 use crate::task_types::{TaskEvent, TaskResult, TaskSpec};
+use serde::Serialize;
 
 use super::RuntimeResources;
 
@@ -88,8 +88,8 @@ mod desktop {
         },
     };
 
-    use serde::{Deserialize, Serialize};
     use crate::task_types::{TaskEvent, TaskResult};
+    use serde::{Deserialize, Serialize};
 
     #[cfg(unix)]
     use std::os::unix::process::CommandExt;

@@ -1,7 +1,7 @@
 //! OCR building blocks for `decrypt_font`.
 //!
-//! This module keeps the renderer and ONNX runtime independent from EPUB
-//! rewrite policy so each stage can be compared against Python golden outputs.
+//! The renderer and ONNX runtime remain independent from EPUB rewrite policy so
+//! each stage can be tested directly.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -12,24 +12,29 @@ use std::{
 };
 
 use super::{
-    encrypt_font::FontEncryptionPlan, font_cmap::unicode_cmap,
+    encrypt_font::FontEncryptionPlan,
+    font_cmap::{sfnt_data, unicode_cmap},
     font_obfuscation::split_obfuscation_text,
 };
 use crate::rust_backend::{
     epub::{workspace::relative_member_path, EpubWorkspace},
+    text_encoding::{decode_epub_text, encode_epub_text, text_kind_for_path, TextKind},
     EpubTask, TaskOutcome,
 };
-use crate::task_types::{TaskOptions, TaskType};
+use crate::task_types::{OcrCharPolicy, TaskOptions, TaskType};
+use icu_properties::{props::GeneralCategory, CodePointMapData};
 use image::{imageops::FilterType, DynamicImage, ImageFormat, Rgb, RgbImage};
 use ort::{session::Session, value::TensorRef};
 use regex::Regex;
 use sha1::{Digest, Sha1};
 
 const OCR_PERIOD_ALIASES: [char; 3] = ['.', '．', '｡'];
+const OCR_PASSTHROUGH_PUNCTUATION: &str = "。，、；：？！“”‘’（）《》〈〉【】〔〕…—·";
 const OCR_HANGUL_OBFUSCATION_START: u32 = 0xAC00;
 const OCR_HANGUL_OBFUSCATION_END: u32 = 0xD7AF;
 pub const DEFAULT_OCR_MAX_IMAGE_WIDTH: usize = 3200;
 const DEFAULT_MIN_OCR_CONFIDENCE: f32 = 0.8;
+const OCR_TOP_K: usize = 5;
 const OCR_FAILURE_IMAGE_DIR: &str = "Images/ocr-failures";
 const OCR_FAILURE_STYLE_CLASS: &str = "epub-tool-ocr-failure-style";
 const OCR_FAILURE_STYLE_CSS: &str = ".ocr-failure{font-size:1em;white-space:nowrap;line-height:1;}.ocr-failure img.ocr-failure-glyph{height:1.18em!important;width:auto!important;max-width:none!important;max-height:none!important;vertical-align:-0.22em!important;display:inline-block!important;}";
@@ -41,6 +46,8 @@ struct OcrFailure {
     reason: String,
     font_path: String,
     image_path: Option<String>,
+    confidence: Option<f32>,
+    candidates: Vec<OcrCandidate>,
 }
 
 #[derive(Debug, Default)]
@@ -62,20 +69,11 @@ impl EpubTask for DecryptFontTask {
             options
                 .min_ocr_confidence
                 .is_none_or(|value| (0.0..=1.0).contains(&value))
-                && options
-                    .ocr_char_policy
-                    .as_deref()
-                    .is_none_or(|value| value == "strict")
         })
     }
 
-    fn supports_input(&self, input: &Path, options: &TaskOptions) -> bool {
+    fn supports_input(&self, _input: &Path, _options: &TaskOptions) -> bool {
         configured_ocr_resources().is_some()
-            && EpubWorkspace::load(input, |_| {})
-                .and_then(|workspace| {
-                    FontEncryptionPlan::build_for_decryption(&workspace, input, options)
-                })
-                .is_ok()
     }
 
     fn process(
@@ -109,11 +107,16 @@ impl EpubTask for DecryptFontTask {
             .and_then(|options| options.min_ocr_confidence)
             .map(|value| value as f32)
             .unwrap_or(DEFAULT_MIN_OCR_CONFIDENCE);
+        let char_policy = options
+            .font()
+            .and_then(|options| options.ocr_char_policy)
+            .unwrap_or(OcrCharPolicy::Strict);
         let ocr_plan = build_ocr_replacement_plan(
             &font_data_by_path,
             &text_by_font,
             &resources,
             minimum_confidence,
+            char_policy,
             &workspace.opf_path,
         )?;
         let processed_fonts: BTreeSet<_> = font_data_by_path
@@ -135,51 +138,58 @@ impl EpubTask for DecryptFontTask {
         }
 
         for member in plan.xhtml_members() {
-            let source = std::str::from_utf8(
+            let source = decode_epub_text(
                 workspace
                     .members
                     .get(member)
                     .ok_or_else(|| format!("EPUB 缺少 XHTML 文件: {member}"))?,
-            )
-            .map_err(|_| format!("XHTML 不是 UTF-8: {member}"))?;
+                text_kind_for_path(member),
+                member,
+            )?;
             let failure_markup = ocr_failure_markup(&ocr_plan.failures, member);
             let rewritten = plan.rewrite_xhtml_with_ocr_failures(
-                source,
+                member,
+                &source,
                 &ocr_plan.replacements,
                 &failure_markup,
             )?;
             workspace.members.insert(
                 member.clone(),
-                ensure_ocr_failure_style(rewritten).into_bytes(),
+                encode_epub_text(
+                    &ensure_ocr_failure_style(rewritten),
+                    text_kind_for_path(member),
+                ),
             );
         }
         for (member, data) in workspace.members.clone() {
             if member.to_ascii_lowercase().ends_with(".css") {
-                let css =
-                    std::str::from_utf8(&data).map_err(|_| format!("CSS 不是 UTF-8: {member}"))?;
-                let cleaned = clean_strict_css_font_references(css, plan.target_families())?;
-                workspace.members.insert(member, cleaned.into_bytes());
+                let css = decode_epub_text(&data, TextKind::Css, &member)?;
+                let cleaned = clean_decrypted_css_font_references(&css, plan.target_families())?;
+                workspace
+                    .members
+                    .insert(member, encode_epub_text(&cleaned, TextKind::Css));
             }
         }
         let opf_path = workspace.opf_path.clone();
-        let opf = std::str::from_utf8(
+        let opf = decode_epub_text(
             workspace
                 .members
                 .get(&opf_path)
                 .ok_or_else(|| format!("EPUB 缺少 OPF 文件: {opf_path}"))?,
-        )
-        .map_err(|_| format!("OPF 不是 UTF-8: {opf_path}"))?;
+            TextKind::Xml,
+            &opf_path,
+        )?;
+        let updated_opf = add_ocr_failure_images_to_manifest(
+            &clean_decrypted_opf_font_manifest(
+                &opf,
+                &opf_target_hrefs(&opf_path, &processed_fonts),
+            ),
+            &ocr_plan.failure_images,
+            &opf_path,
+        );
         workspace.members.insert(
             opf_path.clone(),
-            add_ocr_failure_images_to_manifest(
-                &clean_strict_opf_font_manifest(
-                    opf,
-                    &opf_target_hrefs(&opf_path, &processed_fonts),
-                ),
-                &ocr_plan.failure_images,
-                &opf_path,
-            )
-            .into_bytes(),
+            encode_epub_text(&updated_opf, TextKind::Xml),
         );
         for font_path in &processed_fonts {
             workspace.members.remove(font_path);
@@ -253,12 +263,20 @@ fn ocr_failure_markup(
                             failure.status_code,
                         )
                     });
+                    let candidates = serde_json::to_string(&failure.candidates)
+                        .unwrap_or_else(|_| "[]".to_string());
+                    let confidence = failure
+                        .confidence
+                        .map(|value| format!("{value:.6}"))
+                        .unwrap_or_default();
                     let text = format!(
-                        "<span class=\"ocr-failure\" data-codepoint=\"U+{:04X}\" data-original-char=\"{}\" data-status=\"{}\" data-font-path=\"{}\" data-reason=\"{}\">{image}</span>",
+                        "<span class=\"ocr-failure\" data-codepoint=\"U+{:04X}\" data-original-char=\"{}\" data-status=\"{}\" data-font-path=\"{}\" data-confidence=\"{}\" data-candidates=\"{}\" data-reason=\"{}\">{image}</span>",
                         failure.character as u32,
                         escape_xml_attr(&failure.character.to_string()),
                         failure.status_code,
                         escape_xml_attr(&failure.font_path),
+                        confidence,
+                        escape_xml_attr(&candidates),
                         escape_xml_attr(&failure.reason),
                     );
                     (*character, text)
@@ -399,8 +417,15 @@ fn dev_ocr_resources() -> Option<OcrResourcePaths> {
         .then_some(OcrResourcePaths { model_dir })
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct OcrTextResult {
+    pub text: String,
+    pub confidence: f32,
+    pub candidates: Vec<OcrCandidate>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct OcrCandidate {
     pub text: String,
     pub confidence: f32,
 }
@@ -413,27 +438,39 @@ pub struct OcrImageTensor {
     pub width: usize,
 }
 
-/// Model output reduced to the values consumed by the Python CTC decoder.
-/// Keeping this representation independent from `ort` makes parity tests
-/// compare the runtime output directly without changing the task protocol.
+/// Model output reduced to the values consumed by the CTC decoder. Keeping this
+/// representation independent from `ort` makes runtime tests deterministic.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OcrCtcPrediction {
     pub shape: Vec<usize>,
     pub token_ids: Vec<usize>,
     pub scores: Vec<f32>,
+    pub top_k: Vec<Vec<OcrTokenCandidate>>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct OcrTokenCandidate {
+    pub token_id: usize,
+    pub score: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OcrModelVerification {
+    pub input_shape: [usize; 3],
+    pub output_shape: Vec<usize>,
+    pub character_count: usize,
 }
 
 /// The portion of PaddleOCR's bundled `inference.yml` that affects OCR
-/// inference.  It intentionally does not try to be a general YAML parser:
-/// accepting arbitrary YAML here would make the Rust/Python parity contract
-/// much harder to audit.  The parser supports the checked-in PaddleOCR model
-/// format and rejects malformed or incomplete files.
+/// inference. It intentionally does not try to be a general YAML parser:
+/// accepting arbitrary YAML here would make the model contract much harder to
+/// audit. The parser supports the checked-in PaddleOCR model format and rejects
+/// malformed or incomplete files.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OcrModelConfig {
     pub image_shape: [usize; 3],
     pub image_mode: String,
-    /// Includes the CTC blank token at index zero and the trailing space
-    /// token, exactly as Python's `OnnxGlyphOcrBackend` builds it.
+    /// Includes the CTC blank token at index zero and the trailing space token.
     pub characters: Vec<String>,
 }
 
@@ -462,7 +499,8 @@ pub struct FontGlyphRenderer {
 
 impl FontGlyphRenderer {
     pub fn new(font_bytes: &[u8]) -> Result<Self, String> {
-        let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default())
+        let sfnt = sfnt_data(font_bytes)?;
+        let font = fontdue::Font::from_bytes(sfnt, fontdue::FontSettings::default())
             .map_err(|error| format!("Rust OCR 暂不支持该字体: {error}"))?;
         Ok(Self {
             font,
@@ -539,16 +577,15 @@ pub fn is_period_like_image(image: &DynamicImage) -> bool {
 
 /// Builds the complete per-font OCR plan needed by EPUB rewriting.
 ///
-/// Python's reference backend never guesses a low-confidence character. It
-/// instead replaces the affected text with a visible glyph image and records
-/// its diagnostic metadata, while continuing to process the rest of the EPUB.
-/// This function follows that policy so an otherwise readable book is not
-/// discarded solely because one glyph needs manual review.
+/// Low-confidence characters are never guessed. The affected text is replaced
+/// with a visible glyph image and its diagnostic metadata is retained, allowing
+/// the rest of the EPUB to remain readable and the glyph to be reviewed.
 fn build_ocr_replacement_plan(
     font_data_by_path: &BTreeMap<String, Vec<u8>>,
     text_by_font: &BTreeMap<String, String>,
     resources: &OcrResourcePaths,
     minimum_confidence: f32,
+    char_policy: OcrCharPolicy,
     opf_path: &str,
 ) -> Result<OcrReplacementPlan, String> {
     if !(0.0..=1.0).contains(&minimum_confidence) {
@@ -561,7 +598,7 @@ fn build_ocr_replacement_plan(
         let cmap = unicode_cmap(font_data)
             .map_err(|error| format!("读取待解密字体 cmap 失败 {font_path}: {error}"))?;
         let text = text_by_font.get(font_path).map_or("", String::as_str);
-        let candidates = split_obfuscation_text(text).obfuscate;
+        let candidates = ocr_candidate_text(text, char_policy);
         let renderer = FontGlyphRenderer::new(font_data)?;
         let mut replacements = BTreeMap::new();
         let mut failures = BTreeMap::new();
@@ -581,6 +618,8 @@ fn build_ocr_replacement_plan(
                             reason: format!("OCR 异常: {error}，字体 {font_path}"),
                             font_path: font_path.clone(),
                             image_path: None,
+                            confidence: None,
+                            candidates: Vec::new(),
                         },
                     );
                     continue;
@@ -599,6 +638,7 @@ fn build_ocr_replacement_plan(
                             opf_path,
                             &font_hash,
                             &image,
+                            None,
                             &mut plan.failure_images,
                         )?,
                     );
@@ -629,6 +669,7 @@ fn build_ocr_replacement_plan(
                         opf_path,
                         &font_hash,
                         &image,
+                        Some(&result),
                         &mut plan.failure_images,
                     )?,
                 );
@@ -648,6 +689,7 @@ fn build_ocr_replacement_plan(
                         opf_path,
                         &font_hash,
                         &image,
+                        Some(&result),
                         &mut plan.failure_images,
                     )?,
                 );
@@ -661,6 +703,7 @@ fn build_ocr_replacement_plan(
     Ok(plan)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ocr_failure(
     character: char,
     status_code: &'static str,
@@ -669,6 +712,7 @@ fn ocr_failure(
     opf_path: &str,
     font_hash: &str,
     image: &DynamicImage,
+    evidence: Option<&OcrTextResult>,
     failure_images: &mut BTreeMap<String, Vec<u8>>,
 ) -> Result<OcrFailure, String> {
     let image_path = ocr_failure_image_path(opf_path, font_hash, character, status_code);
@@ -683,13 +727,17 @@ fn ocr_failure(
         reason,
         font_path: font_path.to_string(),
         image_path: Some(image_path),
+        confidence: evidence.map(|result| result.confidence),
+        candidates: evidence
+            .map(|result| result.candidates.clone())
+            .unwrap_or_default(),
     })
 }
 
 /// Removes only the simple font references accepted by the native font plan.
 /// The caller supplies normalized family names and applies the returned text
 /// only after every OCR replacement has succeeded.
-pub fn clean_strict_css_font_references(
+pub fn clean_decrypted_css_font_references(
     css: &str,
     target_families: &std::collections::BTreeSet<String>,
 ) -> Result<String, String> {
@@ -736,7 +784,7 @@ pub fn clean_strict_css_font_references(
         .into_owned())
 }
 
-pub fn clean_strict_opf_font_manifest(
+pub fn clean_decrypted_opf_font_manifest(
     opf: &str,
     target_hrefs: &std::collections::BTreeSet<String>,
 ) -> String {
@@ -800,6 +848,7 @@ impl OnnxGlyphOcrBackend {
         Ok(decode_ctc_argmax(
             &prediction.token_ids,
             &prediction.scores,
+            &prediction.top_k,
             &self.config.characters,
         ))
     }
@@ -810,6 +859,35 @@ pub fn load_ocr_model_config(path: &Path) -> Result<OcrModelConfig, String> {
         .map_err(|error| format!("读取 OCR 模型配置失败 {}: {error}", path.display()))?;
     parse_ocr_model_config(&source)
         .map_err(|error| format!("OCR 模型配置无效 {}: {error}", path.display()))
+}
+
+pub fn verify_ocr_model_dir(model_dir: &Path) -> Result<OcrModelVerification, String> {
+    let model_path = model_dir.join("inference.onnx");
+    let config = load_ocr_model_config(&model_dir.join("inference.yml"))?;
+    let [channels, height, width] = config.image_shape;
+    let tensor = OcrImageTensor {
+        data: vec![0.0; channels * height * width],
+        channels,
+        height,
+        width,
+    };
+    let prediction = infer_onnx_ctc(&model_path, &tensor)?;
+    let output_classes = prediction
+        .shape
+        .last()
+        .copied()
+        .ok_or_else(|| "ONNX OCR 输出形状为空".to_string())?;
+    if output_classes != config.characters.len() {
+        return Err(format!(
+            "ONNX OCR 输出类别数与 CTC 字典不匹配: {output_classes} != {}",
+            config.characters.len()
+        ));
+    }
+    Ok(OcrModelVerification {
+        input_shape: config.image_shape,
+        output_shape: prediction.shape,
+        character_count: config.characters.len(),
+    })
 }
 
 pub fn parse_ocr_model_config(source: &str) -> Result<OcrModelConfig, String> {
@@ -949,23 +1027,44 @@ fn run_onnx_ctc_session(
     }
     let mut token_ids = Vec::with_capacity(steps);
     let mut scores = Vec::with_capacity(steps);
+    let mut top_k = Vec::with_capacity(steps);
     for timestep in values.chunks_exact(vocab) {
-        let (token_id, score) = timestep
+        let mut ranked: Vec<_> = timestep
             .iter()
             .enumerate()
-            .max_by(|(_, left), (_, right)| left.total_cmp(right))
+            .map(|(token_id, score)| OcrTokenCandidate {
+                token_id,
+                score: *score,
+            })
+            .collect();
+        ranked.sort_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.token_id.cmp(&right.token_id))
+        });
+        ranked.truncate(OCR_TOP_K.min(ranked.len()));
+        let selected = ranked
+            .first()
             .ok_or_else(|| "ONNX OCR 输出 timestep 为空".to_string())?;
-        token_ids.push(token_id);
-        scores.push(*score);
+        token_ids.push(selected.token_id);
+        scores.push(selected.score);
+        top_k.push(ranked);
     }
     Ok(OcrCtcPrediction {
         shape,
         token_ids,
         scores,
+        top_k,
     })
 }
 
-fn decode_ctc_argmax(token_ids: &[usize], scores: &[f32], characters: &[String]) -> OcrTextResult {
+fn decode_ctc_argmax(
+    token_ids: &[usize],
+    scores: &[f32],
+    top_k: &[Vec<OcrTokenCandidate>],
+    characters: &[String],
+) -> OcrTextResult {
     let mut text = String::new();
     let mut selected_scores = Vec::new();
     let mut previous = None;
@@ -980,30 +1079,51 @@ fn decode_ctc_argmax(token_ids: &[usize], scores: &[f32], characters: &[String])
             selected_scores.push(score);
         }
     }
-    let confidence = (!selected_scores.is_empty())
-        .then(|| selected_scores.iter().sum::<f32>() / selected_scores.len() as f32)
-        .unwrap_or(0.0);
-    OcrTextResult { text, confidence }
+    let confidence = if selected_scores.is_empty() {
+        0.0
+    } else {
+        selected_scores.iter().sum::<f32>() / selected_scores.len() as f32
+    };
+    let candidates = collect_ocr_candidates(&text, confidence, top_k, characters);
+    OcrTextResult {
+        text,
+        confidence,
+        candidates,
+    }
 }
 
 /// Decodes the first batch item of a CTC recognition output.
 ///
 /// `prediction` is indexed as `[time_step][token_id]`, where token zero is
-/// the CTC blank. It mirrors Python's `OnnxGlyphOcrBackend.decode_prediction`:
-/// repeated non-blank tokens are collapsed, blank tokens reset repetition, and
-/// confidence is the mean selected-token score.
+/// the CTC blank. Repeated non-blank tokens are collapsed, blank tokens reset
+/// repetition, and confidence is the mean selected-token score.
 pub fn decode_ctc_prediction(prediction: &[Vec<f32>], characters: &[String]) -> OcrTextResult {
     let mut text = String::new();
     let mut scores = Vec::new();
     let mut previous = None;
+    let mut top_k = Vec::with_capacity(prediction.len());
     for timestep in prediction {
-        let Some((token_id, score)) = timestep
+        let mut ranked: Vec<_> = timestep
             .iter()
             .enumerate()
-            .max_by(|(_, left), (_, right)| left.total_cmp(right))
-        else {
+            .map(|(token_id, score)| OcrTokenCandidate {
+                token_id,
+                score: *score,
+            })
+            .collect();
+        ranked.sort_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.token_id.cmp(&right.token_id))
+        });
+        ranked.truncate(OCR_TOP_K.min(ranked.len()));
+        let Some(selected) = ranked.first() else {
             continue;
         };
+        let token_id = selected.token_id;
+        let score = selected.score;
+        top_k.push(ranked);
         if token_id == 0 || previous == Some(token_id) {
             previous = Some(token_id);
             continue;
@@ -1011,19 +1131,66 @@ pub fn decode_ctc_prediction(prediction: &[Vec<f32>], characters: &[String]) -> 
         previous = Some(token_id);
         if let Some(character) = characters.get(token_id) {
             text.push_str(character);
-            scores.push(*score);
+            scores.push(score);
         }
     }
-    let confidence = (!scores.is_empty())
-        .then(|| scores.iter().sum::<f32>() / scores.len() as f32)
-        .unwrap_or(0.0);
-    OcrTextResult { text, confidence }
+    let confidence = if scores.is_empty() {
+        0.0
+    } else {
+        scores.iter().sum::<f32>() / scores.len() as f32
+    };
+    let candidates = collect_ocr_candidates(&text, confidence, &top_k, characters);
+    OcrTextResult {
+        text,
+        confidence,
+        candidates,
+    }
 }
 
-/// Mirrors Python `OnnxGlyphOcrBackend.preprocess_image` without requiring an
-/// ONNX Runtime. The result is NCHW data for a batch of one, normalized from
-/// RGB pixels by `(pixel / 255 - 0.5) / 0.5` and padded with zeros on the
-/// right.
+fn collect_ocr_candidates(
+    selected_text: &str,
+    selected_confidence: f32,
+    top_k: &[Vec<OcrTokenCandidate>],
+    characters: &[String],
+) -> Vec<OcrCandidate> {
+    let mut evidence = BTreeMap::<String, f32>::new();
+    if !selected_text.is_empty() {
+        evidence.insert(selected_text.to_string(), selected_confidence);
+    }
+    for timestep in top_k {
+        for candidate in timestep {
+            if candidate.token_id == 0 {
+                continue;
+            }
+            let Some(text) = characters
+                .get(candidate.token_id)
+                .filter(|text| !text.is_empty())
+            else {
+                continue;
+            };
+            evidence
+                .entry(text.clone())
+                .and_modify(|score| *score = score.max(candidate.score))
+                .or_insert(candidate.score);
+        }
+    }
+    let mut candidates: Vec<_> = evidence
+        .into_iter()
+        .map(|(text, confidence)| OcrCandidate { text, confidence })
+        .collect();
+    candidates.sort_by(|left, right| {
+        right
+            .confidence
+            .total_cmp(&left.confidence)
+            .then_with(|| left.text.cmp(&right.text))
+    });
+    candidates.truncate(OCR_TOP_K);
+    candidates
+}
+
+/// Produces NCHW data for a batch of one without requiring ONNX Runtime. RGB
+/// pixels are normalized by `(pixel / 255 - 0.5) / 0.5` and right-padded with
+/// zeros.
 pub fn preprocess_ocr_image(
     image: &DynamicImage,
     image_shape: [usize; 3],
@@ -1099,6 +1266,38 @@ pub fn format_ocr_progress(processed_count: usize, total_count: usize) -> String
     )
 }
 
+fn ocr_candidate_text(text: &str, policy: OcrCharPolicy) -> String {
+    let strict = split_obfuscation_text(text)
+        .obfuscate
+        .chars()
+        .collect::<BTreeSet<_>>();
+    let categories = CodePointMapData::<GeneralCategory>::new();
+    let mut seen = BTreeSet::new();
+    text.chars()
+        .filter(|character| {
+            if is_ocr_common_exclusion(*character, categories.get(*character)) {
+                return false;
+            }
+            strict.contains(character)
+                || is_ocr_obfuscation_hint_char(*character)
+                || (policy == OcrCharPolicy::Compatible && !character.is_ascii())
+        })
+        .filter(|character| seen.insert(*character))
+        .collect()
+}
+
+fn is_ocr_common_exclusion(character: char, category: GeneralCategory) -> bool {
+    character.is_whitespace()
+        || matches!(
+            category,
+            GeneralCategory::Control
+                | GeneralCategory::Format
+                | GeneralCategory::Surrogate
+                | GeneralCategory::Unassigned
+        )
+        || OCR_PASSTHROUGH_PUNCTUATION.contains(character)
+}
+
 pub fn is_ocr_obfuscation_hint_char(character: char) -> bool {
     let codepoint = character as u32;
     matches!(character, '\u{E000}'..='\u{F8FF}')
@@ -1146,11 +1345,12 @@ pub fn format_ocr_failure_placeholder(character: char, status_code: &str) -> Str
 #[cfg(test)]
 mod tests {
     use super::{
-        clean_strict_css_font_references, clean_strict_opf_font_manifest, decode_ctc_prediction,
-        filter_text_by_cmap, format_ocr_failure_placeholder, format_ocr_progress,
-        is_ocr_obfuscation_hint_char, is_period_like_image, normalize_ocr_text,
-        parse_ocr_model_config, preprocess_ocr_image,
+        clean_decrypted_css_font_references, clean_decrypted_opf_font_manifest,
+        decode_ctc_prediction, filter_text_by_cmap, format_ocr_failure_placeholder,
+        format_ocr_progress, is_ocr_obfuscation_hint_char, is_period_like_image,
+        normalize_ocr_text, ocr_candidate_text, parse_ocr_model_config, preprocess_ocr_image,
     };
+    use crate::task_types::OcrCharPolicy;
     use image::{DynamicImage, Rgb, RgbImage};
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
@@ -1172,7 +1372,20 @@ mod tests {
     }
 
     #[test]
-    fn formats_failure_placeholders_like_python() {
+    fn preserves_strict_and_compatible_ocr_character_policies() {
+        let text = "你０Ａ❶0A。？，！、；：《》（）\u{E000}<& \u{0000}";
+        assert_eq!(
+            ocr_candidate_text(text, OcrCharPolicy::Strict),
+            "你０Ａ0A\u{E000}"
+        );
+        assert_eq!(
+            ocr_candidate_text(text, OcrCharPolicy::Compatible),
+            "你０Ａ❶0A\u{E000}"
+        );
+    }
+
+    #[test]
+    fn formats_stable_failure_placeholders() {
         assert_eq!(
             format_ocr_failure_placeholder('\u{E000}', "OCR_LOW_CONF"),
             "[U+E000 OCR_LOW_CONF]"
@@ -1180,7 +1393,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_ctc_output_like_python_onnx_backend() {
+    fn decodes_ctc_output_with_blank_and_duplicate_collapse() {
         let characters = vec![
             "blank".to_string(),
             "你".to_string(),
@@ -1197,10 +1410,22 @@ mod tests {
         let result = decode_ctc_prediction(&prediction, &characters);
         assert_eq!(result.text, "你好");
         assert!((result.confidence - 0.925).abs() < f32::EPSILON);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|candidate| candidate.text == "你好"));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|candidate| candidate.text == "你"));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|candidate| candidate.text == "好"));
     }
 
     #[test]
-    fn parses_bundled_paddleocr_config_like_python_backend() {
+    fn parses_bundled_paddleocr_config() {
         let config = parse_ocr_model_config(include_str!(
             "../../../bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/inference.yml"
         ))
@@ -1215,7 +1440,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_period_like_glyphs_with_python_thresholds() {
+    fn detects_period_like_glyphs_with_stable_thresholds() {
         let mut period = RgbImage::from_pixel(100, 100, Rgb([255, 255, 255]));
         for y in 75..85 {
             for x in 45..55 {
@@ -1227,7 +1452,7 @@ mod tests {
         let mut zero = RgbImage::from_pixel(100, 100, Rgb([255, 255, 255]));
         for y in 20..80 {
             for x in 30..70 {
-                if x < 36 || x >= 64 || y < 26 || y >= 74 {
+                if !(36..64).contains(&x) || !(26..74).contains(&y) {
                     zero.put_pixel(x, y, Rgb([0, 0, 0]));
                 }
             }
@@ -1236,14 +1461,14 @@ mod tests {
     }
 
     #[test]
-    fn cleans_only_strict_font_references_and_preserves_fallback_family() {
+    fn cleans_selected_font_references_and_preserves_fallback_family() {
         let targets = BTreeSet::from(["obf".to_string()]);
         let css = "@font-face { font-family: Obf; src: url(font.ttf); }\n.body { font-family: Obf, serif; }";
         assert_eq!(
-            clean_strict_css_font_references(css, &targets).expect("clean CSS"),
+            clean_decrypted_css_font_references(css, &targets).expect("clean CSS"),
             "\n.body { font-family: serif; }"
         );
-        assert!(clean_strict_css_font_references("p { font: 1em Obf; }", &targets).is_err());
+        assert!(clean_decrypted_css_font_references("p { font: 1em Obf; }", &targets).is_err());
     }
 
     #[test]
@@ -1251,19 +1476,19 @@ mod tests {
         let targets = BTreeSet::from(["Fonts/obf.ttf".to_string()]);
         let opf = "<manifest><item id=\"font\" href=\"Fonts/obf.ttf\" media-type=\"font/ttf\"/><item id=\"chapter\" href=\"chapter.xhtml\"/></manifest>";
         assert_eq!(
-            clean_strict_opf_font_manifest(opf, &targets),
+            clean_decrypted_opf_font_manifest(opf, &targets),
             "<manifest><item id=\"chapter\" href=\"chapter.xhtml\"/></manifest>"
         );
     }
 
     #[test]
-    fn formats_ocr_progress_like_python() {
+    fn formats_stable_ocr_progress() {
         assert_eq!(format_ocr_progress(3, 12), "，进度 3/12 (25.0%)");
         assert_eq!(format_ocr_progress(0, 0), "");
     }
 
     #[test]
-    fn preprocesses_rgb_images_like_python_onnx_backend() {
+    fn preprocesses_rgb_images_for_onnx_ctc() {
         let image = DynamicImage::ImageRgb8(RgbImage::from_pixel(1, 1, Rgb([0, 127, 255])));
         let tensor = preprocess_ocr_image(&image, [3, 2, 4], "RGB", 4).expect("tensor");
         assert_eq!((tensor.channels, tensor.height, tensor.width), (3, 2, 4));

@@ -1135,9 +1135,9 @@ export const FontScanResultSchema: GenMessage<FontScanResult, {jsonType: FontSca
   messageDesc(file_epub_tool_v1_engine, 20);
 
 /**
- * The version of the JSON/protobuf contract carried by the desktop IPC and
- * Python worker JSON Lines transport. A new incompatible protocol uses a new
- * package version rather than changing this value in place.
+ * The version of the JSON/protobuf contract carried by Tauri IPC. A new
+ * incompatible protocol uses a new package version rather than changing this
+ * value in place.
  *
  * @generated from enum epub_tool.v1.ProtocolVersion
  */
@@ -1154,9 +1154,9 @@ export enum ProtocolVersion {
 }
 
 /**
- * The version of the JSON/protobuf contract carried by the desktop IPC and
- * Python worker JSON Lines transport. A new incompatible protocol uses a new
- * package version rather than changing this value in place.
+ * The version of the JSON/protobuf contract carried by Tauri IPC. A new
+ * incompatible protocol uses a new package version rather than changing this
+ * value in place.
  *
  * @generated from enum epub_tool.v1.ProtocolVersion
  */

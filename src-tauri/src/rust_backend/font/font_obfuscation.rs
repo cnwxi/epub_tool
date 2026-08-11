@@ -1,9 +1,8 @@
 //! Character filtering and cmap rebinding plans for `encrypt_font`.
 //!
-//! Python intentionally preserves punctuation, symbols and whitespace because
-//! changing their codepoints can affect EPUB line-breaking. This module uses
-//! Unicode general-category and East Asian Width data to preserve the same
-//! policy before a font's cmap is rewritten.
+//! Punctuation, symbols and whitespace are preserved because changing their
+//! codepoints can affect EPUB line-breaking. This module uses Unicode general
+//! category and East Asian Width data before a font's cmap is rewritten.
 
 use icu_properties::{
     props::{EastAsianWidth, GeneralCategory},
@@ -21,8 +20,8 @@ pub struct ObfuscationText {
     pub passthrough: String,
 }
 
-/// Applies the Python `clean_text()` character policy while preserving first
-/// occurrence order. Control and format characters are omitted entirely.
+/// Applies the stable character policy while preserving first occurrence order.
+/// Control and format characters are omitted entirely.
 pub fn split_obfuscation_text(text: &str) -> ObfuscationText {
     let categories = CodePointMapData::<GeneralCategory>::new();
     let widths = CodePointMapData::<EastAsianWidth>::new();
@@ -214,7 +213,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn matches_python_clean_text_character_policy() {
+    fn preserves_the_stable_clean_text_character_policy() {
         assert_eq!(
             split_obfuscation_text("AＡ中中， 。\u{0001}"),
             super::ObfuscationText {

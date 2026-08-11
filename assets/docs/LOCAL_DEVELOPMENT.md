@@ -1,99 +1,84 @@
 # 本地开发
 
-本分支的桌面应用是纯 Rust 任务后端：Vite 提供前端开发服务器，Tauri 调用 Rust
-任务引擎。日常开发、运行、构建和发布都不需要 Conda、Python 或 Python sidecar。
-
-Python 仅保留为黄金样本测试和维护 OCR 模型的工具，见本文末尾的“可选 Python 工作”。
+应用由 Vue 前端、Tauri 壳层、统一 Rust EPUB 核心和 Rust `xtask` 维护工具组成。日常开发、测试、构建与打包只需要 Node.js、Rust 及目标平台工具链。
 
 ## 前置依赖
 
 | 依赖 | 用途 | 验证命令 |
 | --- | --- | --- |
-| Node.js | 前端和 Tauri CLI | `node --version` |
-| npm | 安装与运行脚本 | `npm --version` |
-| Rust stable（含 Cargo） | Tauri 与 EPUB 任务引擎 | `rustc --version`、`cargo --version` |
-
-项目 Node.js 版本见仓库根目录的 `.nvmrc`。
+| Node.js（版本见 `.nvmrc`） | 前端和 Tauri CLI | `node --version` |
+| npm | 安装依赖和运行脚本 | `npm --version` |
+| Rust stable / Cargo | 业务核心、Worker、Tauri、xtask | `rustc --version`、`cargo --version` |
 
 ### macOS
 
-先安装 Apple Command Line Tools：
+桌面构建至少需要 Apple Command Line Tools：
 
 ```bash
 xcode-select --install
 ```
 
-随后通过 Rustup 安装 Rust stable，并按 `.nvmrc` 安装 Node.js。确认：
-
-```bash
-node --version
-npm --version
-rustc --version
-cargo --version
-```
+iOS 构建必须安装完整 Xcode，并使用 Rustup 安装 `aarch64-apple-ios` 和 `aarch64-apple-ios-sim` targets。
 
 ### Windows
 
-使用原生 Windows 的 PowerShell 或 Windows Terminal，不在 WSL 中运行桌面应用。
+使用原生 PowerShell 或 Windows Terminal：
 
-1. 安装 Visual Studio Build Tools，并选择 **Desktop development with C++**。
-2. 安装 WebView2 Runtime（Windows 10 1803 及之后版本通常已包含）。
-3. 安装 Rustup，并选择 `stable-msvc` 工具链。
+1. 安装 Visual Studio Build Tools 的 **Desktop development with C++**。
+2. 安装 WebView2 Runtime。
+3. 通过 Rustup 安装 `stable-msvc`。
 
 ### Linux
 
-需安装 WebKitGTK 与 Tauri 系统库。Debian/Ubuntu 示例：
+Debian/Ubuntu 示例：
 
 ```bash
 sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 ```
 
-其他发行版请按 [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/) 安装对应包。
+其他发行版按 Tauri 2 对应平台前置依赖安装。
 
 ### Android
 
-安装 Android Studio、Android SDK/NDK、JDK 和 Rustup，然后初始化原生工程：
+安装 JDK 17、Android SDK 36、NDK `29.0.13846066` 和 Rustup。按需要安装以下 Rust target：
 
-```bash
-npm run tauri:android:init
-```
+| Tauri target | Rust target | Android ABI |
+| --- | --- | --- |
+| `aarch64` | `aarch64-linux-android` | `arm64-v8a` |
+| `armv7` | `armv7-linux-androideabi` | `armeabi-v7a` |
+| `i686` | `i686-linux-android` | `x86` |
+| `x86_64` | `x86_64-linux-android` | `x86_64` |
+
+应用最低 Android API 为 24。
 
 ### iOS
 
-在 macOS 安装完整 Xcode、xcodegen 和 Rustup，并准备 Apple 开发签名配置：
-
-```bash
-npm run tauri:ios:init
-```
+iOS 应用最低系统版本为 15.1。模拟器构建使用 `aarch64-sim`，设备 Rust 库使用 `aarch64` / `aarch64-apple-ios`。生成签名 device archive 或 IPA 还需要 Apple Development Team、证书和 provisioning profile。
 
 ## 安装依赖
 
-在仓库根目录执行：
-
 ```bash
-npm install
-npm --prefix frontend install
+npm ci
+npm --prefix frontend ci
 ```
 
-首次运行会由 Cargo 下载、编译 Rust 依赖。该过程不依赖 Python 环境。
+## 启动与调试
 
-## 启动桌面开发环境
+完整桌面开发环境：
 
 ```bash
 npm run tauri:dev
 ```
 
-该命令会校验已提交的 ONNX OCR 资源、启动 Vite，并启动 Tauri 桌面窗口。桌面任务执行路径为：
+启动顺序是：校验内置 ONNX OCR 模型、构建 debug Rust Worker、启动 Vite、启动 Tauri。桌面任务路径：
 
 ```text
-Vue → Tauri command → EngineRuntime → rust-task-runner → rust_backend → EpubTask
+Vue -> Tauri IPC -> EngineRuntime -> rust-task-runner -> rust_backend
 ```
 
-Android/iOS 使用相同的 `EngineRuntime` 接口，但直接在应用进程内调用 `rust_backend`。
-
-仅调试前端样式时可运行：
+仅调试前端时：
 
 ```bash
 npm run dev
@@ -101,82 +86,115 @@ npm run dev
 
 此模式没有 Tauri Runtime，不能执行 EPUB 任务。
 
-## Rust 编译、测试与打包
-
-仅编译 Rust 后端：
+直接运行类型化 Rust 任务可使用：
 
 ```bash
-cargo build --manifest-path src-tauri/Cargo.toml
+cargo run --locked --manifest-path src-tauri/Cargo.toml \
+  --bin rust-task-runner -- \
+  --request-json '{"task_id":"debug","task_type":"reformat_epub","input_files":["/absolute/book.epub"],"output_dir":null,"options":{"kind":"empty"}}'
 ```
 
-运行 Rust 单元测试：
+## 验证
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml
+# 格式
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo fmt --manifest-path xtask/Cargo.toml -- --check
+
+# 单元和集成测试
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+cargo test --locked --manifest-path xtask/Cargo.toml
+
+# 静态检查
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
+
+# wire contract 与前端
+npm run protocol:check
+npm run build
+
+# 使用真实 Rust ONNX Runtime session 校验模型输入、输出和字典维度
+npm run build:verify-ocr-model
 ```
 
-构建前端并校验提交的 ONNX OCR 资源：
+`src-tauri/tests/core_regression.rs` 使用运行时生成的稳定 EPUB fixture 覆盖输出后缀、跳过行为、加密/解密往返、简繁转换、任务事件/结果和 Worker JSON Lines 协议。
+
+## 桌面构建
 
 ```bash
 npm run build:bundle-assets
-```
-
-构建当前平台的桌面安装包：
-
-```bash
 npm run tauri:build
 ```
 
-Tauri 打包只携带 Rust 可执行程序、前端静态资源、ONNX OCR 模型与 OpenCC 词典；不会构建、携带或启动 Python sidecar。
+`build:bundle-assets` 构建前端、验证 OCR 模型并构建 release Worker。安装包携带前端、Rust Worker、OCR 模型和 OpenCC 词典。
 
-移动端开发和构建命令：
+## Android 构建
+
+首次生成原生工程：
 
 ```bash
-npm run tauri:android:dev
-npm run tauri:android:build
-npm run tauri:ios:dev
-npm run tauri:ios:build
+npm run tauri:android:init -- --ci
 ```
 
-移动构建不生成桌面 Worker，也不携带 ONNX OCR 模型；字体 OCR 会在前端显示为当前平台不可用。
+构建某个 ABI 的无签名 debug APK：
 
-## `cargo metadata` 或 Cargo 不可用
+```bash
+npm run tauri:android:build -- aarch64 --debug --apk --ci
+```
 
-若 Tauri 提示找不到 `cargo`，先在运行 `npm run tauri:dev` 的同一终端确认：
+连接相同 ABI 的设备进行开发：
+
+```bash
+npm run tauri:android:dev -- aarch64
+```
+
+可将 `aarch64` 替换为 `armv7`、`i686` 或 `x86_64`。该命令通过 Rust xtask：
+
+1. 使用宿主 ONNX Runtime 验证 OCR 模型；
+2. 下载并校验 ONNX Runtime Android `1.24.3` AAR；
+3. 提取目标 ABI 的 `libonnxruntime.so`；
+4. 复制到生成工程的 `app/src/main/jniLibs/<abi>/`；
+5. 设置 `ORT_LIB_PATH` 与 `ORT_PREFER_DYNAMIC_LINK=1` 后调用 Tauri build。
+
+离线时可设置 `EPUB_TOOL_ORT_ANDROID_ARCHIVE` 指向已下载且校验和匹配的 AAR。
+
+## iOS 构建
+
+首次生成原生工程：
+
+```bash
+npm run tauri:ios:init -- --ci
+```
+
+构建 arm64 simulator app：
+
+```bash
+npm run tauri:ios:build -- aarch64-sim --debug --ci
+```
+
+在 arm64 simulator 开发：
+
+```bash
+npm run tauri:ios:dev -- aarch64-sim
+```
+
+该命令验证 OCR 模型，下载并校验 ONNX Runtime iOS `1.24.3` xcframework，设置 `ORT_IOS_XCFWK_PATH` 后调用 Tauri build。离线时可设置 `EPUB_TOOL_ORT_IOS_ARCHIVE` 指向已下载且校验和匹配的归档。
+
+只验证 device Rust library、避免进入签名 archive/export：
+
+```bash
+cargo run --locked --manifest-path xtask/Cargo.toml -- prepare-mobile-ort ios
+ORT_IOS_XCFWK_PATH="$PWD/src-tauri/.mobile-runtime/onnxruntime-c-1.24.3/onnxruntime.xcframework" \
+  cargo build --locked --manifest-path src-tauri/Cargo.toml \
+  --target aarch64-apple-ios --lib
+```
+
+## Cargo 排查
+
+若 Tauri 提示找不到 Cargo，在同一终端确认：
 
 ```bash
 cargo --version
 ```
 
-macOS/Linux 上使用 Rustup 安装时，可执行：
-
-```bash
-source "$HOME/.cargo/env"
-cargo --version
-```
-
-Windows 上请重新打开 PowerShell 或 IDE，并确认 Rustup 的安装目录位于 `PATH`。
-
-## 可选 Python 工作
-
-Python 不属于桌面运行或发布依赖。仅在以下情况配置 Conda 环境：
-
-- 使用 `python_backend/` 生成 Rust 迁移的黄金样本；
-- 运行 Rust/Python 输出对比回归；
-- 刷新或转换提交到仓库的 OCR ONNX 模型。
-
-例如，执行黄金回归前：
-
-```bash
-conda create -n epub_tool python=3.12 -y
-conda run -n epub_tool python -m pip install -r requirements/requirements.txt
-conda run -n epub_tool python -m pytest -q tests/test_rust_image_golden.py
-```
-
-维护 OCR 模型才需要转换依赖：
-
-```bash
-conda run -n epub_tool python -m pip install -r requirements/requirements-ocr-conversion.txt
-conda run -n epub_tool npm run maintenance:fetch-ocr-model
-conda run -n epub_tool npm run maintenance:convert-ocr-onnx
-```
+使用 Rustup 时重新加载其环境，或重新打开终端/IDE。移动编译失败时还需确认对应 Rust target、Android SDK/NDK 或完整 Xcode 已安装；缺失平台工具链时不能用宿主 `cargo check` 代替真实目标链接验证。

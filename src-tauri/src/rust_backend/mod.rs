@@ -2,6 +2,7 @@ pub mod epub;
 pub mod font;
 pub mod image;
 pub mod text;
+pub(crate) mod text_encoding;
 pub mod util;
 
 use crate::task_types::{
@@ -83,9 +84,8 @@ pub fn run(
     log_path: &Path,
     emit: &mut dyn FnMut(TaskEvent) -> Result<(), String>,
 ) -> Result<TaskResult, String> {
-    let task = task_for(request.task_type).ok_or_else(|| {
-        format!("Rust 后端暂不支持任务类型: {}", request.task_type.as_str())
-    })?;
+    let task = task_for(request.task_type)
+        .ok_or_else(|| format!("Rust 后端暂不支持任务类型: {}", request.task_type.as_str()))?;
     let total_files = request.input_files.len();
     if let Some(output_dir) = &request.output_dir {
         if output_dir.exists() && !output_dir.is_dir() {
@@ -242,6 +242,7 @@ pub fn run(
     Ok(result)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_file(
     task: &dyn EpubTask,
     input: &Path,
@@ -343,6 +344,7 @@ fn task_label(task_type: TaskType) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn event(
     event: &str,
     request: &TaskSpec,
@@ -406,8 +408,8 @@ fn append_log(log_path: &Path, message: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::run;
-    use crate::task_types::{ImageTaskOptions, TaskOptions, TaskSpec, TaskType};
+    use super::{run, supports};
+    use crate::task_types::{FontTaskOptions, ImageTaskOptions, TaskOptions, TaskSpec, TaskType};
     use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
     use std::{
         fs,
@@ -415,6 +417,19 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
     use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
+
+    #[test]
+    fn font_capability_probe_leaves_epub_validation_to_each_file() {
+        let request = TaskSpec {
+            task_id: "font-capability".to_string(),
+            task_type: TaskType::EncryptFont,
+            input_files: vec!["missing.epub".into()],
+            output_dir: None,
+            options: TaskOptions::Font(FontTaskOptions::default()),
+        };
+
+        assert!(supports(&request));
+    }
 
     #[test]
     fn native_image_task_preserves_frontend_result_and_event_schema() {

@@ -1,2 +1,0 @@
-paddlepaddle
-paddle2onnx==2.1.0

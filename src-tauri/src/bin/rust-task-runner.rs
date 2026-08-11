@@ -60,6 +60,7 @@ fn run() -> Result<(), String> {
     let mut ocr_max_image_width = None;
     let mut ocr_model_path = None;
     let mut ocr_model_dir = None;
+    let mut verify_ocr_model_dir = None;
     let mut glyph_font_path = None;
     let mut glyph_character = None;
     let mut glyph_output_path = None;
@@ -85,18 +86,47 @@ fn run() -> Result<(), String> {
             "--ocr-max-image-width" => ocr_max_image_width = arguments.next(),
             "--infer-ocr-model" => ocr_model_path = arguments.next(),
             "--ocr-model-dir" => ocr_model_dir = arguments.next(),
+            "--verify-ocr-model-dir" => verify_ocr_model_dir = arguments.next(),
             "--render-font-glyph" => glyph_font_path = arguments.next(),
             "--glyph" => glyph_character = arguments.next(),
             "--glyph-output" => glyph_output_path = arguments.next(),
             "--ocr-tensor-shape" => ocr_tensor_shape = arguments.next(),
             "--help" | "-h" => {
                 println!(
-                    "Usage: rust-task-runner serve\n       rust-task-runner --request-json <TaskRequest JSON> [--log-path <path>]\n       rust-task-runner --list-font-targets <book.epub>\n       rust-task-runner --read-font-cmap <font-file>\n       rust-task-runner --rewrite-font-cmap <font-file> --font-output <font-file> --cmap-replacements <JSON object> --remove-cmap-codepoints <JSON array>\n       rust-task-runner --obfuscate-font <font-file> --font-output <font-file> --font-text <text> --rng-seed <u64>\n       rust-task-runner --render-font-glyph <font-file> --glyph <character> --glyph-output <glyph.png>\n       rust-task-runner --preprocess-ocr-image <image> --ocr-image-shape <channels,height,width> --ocr-image-mode <RGB|BGR> --ocr-max-image-width <width> [--infer-ocr-model <model.onnx>]\n       rust-task-runner --recognize-ocr-image <image> --ocr-model-dir <model-dir>\n       rust-task-runner --infer-ocr-model <model.onnx> --ocr-tensor-shape <channels,height,width>"
+                    "Usage: rust-task-runner serve\n       rust-task-runner --request-json <TaskRequest JSON> [--log-path <path>]\n       rust-task-runner --list-font-targets <book.epub>\n       rust-task-runner --read-font-cmap <font-file>\n       rust-task-runner --rewrite-font-cmap <font-file> --font-output <font-file> --cmap-replacements <JSON object> --remove-cmap-codepoints <JSON array>\n       rust-task-runner --obfuscate-font <font-file> --font-output <font-file> --font-text <text> --rng-seed <u64>\n       rust-task-runner --render-font-glyph <font-file> --glyph <character> --glyph-output <glyph.png>\n       rust-task-runner --preprocess-ocr-image <image> --ocr-image-shape <channels,height,width> --ocr-image-mode <RGB|BGR> --ocr-max-image-width <width> [--infer-ocr-model <model.onnx>]\n       rust-task-runner --recognize-ocr-image <image> --ocr-model-dir <model-dir>\n       rust-task-runner --verify-ocr-model-dir <model-dir>\n       rust-task-runner --infer-ocr-model <model.onnx> --ocr-tensor-shape <channels,height,width>"
                 );
                 return Ok(());
             }
             _ => return Err(format!("不支持的参数: {argument}")),
         }
+    }
+    if let Some(model_dir) = verify_ocr_model_dir {
+        if request_json.is_some()
+            || font_target_path.is_some()
+            || font_cmap_path.is_some()
+            || rewrite_font_cmap_path.is_some()
+            || obfuscate_font_path.is_some()
+            || ocr_image_path.is_some()
+            || ocr_model_path.is_some()
+        {
+            return Err(
+                "--verify-ocr-model-dir 不能与任务、字体操作或其他 OCR 操作同时使用".to_string(),
+            );
+        }
+        let verification =
+            rust_backend::font::decrypt_font::verify_ocr_model_dir(&PathBuf::from(&model_dir))?;
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "ok": true,
+                "model_dir": model_dir,
+                "input_shape": verification.input_shape,
+                "output_shape": verification.output_shape,
+                "character_count": verification.character_count,
+            }))
+            .map_err(|error| format!("序列化 OCR 模型校验结果失败: {error}"))?
+        );
+        return Ok(());
     }
     if let Some(input_file) = font_target_path {
         if request_json.is_some() || font_cmap_path.is_some() || rewrite_font_cmap_path.is_some() {
@@ -263,6 +293,7 @@ fn run() -> Result<(), String> {
             serde_json::to_string(&json!({
                 "text": result.text,
                 "confidence": result.confidence,
+                "candidates": result.candidates,
                 "image_shape": backend.config.image_shape,
                 "image_mode": backend.config.image_mode,
                 "character_count": backend.config.characters.len(),
@@ -316,6 +347,7 @@ fn run() -> Result<(), String> {
                     "shape": prediction.shape,
                     "token_ids": prediction.token_ids,
                     "scores": prediction.scores,
+                    "top_k": prediction.top_k,
                 }))
                 .map_err(|error| format!("序列化 ONNX OCR 输出失败: {error}"))?
             );
@@ -360,6 +392,7 @@ fn run() -> Result<(), String> {
                 "shape": prediction.shape,
                 "token_ids": prediction.token_ids,
                 "scores": prediction.scores,
+                "top_k": prediction.top_k,
             }))
             .map_err(|error| format!("序列化 ONNX OCR 输出失败: {error}"))?
         );

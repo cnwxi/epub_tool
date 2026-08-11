@@ -1,92 +1,155 @@
 # AGENTS.md
 
-本文件为 Codex (Codex.ai/code) 在当前仓库中工作时提供指引。
+本文件为 Codex 在当前仓库中工作时提供仓库级指引。
 
 ## 项目概览
 
-面向 EPUB 批量处理的桌面工具，技术栈为 Tauri 2 + Vue 3 + TypeScript + Python sidecar。任务体系可持续扩展；当前已注册 `reformat_epub`、`decrypt_epub`、`encrypt_epub`、`encrypt_font`、`decrypt_font`、`webp_to_img` 等任务类型。
+Epub Tool 是面向 EPUB 批量处理的跨平台应用，技术栈为 Tauri 2、Vue 3、TypeScript 与 Rust。Windows、macOS、Linux 使用隔离的 `rust-task-runner` Worker；Android、iOS 在应用进程内执行；两种运行方式调用同一个平台无关 Rust 业务核心。
+
+当前任务类型：
+
+- `reformat_epub`
+- `decrypt_epub`
+- `encrypt_epub`
+- `encrypt_font`
+- `decrypt_font`
+- `webp_to_img`
+- `image_compress`
+- `image_to_webp`
+- `chinese_convert`
+- `replace_cover`
 
 ## 常用命令
 
 ```bash
-# 启动完整桌面开发环境（构建 sidecar + 前端 + Tauri）
+# 安装依赖
+npm ci
+npm --prefix frontend ci
+
+# 完整桌面开发环境
 npm run tauri:dev
 
-# 仅启动前端（无 Tauri Runtime，任务执行不可用）
+# 仅前端；没有 Tauri Runtime，不能执行任务
 npm run dev
 
-# Python CLI 单独调试（参数与 JSON 字段均使用 camelCase）
-conda run -n epub_tool python -m python_backend.cli run \
-  --requestId debug-request \
-  --taskId debug-task \
-  --taskType TASK_TYPE_REFORMAT_EPUB \
-  --inputFile ./book.epub
+# Rust 核心、Worker 与集成测试
+cargo test --locked --manifest-path src-tauri/Cargo.toml
 
-# 字体扫描通过 serve 的 scanFonts operation 执行，详见 assets/docs/CLI_USAGE.md
+# Rust 维护工具测试
+cargo test --locked --manifest-path xtask/Cargo.toml
 
-# 仅构建 ONNX-only sidecar
-npm run build:python-sidecar
+# 协议生成与漂移检查
+npm run protocol:generate
+npm run protocol:check
 
-# 生产打包
+# 前端类型检查和构建
+npm run build
+
+# 使用 Rust/ONNX Runtime 校验已提交 OCR 模型
+npm run build:verify-ocr-model
+
+# 当前桌面平台生产打包
 npm run tauri:build
+
+# 移动端无签名构建示例
+npm run tauri:android:init -- --ci
+npm run tauri:android:build -- aarch64 --debug --apk --ci
+npm run tauri:ios:init -- --ci
+npm run tauri:ios:build -- aarch64-sim --debug --ci
 ```
 
-Node 版本：`24.18.0`（见 `.nvmrc`）。Python 依赖见 `requirements/requirements.txt`。
+Node 版本见 `.nvmrc`。移动端必须使用 Rustup 安装相应 target；Android 还需要 SDK 36、NDK `29.0.13846066` 与 JDK 17，iOS 需要完整 Xcode。
 
 ## 架构
 
 ### 数据流
 
+```text
+Vue / generated TypeScript protobuf types
+  -> Tauri IPC EngineRequest
+  -> engine_adapter（wire -> typed core）
+  -> TaskSpec / TaskOptions
+  -> EngineRuntime
+       desktop: rust-task-runner JSON Lines Worker
+       mobile:  in-process
+  -> rust_backend::run
+  -> typed TaskEvent / TaskResult
+  -> engine_adapter（typed core -> wire）
+  -> EngineEvent / EngineResponse
 ```
-Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Python sidecar/后端
-                          │                                    │
-                          │  stdout/stderr 输出 JSON Lines      │
-                          │<────────────────────────────────────│
-                          │                                    │
-           Tauri IPC channel                                    │
-           推送 EngineEvent 到前端                               │
+
+### 目录职责
+
+- `frontend/`：Vue 单页应用、任务队列、设置、历史记录和生成的 TypeScript 协议类型。
+- `proto/epub_tool/v1/engine.proto`：Tauri IPC wire contract 的唯一来源。
+- `src-tauri/src/task_types.rs`：平台无关的 `TaskSpec`、`TaskOptions`、`TaskEvent`、`TaskResult`。
+- `src-tauri/src/rust_backend/`：统一 EPUB 业务核心，按 `epub`、`font`、`image`、`text` 分类。
+- `src-tauri/src/runtime/`：桌面 Worker 与移动进程内运行时、平台能力、路径和资源定位。
+- `src-tauri/src/bin/rust-task-runner.rs`：桌面隔离 Worker 及 Rust 诊断入口。
+- `src-tauri/tests/`：跨模块任务与 Worker 协议集成回归。
+- `xtask/`：OCR 模型校验、移动 ONNX Runtime 准备、移动构建和发布维护工具。
+- `src-tauri/bundle-resources/`：OCR 模型与 OpenCC 运行资源。
+- `assets/docs/`：架构、协议、构建、发布和 UI 规范。
+
+### 核心约束
+
+- Protobuf 只属于 IPC 边界。业务服务不得接收 wire message、动态 JSON 或 Tauri 类型。
+- 新任务必须实现统一 `EpubTask`，通过 `TaskSpec`/`TaskOptions` 输入并产生 `TaskEvent`/`TaskResult`。
+- 桌面与移动必须调用同一 `rust_backend`；平台差异只能留在 `runtime`、权限、资源定位与 IPC 层。
+- 桌面 Worker 的 JSON Lines 是类型化 `TaskSpec`/`TaskEvent`/`TaskResult` 的隔离传输，不得增加动态适配层。
+- `font_style.rs` 中的 Stylo 是生产环境唯一的 CSS 选择器、级联与计算样式引擎。不得添加第二套 cascade、旧规则 fallback 或按节点静默降级。
+- 字体扫描、加密和解密必须复用 `FontEncryptionPlan` 及其字符级字体分配结果。
+- 字体管线必须保留 family stack、weight、style、stretch、`unicode-range`、多 `src`、来源顺序、继承、变量、`!important` 与复杂选择器语义。
+- TTF、OTF、WOFF、WOFF2 必须以原容器格式读取、改写 cmap 并回写。
+- OCR 低置信度或非单字结果不得猜测替换；必须保留状态码、置信度、Top-K 候选与字形图片供复核。
+- CSS/OPF 中已解密字体引用的清理只能消费字体决策结果，不得自行决定元素或字符使用哪个字体。
+
+## 平台与发布
+
+| 平台 | 架构 / ABI | 运行方式 | 字体 OCR | CI 产物 |
+| --- | --- | --- | --- | --- |
+| Windows | x64、arm64 | Rust Worker | 启用 | NSIS |
+| macOS | x64、arm64 | Rust Worker | 启用 | app、DMG |
+| Linux | x64、arm64 | Rust Worker | 启用 | deb、rpm |
+| Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | 启用 | 无签名 debug APK 编译验证 |
+| iOS | arm64 device、arm64 simulator | 进程内 | 启用 | device Rust library 与无签名 simulator app 编译验证 |
+
+Android release 签名、iOS device archive/IPA、商店上传、公证与生产代码签名需要外部凭据；没有凭据时只能声明编译验证，不能声明签名发布成功。
+
+## 行为约定
+
+- 输出名默认是 `{stem}_{task_type}.epub`。
+- 简体转繁体使用 `_chinese_convert_tc.epub`，繁体转简体使用 `_chinese_convert_sc.epub`。
+- 输入名已经包含当前任务后缀时跳过，不重复处理。
+- `task.started` 是首个任务事件，`task.finished` 是最后一个事件并携带完整结果。
+- `app-state.json` 已被忽略；损坏时备份为 `.corrupt-{timestamp}` 后重置。
+- 文件加解密只处理 EPUB 内文件名与资源引用混淆，不处理 DRM。
+
+## 功能扩展与文案
+
+- 新增任务时同步修改 proto 枚举/options、`engine_adapter`、`TaskType`、`task_for`、前端导航/配置、输出后缀、集成测试和文档。
+- 关于页使用动态任务数量与稳定能力概括，不写固定任务数量。
+- 任务专属参数放在对应任务页面；关于页只描述统一工作流、协议和扩展方式。
+- 不得重新引入解释器后端、生成代码或脚本依赖；开发、测试、构建、CI、打包与发布链路保持 Rust/Node 工具链。
+
+## 验证要求
+
+适用时执行：
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo fmt --manifest-path xtask/Cargo.toml -- --check
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+cargo test --locked --manifest-path xtask/Cargo.toml
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
+npm run protocol:check
+npm run build
+npm run build:verify-ocr-model
 ```
 
-### 各层职责
+仅在安装对应 SDK、NDK、Xcode 与 Rust targets 的主机上声明移动构建通过。真实设备、代码签名、公证和商店发布未执行时必须明确说明。
 
-- **`frontend/`** — Vue 3 单页应用。`App.vue` 承载任务、队列、设置、历史记录和更新检查等页面状态；`SideNav`、`DropZone`、`TaskConsole` 提供主要界面组件；`useTaskBridge` 封装 IPC 调用，`usePersistentState` 提供 Tauri Rust store + localStorage 双层持久化。
-- **`src-tauri/src/main.rs`** — Tauri 命令与 Python Worker 生命周期管理，包括任务执行、字体目标读取、输入解析、路径操作、状态持久化和 Worker 状态/重启配置。JSON 文件持久化到 `app-state.json`，损坏文件自动备份为 `.corrupt-{timestamp}` 后缀。
-- **`src-tauri/tauri.conf.json`** — 开发 URL `localhost:5173`，透明窗口（macOS 毛玻璃效果），sidecar 从 `bundle-resources/binaries/` 打包，OCR 模型从 `bundle-resources/ocr-models/` 打包。
-- **`python_backend/cli.py`** — Sidecar 的 CLI 入口。提供一次性 `run` 和常驻 Worker 使用的 `serve` 子命令；两者均使用 `EngineRequest`、`EngineEvent` 与 `EngineResponse` 协议信封。
-- **`python_backend/task_runner.py`** — 编排批量任务执行。按任务类型动态导入 `python_backend/services/` 下的处理模块，将其 `logger` 替换为 `BroadcastLogger`，同时写入 `log.txt` 和 stdout JSON Lines 事件。按 `{stem}_{suffix}.epub` 规则推断输出路径。
-- **`python_backend/protocol.py`** — 数据类定义：`TaskRequest`、`TaskEvent`、`TaskResult`。
-- **`python_backend/services/`** — EPUB 处理服务模块，按功能分为 `epub/`（格式化与文件加解密）、`font/`（字体加解密）、`image/`（图片转换、压缩、封面与图片处理共享逻辑）、`text/`（简繁转换）和 `utils/`（日志等跨领域共享工具）。任务模块对外暴露统一的 `run()` 入口，内部使用共享的 `logger` 对象，运行时由 `task_runner` 替换。
-- **`scripts/`** — `verify_ocr_onnx_models.py`（校验已提交 ONNX OCR 模型）、`prepare_ocr_models.py`（维护者刷新模型时准备官方 Paddle 源模型）、`prepare_ocr_onnx_models.py`（维护者刷新模型时转换 ONNX OCR 模型）、`build_python_sidecar.py`（PyInstaller `--onefile` 构建 ONNX-only sidecar）、`prepare_bundle_resources.py`（将 sidecar 复制到 `bundle-resources/`）。
-- **`tests/`** — 自动化测试。
-- **`fixtures/`** — 本地测试用 EPUB 样本（默认不提交）。
-- **`assets/docs/`** — 协议、构建与 UI 设计规范文档。
-- **`assets/img/`** — README、前端与 Tauri 打包共用的图像资源。
+## Codex 执行规范
 
-### Sidecar 查找顺序
-
-1. `EPUB_TOOL_PYTHON_SIDECAR` 环境变量
-2. `src-tauri/binaries/epub-tool-python`（开发工作区）
-3. `<resource_dir>/binaries/epub-tool-python`（打包态）
-4. 回退到系统 `python3 -m python_backend.cli`（仅开发态，需能定位工作区根目录）
-
-### 关键设计细节
-
-- Python sidecar 通过 stdout 输出 JSON Lines 协议通信。每行一个 `TaskEvent`。最后一行 `event: "task.finished"`，其中 `result` 字段包含完整 `TaskResult`。
-- `python_backend/services/` 模块的 `logger` 属性在运行时会通过 `task_runner.patched_loggers()` 被替换——`BroadcastLogger` 同时写入 `log.txt` 和 stdout JSON Lines。
-- `encrypt_font` 与 `decrypt_font` 的 options 使用 `target_font_families_by_file`（按文件指定字体）和 `target_font_families`（默认字体）；`decrypt_font` 默认使用内置 `PP-OCRv6_small_rec_onnx` ONNX OCR 模型，不加载 Paddle Python 运行时；`PP-OCRv6_medium_rec` 仅作为高准确率可选构建档。
-- 应用版本号在 Vite 构建时从 `src-tauri/Cargo.toml` 读取，注入为 `__APP_VERSION__`。
-- `app-state.json` 已被 gitignore；损坏时自动备份并重置为默认状态。
-- 输出文件命名规则为 `{原文件名}_{任务脚本名}.epub`，如 `book_reformat_epub.epub`、`book_encrypt_epub.epub`；简繁转换额外使用方向后缀，如 `book_chinese_convert_sc.epub`、`book_chinese_convert_tc.epub`。
-
-### 功能扩展与文案约束
-
-- 新增任务必须沿用 `TaskRequest`、`TaskEvent`、`TaskResult` 统一协议，不为单个任务另建一套前后端通信格式。
-- 新增任务时同步检查 Python CLI 与 `task_runner` 注册、前端 `TaskType` 与任务导航/概览、输出目录持久化、sidecar 打包依赖及相关测试。
-- README、关于页和通用说明使用“各类任务”“处理能力”等可扩展表述，不使用“六类”“6 种”等固定数量描述。
-- 关于页摘要只展示动态任务数量和稳定的能力概括，不在固定宽度摘要卡中罗列全部任务名称。
-- 可增长的任务清单由功能概览、导航或对应任务页面承载；不要与内容基本固定的说明卡并排放置，避免新增模块后卡片高度和信息密度失衡。
-- 任务专属参数和说明放在对应任务页面，关于页只描述统一工作流、协议和扩展方式。
-
-
-## Codex执行规范
-- 开辟新分支不要使用codex/前缀
+- 开辟新分支不要使用 `codex/` 前缀。

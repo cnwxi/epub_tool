@@ -5,6 +5,15 @@ use ttf_parser::Face;
 use write_fonts::{read::FontRef, tables::cmap::Cmap, types::GlyphId, FontBuilder};
 
 pub fn unicode_cmap(data: &[u8]) -> Result<BTreeMap<u32, u16>, String> {
+    let decoded = decode_font_container(data)?;
+    unicode_cmap_sfnt(&decoded.sfnt)
+}
+
+pub fn sfnt_data(data: &[u8]) -> Result<Vec<u8>, String> {
+    decode_font_container(data).map(|decoded| decoded.sfnt)
+}
+
+fn unicode_cmap_sfnt(data: &[u8]) -> Result<BTreeMap<u32, u16>, String> {
     let face = Face::parse(data, 0).map_err(|error| format!("无法解析字体: {error:?}"))?;
     let cmap = face
         .tables()
@@ -39,7 +48,8 @@ pub fn rewrite_unicode_cmap(
     replacements: &BTreeMap<u32, u16>,
     removed_codepoints: &[u32],
 ) -> Result<Vec<u8>, String> {
-    let mut mappings = unicode_cmap(data)?;
+    let decoded = decode_font_container(data)?;
+    let mut mappings = unicode_cmap_sfnt(&decoded.sfnt)?;
     for codepoint in removed_codepoints {
         mappings.remove(codepoint);
     }
@@ -54,7 +64,7 @@ pub fn rewrite_unicode_cmap(
         char::from_u32(codepoint).map(|character| (character, GlyphId::new(u32::from(glyph_id))))
     }))
     .map_err(|error| format!("构建 cmap 失败: {error}"))?;
-    let font = FontRef::new(data).map_err(|error| format!("读取字体失败: {error}"))?;
+    let font = FontRef::new(&decoded.sfnt).map_err(|error| format!("读取字体失败: {error}"))?;
     let mut builder = FontBuilder::new();
     builder
         .add_table(&cmap)
@@ -64,13 +74,71 @@ pub fn rewrite_unicode_cmap(
 
     // Parse the result before returning it, so callers cannot accidentally
     // package malformed font data when a writer behaviour changes.
-    unicode_cmap(&rewritten)?;
-    Ok(rewritten)
+    unicode_cmap_sfnt(&rewritten)?;
+    encode_font_container(rewritten, decoded.container)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FontContainer {
+    Sfnt,
+    Woff1 { major: u16, minor: u16 },
+    Woff2,
+}
+
+struct DecodedFont {
+    sfnt: Vec<u8>,
+    container: FontContainer,
+}
+
+fn decode_font_container(data: &[u8]) -> Result<DecodedFont, String> {
+    let signature = data.get(..4).unwrap_or_default();
+    if signature == b"wOFF" {
+        let major = data
+            .get(20..22)
+            .and_then(|value| value.try_into().ok())
+            .map(u16::from_be_bytes)
+            .ok_or_else(|| "WOFF1 头部不完整".to_string())?;
+        let minor = data
+            .get(22..24)
+            .and_then(|value| value.try_into().ok())
+            .map(u16::from_be_bytes)
+            .ok_or_else(|| "WOFF1 头部不完整".to_string())?;
+        let sfnt =
+            woff::version1::decompress(data).ok_or_else(|| "无法解压 WOFF1 字体".to_string())?;
+        return Ok(DecodedFont {
+            sfnt,
+            container: FontContainer::Woff1 { major, minor },
+        });
+    }
+    if signature == b"wOF2" {
+        let sfnt =
+            woff::version2::decompress(data).ok_or_else(|| "无法解压 WOFF2 字体".to_string())?;
+        return Ok(DecodedFont {
+            sfnt,
+            container: FontContainer::Woff2,
+        });
+    }
+    Ok(DecodedFont {
+        sfnt: data.to_vec(),
+        container: FontContainer::Sfnt,
+    })
+}
+
+fn encode_font_container(sfnt: Vec<u8>, container: FontContainer) -> Result<Vec<u8>, String> {
+    match container {
+        FontContainer::Sfnt => Ok(sfnt),
+        FontContainer::Woff1 { major, minor } => {
+            woff::version1::compress(&sfnt, usize::from(major), usize::from(minor))
+                .ok_or_else(|| "无法重新编码 WOFF1 字体".to_string())
+        }
+        FontContainer::Woff2 => woff::version2::compress(&sfnt, "", 8, true)
+            .ok_or_else(|| "无法重新编码 WOFF2 字体".to_string()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{rewrite_unicode_cmap, unicode_cmap};
+    use super::{rewrite_unicode_cmap, sfnt_data, unicode_cmap};
     use std::collections::BTreeMap;
 
     #[test]
@@ -83,5 +151,27 @@ mod tests {
         let mut replacements = BTreeMap::new();
         replacements.insert(0x11_0000, 1);
         assert!(rewrite_unicode_cmap(b"not-a-font", &replacements, &[]).is_err());
+    }
+
+    #[test]
+    fn reads_and_rewrites_woff1_and_woff2_in_the_original_container() {
+        let sfnt = blitz_dom::BULLET_FONT;
+        let cmap = unicode_cmap(sfnt).expect("bundled OpenType cmap");
+        for (signature, compressed) in [
+            (
+                b"wOFF".as_slice(),
+                woff::version1::compress(sfnt, 1, 0).expect("WOFF1 encode"),
+            ),
+            (
+                b"wOF2".as_slice(),
+                woff::version2::compress(sfnt, "", 8, true).expect("WOFF2 encode"),
+            ),
+        ] {
+            assert_eq!(unicode_cmap(&compressed).expect("compressed cmap"), cmap);
+            let rewritten = rewrite_unicode_cmap(&compressed, &BTreeMap::new(), &[])
+                .expect("compressed rewrite");
+            assert_eq!(&rewritten[..4], signature);
+            assert!(sfnt_data(&rewritten).is_ok());
+        }
     }
 }

@@ -81,6 +81,16 @@ jobs:
           echo "sha256_arm=$sha_arm" >> "$GITHUB_OUTPUT"
           echo "sha256_intel=$sha_intel" >> "$GITHUB_OUTPUT"
 
+      - name: Checkout Rust release tooling
+        if: steps.asset.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          path: source-repo
+
+      - name: Setup Rust
+        if: steps.asset.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Checkout tap repo
         if: steps.asset.outputs.skip != 'true'
         uses: actions/checkout@v6
@@ -107,41 +117,13 @@ jobs:
           echo "  sha256 intel: $SHA_INTEL"
           echo "  url:          $URL"
 
-          export VERSION SHA_ARM SHA_INTEL URL
-          python - "$FORMULA" <<'PY'
-          import os
-          import re
-          import sys
-          from pathlib import Path
-
-          formula = Path(sys.argv[1])
-          text = formula.read_text()
-          version = os.environ["VERSION"]
-          sha_arm = os.environ["SHA_ARM"]
-          sha_intel = os.environ["SHA_INTEL"]
-          url = os.environ["URL"]
-
-          arch_line = '  arch arm: "arm64", intel: "x64"'
-          sha_block = f'  sha256 arm: "{sha_arm}",\n         intel: "{sha_intel}"'
-          url_line = f'  url "{url}"'
-
-          text = re.sub(r'(?m)^  version ".*"$', f'  version "{version}"', text, count=1)
-          if re.search(r'(?m)^  arch ', text):
-              text = re.sub(r'(?m)^  arch .*$', arch_line, text, count=1)
-          else:
-              text = re.sub(r'(?m)^(  version ".*"\n)', r'\1' + arch_line + '\n', text, count=1)
-          text = re.sub(r'(?ms)^  sha256 .+?(?=\n  url )', sha_block, text, count=1)
-          text = re.sub(r'(?m)^  url ".*"$', url_line, text, count=1)
-
-          missing = [
-              needle
-              for needle in (arch_line, sha_block, url_line)
-              if needle not in text
-          ]
-          if missing:
-              raise SystemExit(f"公式更新失败，缺少片段: {missing}")
-          formula.write_text(text)
-          PY
+          cargo run --locked --manifest-path source-repo/xtask/Cargo.toml -- \
+            update-homebrew-cask \
+            "$FORMULA" \
+            "$VERSION" \
+            "$SHA_ARM" \
+            "$SHA_INTEL" \
+            "$URL"
 
           echo "--- 更新后的公式 ---"
           cat "$FORMULA"

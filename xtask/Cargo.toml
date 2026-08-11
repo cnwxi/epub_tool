@@ -1,0 +1,9 @@
+[package]
+name = "epub-tool-xtask"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sha2 = "0.10.9"
+zip = { version = "2.4.2", default-features = false, features = ["deflate"] }

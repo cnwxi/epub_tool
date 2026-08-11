@@ -1,3 +1,4 @@
+use crate::rust_backend::text_encoding::{decode_epub_text, encode_epub_text, TextKind};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use std::{
     collections::BTreeMap,
@@ -154,10 +155,12 @@ impl EpubWorkspace {
             .members
             .get(&self.opf_path)
             .ok_or_else(|| format!("EPUB 缺少 OPF 文件: {}", self.opf_path))?;
-        let text = decode_xml(opf);
+        let text = decode_epub_text(opf, TextKind::Xml, &self.opf_path)?;
         let updated = add_tool_metadata(&text)?;
-        self.members
-            .insert(self.opf_path.clone(), updated.into_bytes());
+        self.members.insert(
+            self.opf_path.clone(),
+            encode_epub_text(&updated, TextKind::Xml),
+        );
         Ok(())
     }
 }
@@ -234,7 +237,7 @@ pub fn media_type_for(path: &str) -> &'static str {
 }
 
 fn find_opf_path(container: &[u8], members: &BTreeMap<String, Vec<u8>>) -> Result<String, String> {
-    let container = decode_xml(container);
+    let container = decode_epub_text(container, TextKind::Xml, "META-INF/container.xml")?;
     let marker = "full-path";
     let value_start = container
         .find(marker)
@@ -291,10 +294,6 @@ fn add_tool_metadata(opf: &str) -> Result<String, String> {
         ));
     }
     Err("content.opf 缺少 package 节点，无法写入工具元数据".to_string())
-}
-
-fn decode_xml(data: &[u8]) -> String {
-    String::from_utf8_lossy(data).into_owned()
 }
 
 fn split_reference_suffix(reference: &str) -> (&str, &str) {
@@ -371,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_generator_metadata_with_python_whitespace_rules() {
+    fn writes_generator_metadata_without_disturbing_surrounding_whitespace() {
         let opf = "<metadata>\n    <meta name=\"cover\" content=\"cover.jpg\"/>\n  </metadata>";
         assert_eq!(
             add_tool_metadata(opf).unwrap(),

@@ -26,8 +26,7 @@ impl PlatformCapabilities {
             supports_engine_restart: !mobile,
             requires_output_export: mobile,
             supports_file_associations: true,
-            // 移动端仍需提供目标 ABI 对应的 ONNX Runtime 原生库。
-            supports_font_ocr: !mobile,
+            supports_font_ocr: true,
         }
     }
 }

@@ -45,9 +45,33 @@ pub struct FontTaskOptions {
     #[serde(default)]
     pub target_font_families: Vec<String>,
     #[serde(default)]
-    pub ocr_char_policy: Option<String>,
+    pub ocr_char_policy: Option<OcrCharPolicy>,
     #[serde(default)]
     pub min_ocr_confidence: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OcrCharPolicy {
+    Strict,
+    Compatible,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChineseConversionDirection {
+    #[serde(rename = "s2t")]
+    SimplifiedToTraditional,
+    #[serde(rename = "t2s")]
+    TraditionalToSimplified,
+}
+
+impl ChineseConversionDirection {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SimplifiedToTraditional => "s2t",
+            Self::TraditionalToSimplified => "t2s",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -65,20 +89,17 @@ pub struct ReplaceCoverOptions {
     pub cover_path_by_file: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskOptions {
+    #[default]
     Empty,
     Font(FontTaskOptions),
     Image(ImageTaskOptions),
-    ChineseConvert { direction: Option<String> },
+    ChineseConvert {
+        direction: Option<ChineseConversionDirection>,
+    },
     ReplaceCover(ReplaceCoverOptions),
-}
-
-impl Default for TaskOptions {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 impl TaskOptions {
@@ -96,9 +117,9 @@ impl TaskOptions {
         }
     }
 
-    pub fn chinese_direction(&self) -> Option<&str> {
+    pub fn chinese_direction(&self) -> Option<ChineseConversionDirection> {
         match self {
-            Self::ChineseConvert { direction } => direction.as_deref(),
+            Self::ChineseConvert { direction } => *direction,
             _ => None,
         }
     }

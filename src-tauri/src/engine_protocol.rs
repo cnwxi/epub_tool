@@ -2,6 +2,8 @@
 //! shell commands: only engine operations use this module.
 
 pub mod v1 {
+    #![allow(clippy::large_enum_variant)]
+
     include!(concat!(env!("OUT_DIR"), "/epub_tool.v1.rs"));
     include!(concat!(env!("OUT_DIR"), "/epub_tool.v1.serde.rs"));
 }

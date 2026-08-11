@@ -1,6 +1,6 @@
+use crate::rust_backend::text_encoding::{decode_epub_text, encode_epub_text, text_kind_for_path};
 use crate::rust_backend::{epub::EpubWorkspace, EpubTask, TaskOutcome};
-use crate::task_types::{TaskOptions, TaskType};
-use encoding_rs::Encoding;
+use crate::task_types::{ChineseConversionDirection, TaskOptions, TaskType};
 use regex::{Captures, Regex};
 use std::{
     collections::HashMap,
@@ -211,16 +211,20 @@ impl EpubTask for ChineseConvertTask {
     }
 
     fn supports_options(&self, options: &TaskOptions) -> bool {
-        matches!(options.chinese_direction(), Some("s2t" | "t2s"))
+        options.chinese_direction().is_some()
             && resource_dir().is_some_and(|directory| {
-            directory.join("s2t.json").is_file() && directory.join("t2s.json").is_file()
-        })
+                directory.join("s2t.json").is_file() && directory.join("t2s.json").is_file()
+            })
     }
 
     fn output_suffix(&self, options: &TaskOptions) -> Result<String, String> {
         match options.chinese_direction() {
-            Some("s2t") => Ok("_chinese_convert_tc.epub".to_string()),
-            Some("t2s") => Ok("_chinese_convert_sc.epub".to_string()),
+            Some(ChineseConversionDirection::SimplifiedToTraditional) => {
+                Ok("_chinese_convert_tc.epub".to_string())
+            }
+            Some(ChineseConversionDirection::TraditionalToSimplified) => {
+                Ok("_chinese_convert_sc.epub".to_string())
+            }
             _ => Err("direction 必须是 s2t 或 t2s".to_string()),
         }
     }
@@ -235,7 +239,7 @@ impl EpubTask for ChineseConvertTask {
         let direction = options
             .chinese_direction()
             .ok_or_else(|| "direction 必须是 s2t 或 t2s".to_string())?;
-        let converter = converter(direction)?;
+        let converter = converter(direction.as_str())?;
         let member_names: Vec<String> = workspace.members.keys().cloned().collect();
         let mut changed_files = 0;
         for name in member_names {
@@ -249,7 +253,7 @@ impl EpubTask for ChineseConvertTask {
                 .members
                 .get(&name)
                 .ok_or_else(|| format!("EPUB 文本成员丢失: {name}"))?;
-            let converted = convert_xml(data, &converter)?;
+            let converted = convert_xml(data, &name, &converter)?;
             if converted != *data {
                 workspace.members.insert(name, converted);
                 changed_files += 1;
@@ -260,8 +264,9 @@ impl EpubTask for ChineseConvertTask {
     }
 }
 
-fn convert_xml(data: &[u8], converter: &OpenccConverter) -> Result<Vec<u8>, String> {
-    let text = decode_xml(data)?;
+fn convert_xml(data: &[u8], path: &str, converter: &OpenccConverter) -> Result<Vec<u8>, String> {
+    let kind = text_kind_for_path(path);
+    let text = decode_epub_text(data, kind, path)?;
     static XML_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?s)<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[^>]+>").expect("valid XML token regex")
     });
@@ -308,93 +313,7 @@ fn convert_xml(data: &[u8], converter: &OpenccConverter) -> Result<Vec<u8>, Stri
     } else {
         output.push_str(remaining);
     }
-    Ok(as_utf8_xml(&output).into_bytes())
-}
-
-fn decode_xml(data: &[u8]) -> Result<String, String> {
-    if let Some(text) = decode_with_bom(data)? {
-        return Ok(text);
-    }
-    let declaration = String::from_utf8_lossy(&data[..data.len().min(1024)]);
-    static ENCODING_DECLARATION: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?i)<\?xml\b[^>]*\bencoding\s*=\s*[\"']([^\"']+)[\"']"#)
-            .expect("valid XML encoding regex")
-    });
-    let encoding = ENCODING_DECLARATION
-        .captures(&declaration)
-        .map(|captures| captures[1].to_ascii_lowercase())
-        .unwrap_or_else(|| "utf-8".to_string());
-    if encoding.starts_with("utf-32") {
-        return decode_utf32(data, encoding.ends_with("le"));
-    }
-    let encoding = Encoding::for_label(encoding.as_bytes())
-        .ok_or_else(|| format!("XML 声明了不支持的编码: {encoding}"))?;
-    let (text, _, had_errors) = encoding.decode(data);
-    if had_errors {
-        return Err(format!("无法按 {:?} 解码 XML", encoding.name()));
-    }
-    Ok(text.into_owned())
-}
-
-fn decode_with_bom(data: &[u8]) -> Result<Option<String>, String> {
-    if let Some(rest) = data.strip_prefix(b"\xEF\xBB\xBF") {
-        return String::from_utf8(rest.to_vec())
-            .map(Some)
-            .map_err(|error| format!("无法按 UTF-8 解码 XML: {error}"));
-    }
-    if data.starts_with(b"\x00\x00\xFE\xFF") {
-        return decode_utf32(&data[4..], false).map(Some);
-    }
-    if data.starts_with(b"\xFF\xFE\x00\x00") {
-        return decode_utf32(&data[4..], true).map(Some);
-    }
-    if data.starts_with(b"\xFE\xFF") {
-        return decode_utf16(&data[2..], false).map(Some);
-    }
-    if data.starts_with(b"\xFF\xFE") {
-        return decode_utf16(&data[2..], true).map(Some);
-    }
-    Ok(None)
-}
-
-fn decode_utf16(data: &[u8], little_endian: bool) -> Result<String, String> {
-    if data.len() % 2 != 0 {
-        return Err("UTF-16 XML 字节长度无效".to_string());
-    }
-    let values = data.chunks_exact(2).map(|chunk| {
-        if little_endian {
-            u16::from_le_bytes([chunk[0], chunk[1]])
-        } else {
-            u16::from_be_bytes([chunk[0], chunk[1]])
-        }
-    });
-    char::decode_utf16(values)
-        .collect::<Result<String, _>>()
-        .map_err(|error| format!("无法按 UTF-16 解码 XML: {error}"))
-}
-
-fn decode_utf32(data: &[u8], little_endian: bool) -> Result<String, String> {
-    if data.len() % 4 != 0 {
-        return Err("UTF-32 XML 字节长度无效".to_string());
-    }
-    data.chunks_exact(4)
-        .map(|chunk| {
-            let value = if little_endian {
-                u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
-            } else {
-                u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
-            };
-            char::from_u32(value).ok_or_else(|| format!("UTF-32 包含无效码点: {value:#X}"))
-        })
-        .collect()
-}
-
-fn as_utf8_xml(text: &str) -> String {
-    static ENCODING_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?is)(<\?xml\b[^>]*\bencoding\s*=\s*[\"'])[^\"']*([\"'])"#)
-            .expect("valid XML encoding regex")
-    });
-    ENCODING_PATTERN.replace(text, "${1}UTF-8${2}").into_owned()
+    Ok(encode_epub_text(&output, kind))
 }
 
 fn extension_of(path: &str) -> String {
@@ -406,11 +325,15 @@ fn extension_of(path: &str) -> String {
 mod tests {
     use super::{convert_xml, converter, ChineseConvertTask};
     use crate::rust_backend::EpubTask;
-    use crate::task_types::TaskOptions;
+    use crate::task_types::{ChineseConversionDirection, TaskOptions};
 
     fn options(direction: &str) -> TaskOptions {
         TaskOptions::ChineseConvert {
-            direction: Some(direction.to_string()),
+            direction: Some(match direction {
+                "s2t" => ChineseConversionDirection::SimplifiedToTraditional,
+                "t2s" => ChineseConversionDirection::TraditionalToSimplified,
+                _ => panic!("unsupported test direction"),
+            }),
         }
     }
 
@@ -419,6 +342,7 @@ mod tests {
         let converter = converter("s2t").unwrap();
         let converted = convert_xml(
             r#"<?xml version="1.0" encoding="UTF-8"?><html><head><style>.简体{}</style></head><body id="简体"><p title="汉语">汉语发展</p><script>const text = '汉语';</script></body></html>"#.as_bytes(),
+            "OPS/chapter.xhtml",
             &converter,
         )
         .unwrap();
@@ -432,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn bundled_dictionary_matches_python_opencc_s2t_phrase_vectors() {
+    fn bundled_dictionary_matches_opencc_s2t_phrase_vectors() {
         let converter = converter("s2t").unwrap();
         assert_eq!(
             converter.convert("游移不定 却才华洋溢 反取憀栗 其中很多只能 看成一出面对"),
@@ -442,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn bundled_dictionary_matches_python_opencc_t2s_phrase_vectors() {
+    fn bundled_dictionary_matches_opencc_t2s_phrase_vectors() {
         let converter = converter("t2s").unwrap();
         assert_eq!(converter.convert("射覆"), "射复");
         assert_eq!(converter.convert("於戲曲 乾隆御用"), "於戏曲 乾隆御用");

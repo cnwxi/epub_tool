@@ -21,9 +21,7 @@ pub fn set_engine_auto_restart_limit(
 }
 
 #[tauri::command]
-pub async fn restart_engine(
-    services: State<'_, RuntimeServices>,
-) -> Result<EngineStatus, String> {
+pub async fn restart_engine(services: State<'_, RuntimeServices>) -> Result<EngineStatus, String> {
     let engine = services.engine();
     tauri::async_runtime::spawn_blocking(move || engine.restart())
         .await

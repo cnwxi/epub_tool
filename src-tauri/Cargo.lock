@@ -997,6 +997,7 @@ version = "26.7.29"
 dependencies = [
  "blitz-dom",
  "blitz-html",
+ "blitz-traits",
  "dom_query",
  "encoding_rs",
  "fontdue",

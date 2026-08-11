@@ -1,14 +1,3 @@
-# Python 缓存与虚拟环境
-__pycache__/
-*.py[cod]
-.pycache/
-.venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-coverage/
-
 # Node 与前端包管理缓存
 .npm/
 .pnpm-store/
@@ -22,13 +11,13 @@ pnpm-debug.log*
 # 打包与构建产物
 build/
 dist/
-build/python-sidecar/
-*.spec
 frontend/dist/
 frontend/node_modules/
 node_modules/
 src-tauri/target/
 src-tauri/gen/
+src-tauri/.mobile-runtime/
+xtask/target/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 src-tauri/bundle-resources/
@@ -66,7 +55,6 @@ fixtures/
 .idea/
 
 # 工具配置
-.black
 .codex/app-state.json
 
 # gpt something

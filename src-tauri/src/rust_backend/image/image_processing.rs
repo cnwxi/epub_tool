@@ -1,6 +1,9 @@
 use crate::rust_backend::epub::workspace::{
     media_type_for, resolve_reference, rewrite_reference, EpubWorkspace,
 };
+use crate::rust_backend::text_encoding::{
+    decode_epub_text, encode_epub_text, text_kind_for_path, TextKind,
+};
 use crate::task_types::{TaskOptions, TaskType};
 use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageFormat, ImageReader};
 use regex::{Captures, Regex};
@@ -388,24 +391,26 @@ pub(super) fn rewrite_references(
             .members
             .get(&name)
             .ok_or_else(|| format!("EPUB 文档成员丢失: {name}"))?;
-        let text = std::str::from_utf8(data)
-            .map_err(|_| format!("文档不是 UTF-8，无法更新图片引用: {name}"))?;
+        let kind = text_kind_for_path(&name);
+        let text = decode_epub_text(data, kind, &name)?;
         workspace.members.insert(
             name.clone(),
-            rewrite_document(text, &name, replacements).into_bytes(),
+            encode_epub_text(&rewrite_document(&text, &name, replacements), kind),
         );
     }
     let opf = workspace
         .members
         .get(&workspace.opf_path)
         .ok_or_else(|| format!("EPUB 缺少 OPF 文件: {}", workspace.opf_path))?;
-    let opf_text =
-        std::str::from_utf8(opf).map_err(|_| "OPF 不是 UTF-8，无法更新图片引用".to_string())?;
-    let opf_with_manifest = rewrite_opf_manifest(opf_text, &workspace.opf_path, replacements);
+    let opf_text = decode_epub_text(opf, TextKind::Xml, &workspace.opf_path)?;
+    let opf_with_manifest = rewrite_opf_manifest(&opf_text, &workspace.opf_path, replacements);
     let opf_path = workspace.opf_path.clone();
     workspace.members.insert(
         opf_path.clone(),
-        rewrite_document(&opf_with_manifest, &opf_path, replacements).into_bytes(),
+        encode_epub_text(
+            &rewrite_document(&opf_with_manifest, &opf_path, replacements),
+            TextKind::Xml,
+        ),
     );
     Ok(())
 }

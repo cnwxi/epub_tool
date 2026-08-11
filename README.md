@@ -11,7 +11,7 @@
   <a href="https://github.com/cnwxi/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-cnwxi%2Ftap-FBB040" alt="Homebrew Tap"></a>
 </p>
 
-一个面向 EPUB 批量处理的跨平台工具，采用 `Tauri 2 + Vue 3 + TypeScript + Rust`。Linux、macOS、Windows 通过隔离的 Rust Worker 执行任务；Android/iOS 在应用进程内执行相同的 Rust 任务核心。Python 实现仅用于黄金回归与维护工具。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
+一个面向 EPUB 批量处理的跨平台工具，采用 `Tauri 2 + Vue 3 + TypeScript + Rust`。Linux、macOS、Windows 通过隔离的 Rust Worker 执行任务；Android/iOS 在应用进程内执行相同的 Rust 任务核心。开发、测试、构建和发布使用 Rust/Node 工具链。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
 
 ![Epub Tool 桌面端界面预览](./assets/img/epub_tool_newui.png)
 
@@ -30,7 +30,21 @@
 
 ## 当前实现
 
-各平台复用统一任务界面、前后端协议和 Rust 业务核心。平台差异集中在运行时适配层：桌面端负责 Worker 生命周期、目录扫描和路径打开；移动端负责系统文件 URI、缓存暂存和结果导出。移动 ONNX Runtime 接入前，Android/iOS 暂不启用字体 OCR 解密。
+各平台复用统一任务界面、类型化任务协议和 Rust 业务核心。平台差异集中在运行时适配层：桌面端负责 Worker 生命周期、目录扫描和路径打开；移动端负责系统文件 URI、缓存暂存和结果导出。
+
+字体扫描、加密和解密共用 `EPUB/XHTML/CSS → Stylo computed style → FontRequest → FontFaceResolver → 字符级字体分配` 流水线。Stylo 是唯一生产 CSS 选择器、级联与计算样式路径；字体容器支持 TTF、OTF、WOFF、WOFF2。桌面与移动均携带 ONNX OCR 模型并启用字体解密，低置信度结果会保留 Top-K 候选、置信度和字形图片供复核，不会猜测替换。
+
+平台覆盖：
+
+| 平台 | 架构 / ABI | 任务运行方式 | 构建状态 |
+| --- | --- | --- | --- |
+| Windows | x64、arm64 | Rust Worker | NSIS |
+| macOS | x64、arm64 | Rust Worker | app、DMG |
+| Linux | x64、arm64 | Rust Worker | deb、rpm |
+| Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | CI 无签名 debug APK |
+| iOS | arm64 device、arm64 simulator | 进程内 | CI device library / simulator app |
+
+移动商店包、真实设备发布和生产签名需要平台凭据；CI 中的移动产物是编译与链接验证，不代表已签名发布。
 
 ## 安装
 
@@ -77,27 +91,26 @@ brew upgrade --cask epub-tool-newui
 
 详见 [本地开发指南](./assets/docs/LOCAL_DEVELOPMENT.md)。其中包括 Linux、macOS、Windows、Android、iOS 的
 系统依赖，Node.js 与 Rust 环境配置、应用启动、Rust 测试、安装包构建、OCR 资源校验及
-`cargo metadata` 报错排查。Python/Conda 只在黄金回归与 OCR 模型维护时需要。
+`cargo metadata` 报错排查、移动 ONNX Runtime 准备和签名边界。
 
 ## 仓库结构
 
 - `frontend/`：Vue 3 跨平台前端
 - `src-tauri/`：Tauri 壳层、Rust 任务引擎、ONNX/OpenCC 资源与打包配置
 - `src-tauri/src/rust_backend/`：按 `epub`、`image`、`text`、`font` 分类的任务实现
-- `python_backend/`：黄金回归参照实现与维护工具，不参与桌面运行或发布
-- `scripts/`：OCR 资源校验与模型维护脚本
-- `assets/docs/`：构建、协议与桥接说明
+- `src-tauri/tests/`：核心任务、输出、事件和桌面 Worker 协议集成回归
+- `xtask/`：OCR 模型校验、移动 ONNX Runtime、移动构建和发布维护工具
+- `proto/`：Tauri IPC Protobuf wire contract
+- `assets/docs/`：架构、构建、协议与发布说明
 - `assets/img/`：README、前端与应用打包共用图像资源
-- `tests/`：自动化测试
 - `fixtures/`：本地测试样本与验证素材（默认不提交）
 
 ## 文档索引
 
 - [`assets/docs/README.md`](./assets/docs/README.md)：文档总览
+- [`assets/docs/ARCHITECTURE.md`](./assets/docs/ARCHITECTURE.md)：统一核心、字体流水线与平台边界
 - [`assets/docs/LOCAL_DEVELOPMENT.md`](./assets/docs/LOCAL_DEVELOPMENT.md)：本地开发环境、启动、打包与排查
-- [`assets/docs/CLI_USAGE.md`](./assets/docs/CLI_USAGE.md)：Python 黄金样本 CLI 用法
 - [`assets/docs/TASK_PROTOCOL.md`](./assets/docs/TASK_PROTOCOL.md)：前端与 Rust 任务协议
-- [`assets/docs/TAURI_PYTHON_BRIDGE.md`](./assets/docs/TAURI_PYTHON_BRIDGE.md)：Tauri Rust 任务桥接说明（保留旧路径）
 - [`assets/docs/BUILD_AND_BUNDLE.md`](./assets/docs/BUILD_AND_BUNDLE.md)：本地构建、打包与发布说明
 
 ## 常见排查
@@ -105,7 +118,7 @@ brew upgrade --cask epub-tool-newui
 - 处理失败时，先看“最近一次执行摘要”中的失败原因、跳过原因，再看“处理日志”
 - 如果书籍结构异常，可先执行“格式化”再继续其他流程
 - `encrypt_font` 只处理 EPUB 内已嵌入的字体，不处理系统字体
-- `decrypt_font` 只使用内置 ONNX OCR 模型，不依赖系统 OCR 工具、Paddle Python 运行时或运行时联网下载
+- `decrypt_font` 只使用内置 ONNX OCR 模型，不依赖系统 OCR 工具或运行时联网下载
 - `decrypt_epub` 只还原文件名与资源引用混淆；如果 EPUB 内容本身被 DRM 或加密资源保护，工具无法还原明文
 - `image_to_webp` 的输出在 EPUB 2 或较旧的阅读器中可能无法显示
 - `replace_cover` 会更新 EPUB 中常见的封面资源引用；未选择封面的队列项会跳过

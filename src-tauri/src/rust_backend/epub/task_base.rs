@@ -1,8 +1,8 @@
-//! Shared EPUB rewrite primitives.  This mirrors the role of Python's
-//! `services/epub/task_base.py`, while deliberately keeping parsing conservative
-//! and reporting unsupported EPUB structures explicitly.
+//! Shared EPUB rewrite primitives. Parsing remains conservative and reports
+//! unsupported EPUB structures explicitly.
 
 use super::workspace::{resolve_reference, EpubWorkspace};
+use crate::rust_backend::text_encoding::{decode_epub_text, TextKind};
 use percent_encoding::percent_decode_str;
 use regex::Regex;
 use std::{
@@ -60,9 +60,7 @@ impl ParsedBook {
             .members
             .get(&workspace.opf_path)
             .ok_or_else(|| "EPUB 缺少 OPF 文件".to_string())?;
-        let opf = std::str::from_utf8(opf)
-            .map_err(|_| "OPF 不是 UTF-8，当前 Rust 实现暂不支持".to_string())?
-            .to_string();
+        let opf = decode_epub_text(opf, TextKind::Xml, &workspace.opf_path)?;
         let container = workspace
             .members
             .get("META-INF/container.xml")
@@ -282,7 +280,7 @@ fn find_open_tag(source: &str, tag: &str) -> Option<String> {
         .map(|matched| matched.as_str().to_string())
 }
 
-/// MD5 is used solely to retain the Python filename-obfuscation algorithm.
+/// MD5 is used solely to retain the established filename-obfuscation algorithm.
 pub fn md5(input: &[u8]) -> [u8; 16] {
     const SHIFTS: [u32; 64] = [
         7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5,
@@ -413,7 +411,7 @@ mod tests {
     use super::{md5_hex, parse_attributes, split_slim_href};
 
     #[test]
-    fn md5_matches_python_hashlib() {
+    fn md5_matches_known_vectors() {
         assert_eq!(md5_hex(b"f2"), "3667f6a0c97490758d7dc9659d01ea34");
     }
 

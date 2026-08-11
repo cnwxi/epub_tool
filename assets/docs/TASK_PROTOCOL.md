@@ -1,11 +1,25 @@
 # Engine Task Protocol
 
-`proto/epub_tool/v1/engine.proto` 是 Vue、Tauri/Rust 与 Python 黄金样本之间唯一的
-协议源。桌面应用通过 Tauri IPC 传递 Protobuf JSON 映射；Python 仅在黄金回归和维护
-命令中使用同一映射，不参与桌面运行时；项目
-规范的请求与输出字段均为 lower camel case。运行 `npm run protocol:generate`
-生成 TypeScript 与 Python 类型；Rust 在 Cargo 构建时从同一文件生成类型。该命令固定
-Buf CLI 与远程插件版本；提交前可用 `npm run protocol:check` 验证生成代码没有漂移。
+`proto/epub_tool/v1/engine.proto` 是 Tauri IPC wire contract 的唯一来源。规范 JSON 映射使用 lower camel case；不兼容变更通过新的 proto package version 演进。
+
+```bash
+npm run protocol:generate
+npm run protocol:check
+```
+
+`protocol:generate` 生成前端 TypeScript 类型；Rust 在 Cargo build script 中从同一 proto 生成 wire types。生成流程固定 Buf CLI 和远程插件版本。
+
+## 分层
+
+```text
+EngineRequest / EngineEvent / EngineResponse (protobuf wire)
+                   |
+             engine_adapter
+                   |
+TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
+```
+
+`engine_adapter` 是唯一 wire/core 转换边界。业务任务不接收 Protobuf message、Tauri command 参数或动态 JSON。桌面 Worker 传输序列化后的类型化 core contract；移动端直接调用相同 core，不做 wire -> 动态 JSON -> wire 往返。
 
 ## 请求
 
@@ -16,34 +30,40 @@ Buf CLI 与远程插件版本；提交前可用 `npm run protocol:check` 验证�
   "runTask": {
     "taskId": "task-uuid",
     "taskType": "TASK_TYPE_REFORMAT_EPUB",
-    "inputFiles": ["/abs/path/book.epub"],
-    "outputDir": "/abs/path/output",
+    "inputFiles": ["/absolute/book.epub"],
+    "outputDir": "/absolute/output",
     "options": { "empty": {} }
   }
 }
 ```
 
-`EngineRequest` 的 operation 是 `runTask` 或 `scanFonts`；`requestId` 必须在
-响应和每个流事件中回显。项目仅保证 lower camel case 的请求格式与输出格式；其他
-字段命名不是受支持的 API 契约。
+`EngineRequest.operation` 是 `runTask` 或 `scanFonts`。`protocolVersion` 必须是 `PROTOCOL_VERSION_V1`；`requestId` 必须在每个事件与终止响应中回显。
 
-Python 黄金样本 CLI 使用 `google.protobuf.json_format.ParseDict()` 解析请求。该上游解析器
-可将 proto 原始字段名（snake_case）和 protobuf JSON 字段名（lower camel case）解析为
-同一个内部消息字段，例如 `request_id` 与 `requestId` 都对应 `request.request_id`；它不会
-修改原始 JSON 对象。Worker 使用 `MessageToDict(..., preserving_proto_field_name=False)`
-输出消息，因此所有实际发出的 JSON Lines 均为 lower camel case。输入端的宽松解析是上游
-实现行为，不构成对非规范字段名的兼容承诺。
+任务枚举：
 
-Tauri IPC 直接传递完整的 `EngineEvent` 和 `EngineResponse` 信封。Rust 的
-`engine_adapter` 负责将 `RunTaskRequest` 和 `TaskOptions` oneof 转为 Rust 任务引擎
-的内部输入，再将内部事件和结果重新包装为协议消息；Vue 不接受未包裹的任务事件或结果。
+- `TASK_TYPE_REFORMAT_EPUB`
+- `TASK_TYPE_DECRYPT_EPUB`
+- `TASK_TYPE_ENCRYPT_EPUB`
+- `TASK_TYPE_ENCRYPT_FONT`
+- `TASK_TYPE_DECRYPT_FONT`
+- `TASK_TYPE_WEBP_TO_IMG`
+- `TASK_TYPE_IMAGE_COMPRESS`
+- `TASK_TYPE_IMAGE_TO_WEBP`
+- `TASK_TYPE_CHINESE_CONVERT`
+- `TASK_TYPE_REPLACE_COVER`
 
-任务枚举：`TASK_TYPE_REFORMAT_EPUB`、`TASK_TYPE_DECRYPT_EPUB`、
-`TASK_TYPE_ENCRYPT_EPUB`、`TASK_TYPE_ENCRYPT_FONT`、`TASK_TYPE_DECRYPT_FONT`、
-`TASK_TYPE_WEBP_TO_IMG`、`TASK_TYPE_IMAGE_COMPRESS`、`TASK_TYPE_IMAGE_TO_WEBP`、
-`TASK_TYPE_CHINESE_CONVERT`、`TASK_TYPE_REPLACE_COVER`。
+## Options oneof
 
-## 流事件与响应
+- 无参数任务：`{ "empty": {} }`
+- 字体任务：`font.targetFontFamiliesByFile`、`targetFontFamilies`、`ocrCharPolicy`、`minOcrConfidence`
+- 图片压缩：`imageCompress.jpegQuality`、`webpQuality`、`pngToJpg`、`pngQuantize`
+- 图片格式转换：`imageConversion.quality`、`pngQuantize`
+- 简繁转换：`chineseConvert.direction`，值为 `s2t` 或 `t2s`
+- 更换封面：`replaceCover.coverPathByFile`
+
+`targetFontFamiliesByFile` 的 map value 是 `FontFamilies`，JSON 形式为 `{ "values": ["Family"] }`。任务类型和 option kind 不匹配时 adapter 直接拒绝请求，不让无效组合进入核心。
+
+## 流事件
 
 ```json
 {
@@ -55,30 +75,44 @@ Tauri IPC 直接传递完整的 `EngineEvent` 和 `EngineResponse` 信封。Rust
     "status": "running",
     "progress": 0,
     "message": "开始处理 book.epub",
-    "currentFile": "/abs/path/book.epub",
+    "currentFile": "/absolute/book.epub",
     "currentIndex": 1,
     "totalFiles": 1,
+    "outputPath": "/absolute/output/book_reformat_epub.epub",
     "level": "info"
   }
 }
 ```
 
-终止响应使用 `taskResult`、`fontScanResult` 或结构化 `error` oneof。`error`
-包含稳定的 `code` 和面向用户的 `message`。字体扫描事件为 `fontScanProgress`，
-包含 `currentIndex`、`totalFiles` 和 `result`。
+稳定事件序列：
 
-当前错误码包括：参数或协议错误 `INVALID_ARGUMENT`、文件系统错误 `IO_ERROR`、
-缺少处理依赖 `DEPENDENCY_ERROR`，以及未预期的内部错误 `INTERNAL`。协议错误必须
-返回关联的 `EngineResponse`；Rust 任务执行错误会在 `taskResult.errors` 中按文件返回。
+1. `task.started`
+2. 每个文件的 `task.file.started`
+3. 零个或多个 `task.log`
+4. 每个文件的 `task.file.finished`
+5. `task.finished`
 
-## Options oneof
+最后一个事件携带完整 `TaskResult`。单文件失败与跳过分别进入 `errors`、`skipped`；`summary` 包含 `total`、`success`、`failed`、`skipped`。`status` 为 `success`、`partial` 或 `error`。
 
-- 无参数任务：`{ "empty": {} }`
-- 字体任务：`font.targetFontFamiliesByFile`（值为 `{ "values": [...] }`），以及可选的 `ocrCharPolicy`、`minOcrConfidence`
-- 图片压缩：`imageCompress.jpegQuality`、`webpQuality`、`pngToJpg`、`pngQuantize`
-- WebP/图片转换：`imageConversion.quality`、`pngQuantize`
-- 简繁转换：`chineseConvert.direction`（`s2t` 或 `t2s`）
-- 更换封面：`replaceCover.coverPathByFile`
+字体扫描用 `fontScanProgress` 流式返回每本 EPUB 的 `fontFamilies` 或结构化错误，终止响应使用 `fontScanResult`。
 
-Rust 与 Python 黄金实现均只在各自 engine 边界转换这些字段；任务服务逻辑不应依赖
-wire 格式。
+## 响应与错误
+
+`EngineResponse.payload` 是：
+
+- `taskResult`
+- `fontScanResult`
+- `error`
+
+协议/参数错误使用结构化 `EngineError`；任务处理错误按输入文件进入 `TaskResult.errors`。适配层当前使用的错误类别包括 `INVALID_ARGUMENT`、`IO_ERROR`、`DEPENDENCY_ERROR` 和 `INTERNAL`。
+
+## 桌面 Worker contract
+
+桌面隔离层每行一个 JSON envelope：
+
+- 请求：`requestId`、类型化 `TaskSpec`、`logPath`
+- 事件：`kind = event` 与类型化 `TaskEvent`
+- 成功：`kind = result` 与类型化 `TaskResult`
+- 失败：`kind = error` 与错误文本
+
+Worker 必须严格回显 `requestId`。Tauri 运行时遇到未知 envelope、ID 不匹配、Worker EOF 或无效字段时失败并执行受限恢复策略，不能把未知对象转回协议消息。

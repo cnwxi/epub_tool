@@ -1,12 +1,12 @@
 # 文档索引
 
-`assets/docs/` 目录只保留当前仍然需要维护的核心说明：
+`assets/docs/` 保留当前实现需要维护的说明：
 
-- `LOCAL_DEVELOPMENT.md`：纯 Rust 跨平台应用的环境、启动、测试、打包与排查说明。
-- `BUILD_AND_BUNDLE.md`：Rust/Tauri 本地构建、打包与发布说明。
-- `TASK_PROTOCOL.md`：前端 IPC 与 Rust 任务事件/结果协议。
-- `TAURI_PYTHON_BRIDGE.md`：Tauri Rust 任务桥接说明；文件名为兼容旧链接而保留。
-- `CLI_USAGE.md`：Python 黄金样本 CLI 用法，不属于桌面运行或发布链路。
-- `UI_DESIGN_GUIDELINES.md`：统一的 UI、动画与轻磨砂玻璃设计规范。
+- `ARCHITECTURE.md`：统一 Rust 核心、唯一 Stylo 字体流水线、桌面/移动运行时和平台矩阵。
+- `LOCAL_DEVELOPMENT.md`：环境、启动、验证、桌面与移动构建命令。
+- `BUILD_AND_BUNDLE.md`：桌面/移动构建矩阵、ONNX Runtime 来源、CI、签名与发布边界。
+- `TASK_PROTOCOL.md`：Protobuf wire contract、类型化核心协议、事件和 Worker envelope。
+- `UI_DESIGN_GUIDELINES.md`：统一 UI、动画与轻磨砂玻璃设计规范。
+- `CHANGELOG.md`：历史版本记录。
 
-Python 仅用于黄金样本测试和 OCR 模型维护；本地运行、打包和发布不需要 Conda 或 Python sidecar。
+开发、测试、构建、CI、打包与发布使用 Rust/Node 工具链。架构或平台支持发生变化时，应同时更新代码、工作流、README 与上述对应文档。

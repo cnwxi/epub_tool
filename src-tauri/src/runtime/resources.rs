@@ -78,6 +78,12 @@ const OPENCC_FILES: [&str; 7] = [
 ];
 
 #[cfg(mobile)]
+const OCR_MODEL_NAME: &str = "PP-OCRv6_small_rec_onnx";
+
+#[cfg(mobile)]
+const OCR_FILES: [&str; 2] = ["inference.onnx", "inference.yml"];
+
+#[cfg(mobile)]
 pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
     use tauri::path::BaseDirectory;
     use tauri_plugin_fs::FsExt;
@@ -88,6 +94,7 @@ pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
         .map_err(|error| format!("无法定位移动端应用数据目录: {error}"))?
         .join("runtime-resources");
     let opencc_dir = root.join("opencc");
+    let ocr_model_dir = root.join("ocr-models").join(OCR_MODEL_NAME);
     let version_path = root.join(".epub-tool-resource-version");
     fs::create_dir_all(&root)
         .map_err(|error| format!("创建移动端资源目录失败 {}: {error}", root.display()))?;
@@ -97,7 +104,10 @@ pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
         .unwrap_or(false)
         && OPENCC_FILES
             .iter()
-            .all(|name| opencc_dir.join(name).is_file());
+            .all(|name| opencc_dir.join(name).is_file())
+        && OCR_FILES
+            .iter()
+            .all(|name| ocr_model_dir.join(name).is_file());
 
     if !resources_are_current {
         for name in OPENCC_FILES {
@@ -105,6 +115,14 @@ pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
                 app,
                 &format!("opencc/{name}"),
                 &opencc_dir.join(name),
+                BaseDirectory::Resource,
+            )?;
+        }
+        for name in OCR_FILES {
+            copy_resource(
+                app,
+                &format!("ocr-models/{OCR_MODEL_NAME}/{name}"),
+                &ocr_model_dir.join(name),
                 BaseDirectory::Resource,
             )?;
         }
@@ -117,10 +135,15 @@ pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
     }
 
     crate::rust_backend::text::configure_resource_dir(opencc_dir.clone())?;
+    crate::rust_backend::font::decrypt_font::configure_ocr_resources(
+        crate::rust_backend::font::decrypt_font::OcrResourcePaths {
+            model_dir: ocr_model_dir.clone(),
+        },
+    )?;
 
     Ok(RuntimeResources {
         opencc_dir: Some(opencc_dir),
-        ocr_model_dir: None,
+        ocr_model_dir: Some(ocr_model_dir),
     })
 }
 

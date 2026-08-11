@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package epub_tool.v1;
 
-// The version of the JSON/protobuf contract carried by the desktop IPC and
-// Python worker JSON Lines transport. A new incompatible protocol uses a new
-// package version rather than changing this value in place.
+// The version of the JSON/protobuf contract carried by Tauri IPC. A new
+// incompatible protocol uses a new package version rather than changing this
+// value in place.
 enum ProtocolVersion {
   PROTOCOL_VERSION_UNSPECIFIED = 0;
   PROTOCOL_VERSION_V1 = 1;

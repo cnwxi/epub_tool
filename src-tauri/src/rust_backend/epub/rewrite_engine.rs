@@ -7,6 +7,9 @@ use super::{
     },
     workspace::{resolve_reference, EpubWorkspace},
 };
+use crate::rust_backend::text_encoding::{
+    decode_epub_text, encode_epub_text, text_kind_for_path, TextKind,
+};
 use regex::{Captures, Regex};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -53,12 +56,12 @@ pub fn supports_rewrite(workspace: &EpubWorkspace) -> Result<(), String> {
                 .members
                 .get(&item.source_path)
                 .ok_or_else(|| format!("EPUB 缺少资源: {}", item.source_path))?;
-            read_utf8(
+            decode_epub_text(
                 data,
                 if item.resource_type == ResourceType::Text {
-                    "XHTML"
+                    text_kind_for_path(&item.source_path)
                 } else {
-                    "CSS"
+                    TextKind::Css
                 },
                 &item.source_path,
             )?;
@@ -94,15 +97,10 @@ pub fn rewrite(
                 .members
                 .get(&item.source_path)
                 .ok_or_else(|| format!("EPUB 缺少目录文件: {}", item.source_path))?;
-            let toc = std::str::from_utf8(toc).map_err(|_| {
-                format!(
-                    "目录不是 UTF-8，当前 Rust 实现暂不支持: {}",
-                    item.source_path
-                )
-            })?;
+            let toc = decode_epub_text(toc, TextKind::Xml, &item.source_path)?;
             output.insert(
                 "OEBPS/toc.ncx".to_string(),
-                rewrite_toc(toc, &item.source_path, &plan).into_bytes(),
+                encode_epub_text(&rewrite_toc(&toc, &item.source_path, &plan), TextKind::Xml),
             );
             continue;
         }
@@ -120,25 +118,33 @@ pub fn rewrite(
             .get(&item.source_path)
             .ok_or_else(|| format!("EPUB 缺少资源: {}", item.source_path))?;
         let data = match item.resource_type {
-            ResourceType::Text => rewrite_xhtml(
-                read_utf8(data, "XHTML", &item.source_path)?,
-                &item.source_path,
-                &plan,
-            )
-            .into_bytes(),
-            ResourceType::Css => rewrite_css(
-                read_utf8(data, "CSS", &item.source_path)?,
-                &item.source_path,
-                &plan,
-            )
-            .into_bytes(),
+            ResourceType::Text => encode_epub_text(
+                &rewrite_xhtml(
+                    &decode_epub_text(
+                        data,
+                        text_kind_for_path(&item.source_path),
+                        &item.source_path,
+                    )?,
+                    &item.source_path,
+                    &plan,
+                ),
+                text_kind_for_path(&item.source_path),
+            ),
+            ResourceType::Css => encode_epub_text(
+                &rewrite_css(
+                    &decode_epub_text(data, TextKind::Css, &item.source_path)?,
+                    &item.source_path,
+                    &plan,
+                ),
+                TextKind::Css,
+            ),
             _ => data.clone(),
         };
         output.insert(destination, data);
     }
     output.insert(
         "OEBPS/content.opf".to_string(),
-        rewrite_opf(&book, &plan)?.into_bytes(),
+        encode_epub_text(&rewrite_opf(&book, &plan)?, TextKind::Xml),
     );
     workspace.members = output;
     workspace.opf_path = "OEBPS/content.opf".to_string();
@@ -147,21 +153,20 @@ pub fn rewrite(
 }
 
 fn rewrite_container_rootfile(container: &[u8]) -> Result<Vec<u8>, String> {
-    let container = std::str::from_utf8(container)
-        .map_err(|_| "container.xml 不是 UTF-8，无法更新 OPF 根文件".to_string())?;
+    let container = decode_epub_text(container, TextKind::Xml, "META-INF/container.xml")?;
     static ROOTFILE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?is)<rootfile\b[^>]*?/?>").expect("valid rootfile regex"));
-    if !ROOTFILE.is_match(container) {
+    if !ROOTFILE.is_match(&container) {
         return Err("container.xml 缺少 OPF rootfile".to_string());
     }
-    Ok(ROOTFILE
-        .replacen(
-            container,
+    Ok(encode_epub_text(
+        &ROOTFILE.replacen(
+            &container,
             1,
             r#"<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>"#,
-        )
-        .into_owned()
-        .into_bytes())
+        ),
+        TextKind::Xml,
+    ))
 }
 
 struct RewritePlan {
@@ -276,9 +281,11 @@ fn encrypted_filename(
         .chars()
         .map(|character| if character == '1' { '*' } else { ':' })
         .collect();
-    let slim_suffix = (item.resource_type == ResourceType::Image && slim)
-        .then_some("~slim")
-        .unwrap_or("");
+    let slim_suffix = if item.resource_type == ResourceType::Image && slim {
+        "~slim"
+    } else {
+        ""
+    };
     format!(
         "_{obfuscated}{slim_suffix}{}",
         extension.to_ascii_lowercase()
@@ -341,11 +348,6 @@ fn has_unsafe_basename(value: &str) -> bool {
             b'\\' | b'/' | b':' | b'*' | b'?' | b'"' | b'<' | b'>' | b'|'
         )
     })
-}
-
-fn read_utf8<'a>(data: &'a [u8], label: &str, path: &str) -> Result<&'a str, String> {
-    std::str::from_utf8(data)
-        .map_err(|_| format!("{label}资源无法按 UTF-8 读取，当前 Rust 实现暂不支持: {path}"))
 }
 
 fn split_reference(reference: &str) -> (&str, &str) {
@@ -498,9 +500,11 @@ fn rewrite_opf(book: &ParsedBook, plan: &RewritePlan) -> Result<String, String> 
             .targets
             .get(&item.source_path)
             .ok_or_else(|| format!("缺少 manifest 资源: {}", item.source_path))?;
-        let properties = (!item.properties.is_empty())
-            .then(|| format!(" properties=\"{}\"", item.properties))
-            .unwrap_or_default();
+        let properties = if item.properties.is_empty() {
+            String::new()
+        } else {
+            format!(" properties=\"{}\"", item.properties)
+        };
         manifest.push_str(&format!(
             "\n    <item id=\"{output_id}\" href=\"{}/{}\" media-type=\"{}\"{properties}/>",
             target.resource_type.directory(),
@@ -562,7 +566,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn keeps_python_filename_algorithms() {
+    fn keeps_stable_filename_algorithms() {
         let item = ManifestItem {
             id: "f2".to_string(),
             href: "Images/a.jpg".to_string(),

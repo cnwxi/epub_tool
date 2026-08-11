@@ -1,120 +1,114 @@
 # 构建、打包与发布
 
-## 构建目标
+## 构建组成
 
-应用由 Vue 前端、Tauri 壳层和共享 Rust EPUB 任务核心组成。桌面端通过常驻
-`rust-task-runner` 子进程执行任务；Android/iOS 在应用进程内执行同一套任务核心。
-发布产物不包含 Python 解释器、Conda 环境或 Python sidecar。
+应用由 Vue 前端、Tauri 壳层、统一 Rust EPUB 核心和运行资源组成：
 
-安装包会携带：
+- Windows、macOS、Linux 包含 `rust-task-runner`，由 Tauri 管理常驻 Worker；
+- Android、iOS 将同一 Rust 核心链接进应用进程；
+- 所有平台携带 `PP-OCRv6_small_rec_onnx` 与 OpenCC 词典；
+- Protobuf 只用于 Tauri IPC，业务核心使用类型化 `TaskSpec`、`TaskOptions`、`TaskEvent`、`TaskResult`。
 
-- Tauri/Rust 可执行程序；
-- `frontend/` 构建出的静态资源；
-- 桌面包携带 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`；
-- `src-tauri/bundle-resources/opencc/` 词典资源。
-
-移动包暂不携带 ONNX OCR 模型。移动端原生 ONNX Runtime 接入前，字体 OCR 解密会由
-平台能力接口禁用，其它处理任务不受影响。
-
-## 本地开发与构建
-
-先安装 Node.js（版本见 `.nvmrc`）、Rust stable 与平台所需 Tauri 库，再安装依赖：
+## 桌面构建
 
 ```bash
-npm install
-npm --prefix frontend install
-```
-
-启动开发应用：
-
-```bash
-npm run tauri:dev
-```
-
-构建前端并校验 OCR 资源：
-
-```bash
-npm run build:bundle-assets
-```
-
-构建当前平台安装包：
-
-```bash
-npm run tauri:build
-```
-
-`tauri:build` 的 `beforeBuildCommand` 会执行 `build:bundle-assets`。因此正常发布不需要
-执行任何 Python、Conda、PyInstaller 或 sidecar 准备步骤。
-
-## Android 与 iOS
-
-首次构建前安装对应 Tauri 前置依赖并初始化原生工程：
-
-```bash
-npm run tauri:android:init
-npm run tauri:ios:init
-```
-
-iOS 初始化和构建只能在安装完整 Xcode 的 macOS 上进行。随后可执行：
-
-```bash
-npm run tauri:android:dev
-npm run tauri:android:build
-npm run tauri:ios:dev
-npm run tauri:ios:build
-```
-
-`tauri.android.conf.json` 和 `tauri.ios.conf.json` 会覆盖桌面构建钩子：移动构建只生成
-前端资源，不构建桌面 Worker，也不校验或打包桌面 ONNX OCR 模型。
-
-## 发布前验证
-
-至少执行：
-
-```bash
-cargo test --manifest-path src-tauri/Cargo.toml
+npm ci
+npm --prefix frontend ci
 npm run build:bundle-assets
 npm run tauri:build
 ```
 
-建议在目标平台安装包上验证启动、各任务执行、输出目录和日志定位。Python 黄金回归是可选的
-开发验证，不是构建或发布依赖；需要时按 [本地开发指南](./LOCAL_DEVELOPMENT.md#可选-python-工作)
-单独准备环境。
+桌面 `beforeBuildCommand` 会执行 `build:bundle-assets`：
 
-## CI 构建矩阵
+1. 构建 Vue 前端；
+2. 以真实 Rust ONNX Runtime session 校验 OCR 模型；
+3. 构建 release `rust-task-runner`；
+4. 由 Tauri 生成目标平台 bundle。
 
-[`.github/workflows/build.yml`](../../.github/workflows/build.yml) 支持：
+发布 workflow 的桌面矩阵：
 
-- Linux x64 / arm64
-- Windows x64 / arm64
-- macOS x64 / arm64
+| 平台 | 架构 | Bundle |
+| --- | --- | --- |
+| Linux | x64、arm64 | deb、rpm |
+| Windows | x64、arm64 | NSIS |
+| macOS | x64、arm64 | app、DMG |
 
-当前 CI 会安装 Python 来运行现有黄金样本回归，并配置 OCR 模型变体；这些步骤不会构建或
-打包 Python sidecar。安装包本身仍只有 Rust 后端和已提交资源。纯 Rust 的构建门槛是
-`cargo test`、前端构建、资源校验与 Tauri 打包；Python 回归是额外的兼容性验证。
+当前 macOS 配置使用 ad-hoc identity，Windows 安装包也未配置生产证书。CI 能验证构建和打包；正式代码签名、公证和信誉链需要仓库外凭据。
 
-Android/iOS 依赖树已与桌面 `ort` 依赖隔离。将移动原生工程纳入 CI 前，还需确定 Android
-签名、Apple Team/证书及移动 ONNX Runtime 的发布方式。
+## 移动 ONNX Runtime
 
-## 版本号与 Release
+`xtask` 固定并校验以下官方 ONNX Runtime `1.24.3` 归档：
 
-应用版本以 `src-tauri/Cargo.toml` 的 `package.version` 为唯一来源：
+| 平台 | 官方归档 | SHA-256 | 切片 / ABI |
+| --- | --- | --- | --- |
+| Android | `onnxruntime-android-1.24.3.aar` | `67397e4a970e75617f765d2015ceaf911917e1d822276cfb5792744e8085cbce` | arm64-v8a、armeabi-v7a、x86、x86_64 |
+| iOS | `onnxruntime-c-1.24.3.zip` | `b7eedc45932bac758ffd057cac0feb3f682269e47750b159e4c865145cbf0a8e` | ios-arm64、ios-arm64_x86_64-simulator |
 
-- 前端显示版本使用该值；
-- Tauri 应用版本使用该值；
-- Release workflow 默认由该值生成发布标签。
+来源：
 
-版本采用“年.月.日”格式，例如 `26.7.26`；同日修订使用 `-1`、`-2` 后缀。
-发布前在 `assets/docs/CHANGELOG.md` 添加对应三级版本记录。GitHub Release 标签可添加
-`v` 前缀，例如 `v26.7.26`。
+- Android：`https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.24.3/onnxruntime-android-1.24.3.aar`
+- iOS：`https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.24.3.zip`
 
-## OCR 模型维护
+Android 使用动态 `libonnxruntime.so`，由 `ORT_LIB_PATH` 与 `ORT_PREFER_DYNAMIC_LINK=1` 驱动 `ort-sys`，并复制到生成工程 `jniLibs`。iOS 使用静态 xcframework，由 `ORT_IOS_XCFWK_PATH` 驱动 `ort-sys`。生成和下载内容位于已忽略的 `src-tauri/.mobile-runtime/`。
 
-默认发布使用已提交的 `PP-OCRv6_small_rec_onnx`，构建过程只校验资源，不下载或转换模型。
-维护者刷新模型时才需要 Python 与 Conda：
+## Android
+
+构建环境：JDK 17、Android SDK 36、NDK `29.0.13846066`、Rustup 和目标 Rust standard library。最低 API 为 24。
 
 ```bash
-conda run -n epub_tool python -m pip install -r requirements/requirements-ocr-conversion.txt
-conda run -n epub_tool npm run maintenance:fetch-ocr-model
-conda run -n epub_tool npm run maintenance:convert-ocr-onnx
+npm run tauri:android:init -- --ci
+npm run tauri:android:build -- aarch64 --debug --apk --ci
 ```
+
+目标映射：
+
+| Tauri target | Rust target | APK ABI |
+| --- | --- | --- |
+| `aarch64` | `aarch64-linux-android` | `arm64-v8a` |
+| `armv7` | `armv7-linux-androideabi` | `armeabi-v7a` |
+| `i686` | `i686-linux-android` | `x86` |
+| `x86_64` | `x86_64-linux-android` | `x86_64` |
+
+CI 对四个 ABI 分别构建 debug APK，验证目标链接和 `jniLibs/<abi>/libonnxruntime.so` 已进入生成工程。这些 APK 是无签名编译产物；Play 发布需要 keystore、签名配置和商店凭据。
+
+## iOS
+
+iOS 最低版本为 15.1：
+
+```bash
+npm run tauri:ios:init -- --ci
+npm run tauri:ios:build -- aarch64-sim --debug --ci
+```
+
+CI 执行两层验证：
+
+- `aarch64-apple-ios`：直接编译 device Rust static library，验证 device slice 和 ORT 静态链接，不生成 IPA；
+- `aarch64-apple-ios-sim`：通过 Tauri 构建 arm64 simulator app。
+
+device archive、IPA export、TestFlight/App Store 上传需要完整 Apple Team、证书和 provisioning profile；没有这些凭据时不能声明 device 发布完成。
+
+## 质量门槛
+
+发布 workflow 在桌面和移动矩阵前执行：
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo fmt --manifest-path xtask/Cargo.toml -- --check
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+cargo test --locked --manifest-path xtask/Cargo.toml
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
+npm run protocol:check
+npm run build
+npm run build:verify-ocr-model
+```
+
+安装包还应在目标系统上做启动、任务执行、输出、日志和真实 EPUB 回归。宿主测试不能替代 Android/iOS 目标链接、真实设备或签名验证。
+
+## 版本与 Release
+
+版本唯一来源是 `src-tauri/Cargo.toml` 的 `package.version`，Vite、Tauri 与 Release workflow 均读取该值。版本采用“年.月.日”形式，同日修订可加 `-1`、`-2` 后缀。
+
+GitHub Release 当前发布桌面安装包。移动 CI 产物保留为编译验证，不会与已签名商店包混合发布。发布前在 `assets/docs/CHANGELOG.md` 添加对应版本记录。
+
+Homebrew Cask 更新由 `xtask update-homebrew-cask` 完成，主发布和手动 fallback workflow 共用同一 Rust 实现。

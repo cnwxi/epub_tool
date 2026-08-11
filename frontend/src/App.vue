@@ -2689,8 +2689,8 @@ activeSection.value = normalizeSectionKey(activeSection.value);
             :brand-easter-active="brandEasterActive"
             :handle-brand-easter-click="handleBrandEasterClick"
             :trigger-brand-easter-animation="triggerBrandEasterAnimation"
-            :python-worker-status="engineStatus"
-            :python-worker-status-label="engineStatusLabel"
+            :engine-status="engineStatus"
+            :engine-status-label="engineStatusLabel"
             @select="activeSection = $event"
           />
         </div>

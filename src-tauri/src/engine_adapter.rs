@@ -8,8 +8,8 @@ use crate::{
         TaskSummary as WireTaskSummary, TaskType as WireTaskType,
     },
     task_types::{
-        FileIssue as CoreFileIssue, FontTaskOptions, ImageTaskOptions, ReplaceCoverOptions,
-        TaskEvent, TaskOptions, TaskResult, TaskSpec, TaskType,
+        ChineseConversionDirection, FileIssue as CoreFileIssue, FontTaskOptions, ImageTaskOptions,
+        OcrCharPolicy, ReplaceCoverOptions, TaskEvent, TaskOptions, TaskResult, TaskSpec, TaskType,
     },
 };
 use std::{collections::BTreeMap, path::PathBuf};
@@ -88,7 +88,10 @@ pub fn task_result_response(result: TaskResult) -> Result<engine_response::Paylo
     Ok(engine_response::Payload::TaskResult(task_result(result)?))
 }
 
-fn task_options(task_type: TaskType, options: Option<&WireTaskOptions>) -> Result<TaskOptions, String> {
+fn task_options(
+    task_type: TaskType,
+    options: Option<&WireTaskOptions>,
+) -> Result<TaskOptions, String> {
     let kind = options
         .and_then(|options| options.kind.as_ref())
         .ok_or_else(|| "任务请求的 options 未指定类型".to_string())?;
@@ -105,7 +108,11 @@ fn task_options(task_type: TaskType, options: Option<&WireTaskOptions>) -> Resul
                     .map(|(path, families)| (path.clone(), families.values.clone()))
                     .collect::<BTreeMap<_, _>>(),
                 target_font_families: options.target_font_families.clone(),
-                ocr_char_policy: options.ocr_char_policy.clone(),
+                ocr_char_policy: options
+                    .ocr_char_policy
+                    .as_deref()
+                    .map(parse_ocr_char_policy)
+                    .transpose()?,
                 min_ocr_confidence: options.min_ocr_confidence,
             }))
         }
@@ -130,7 +137,11 @@ fn task_options(task_type: TaskType, options: Option<&WireTaskOptions>) -> Resul
         })),
         (TaskType::ChineseConvert, task_options::Kind::ChineseConvert(options)) => {
             Ok(TaskOptions::ChineseConvert {
-                direction: options.direction.clone(),
+                direction: options
+                    .direction
+                    .as_deref()
+                    .map(parse_chinese_direction)
+                    .transpose()?,
             })
         }
         (TaskType::ReplaceCover, task_options::Kind::ReplaceCover(options)) => {
@@ -138,10 +149,7 @@ fn task_options(task_type: TaskType, options: Option<&WireTaskOptions>) -> Resul
                 cover_path_by_file: options.cover_path_by_file.clone().into_iter().collect(),
             }))
         }
-        _ => Err(format!(
-            "任务 {} 与 options 类型不匹配",
-            task_type.as_str()
-        )),
+        _ => Err(format!("任务 {} 与 options 类型不匹配", task_type.as_str())),
     }
 }
 
@@ -154,6 +162,22 @@ fn optional_quality(value: Option<u32>, field: &str) -> Result<Option<u8>, Strin
             u8::try_from(value).map_err(|_| format!("{field} 超出 uint8 范围"))
         })
         .transpose()
+}
+
+fn parse_ocr_char_policy(value: &str) -> Result<OcrCharPolicy, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "strict" => Ok(OcrCharPolicy::Strict),
+        "compatible" | "external" => Ok(OcrCharPolicy::Compatible),
+        _ => Err(format!("不支持的 OCR 字符筛选策略: {value}")),
+    }
+}
+
+fn parse_chinese_direction(value: &str) -> Result<ChineseConversionDirection, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "s2t" => Ok(ChineseConversionDirection::SimplifiedToTraditional),
+        "t2s" => Ok(ChineseConversionDirection::TraditionalToSimplified),
+        _ => Err("direction 必须是 s2t 或 t2s".to_string()),
+    }
 }
 
 fn task_type(value: i32) -> Result<TaskType, String> {
@@ -194,7 +218,7 @@ mod tests {
     fn converts_wire_request_to_typed_task_spec() {
         let request = RunTaskRequest {
             task_id: "task-1".to_string(),
-            task_type: WireTaskType::EncryptFont as i32,
+            task_type: WireTaskType::DecryptFont as i32,
             input_files: vec!["book.epub".to_string()],
             output_dir: Some("output".to_string()),
             options: Some(WireTaskOptions {
@@ -208,14 +232,14 @@ mod tests {
                     .into_iter()
                     .collect(),
                     target_font_families: Vec::new(),
-                    ocr_char_policy: None,
+                    ocr_char_policy: Some("external".to_string()),
                     min_ocr_confidence: None,
                 })),
             }),
         };
 
         let converted = task_spec(&request).expect("request should convert");
-        assert_eq!(converted.task_type, TaskType::EncryptFont);
+        assert_eq!(converted.task_type, TaskType::DecryptFont);
         assert_eq!(
             converted
                 .options
@@ -223,6 +247,10 @@ mod tests {
                 .unwrap()
                 .target_font_families_by_file["book.epub"],
             ["Example Font"]
+        );
+        assert_eq!(
+            converted.options.font().unwrap().ocr_char_policy,
+            Some(OcrCharPolicy::Compatible)
         );
     }
 
