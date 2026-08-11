@@ -3025,8 +3025,11 @@ input {
 
   body {
     min-width: 320px;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
+  html,
   #app,
   .app-shell,
   .side-nav {

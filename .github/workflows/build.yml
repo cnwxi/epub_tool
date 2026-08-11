@@ -427,7 +427,9 @@ jobs:
   mobile_android:
     name: Android arm64-v8a Unsigned Compile Validation
     runs-on: ubuntu-24.04
-    needs: quality
+    needs:
+      - prepare
+      - quality
     permissions:
       contents: read
     steps:
@@ -507,10 +509,38 @@ jobs:
           jar tf "$apk" | grep -Fx "lib/${ANDROID_ABI}/libonnxruntime.so"
 
       - name: Upload unsigned Android compile artifact
+        if: ${{ !inputs.release }}
         uses: actions/upload-artifact@v7
         with:
           name: android-arm64-v8a-unsigned-debug
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Prepare renamed Android release asset
+        if: inputs.release
+        shell: bash
+        env:
+          ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
+          PRODUCT_STEM: Epub.Tool.NewUI
+        run: |
+          set -euo pipefail
+
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          if [ -z "$apk" ]; then
+            echo "未找到可上传的 Android APK" >&2
+            exit 1
+          fi
+
+          release_dir="release-assets"
+          mkdir -p "$release_dir"
+          cp "$apk" "$release_dir/${PRODUCT_STEM}_${ASSET_VERSION}_android_arm64_small.apk"
+
+      - name: Upload renamed Android release asset
+        if: inputs.release
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-android-arm64-small
+          path: release-assets
           if-no-files-found: error
 
   mobile_ios:
@@ -652,6 +682,7 @@ jobs:
     needs:
       - prepare
       - build
+      - mobile_android
     permissions:
       contents: write
     steps:
