@@ -1,0 +1,7 @@
+[env]
+# cargo-mobile2 launches xcodebuild with a reduced environment. Keep the
+# prepared iOS ONNX Runtime framework discoverable to the nested Cargo build.
+ORT_IOS_XCFWK_PATH = { value = "../.mobile-runtime/onnxruntime-c-1.24.3/onnxruntime.xcframework", relative = true }
+# libz-sys deliberately omits its include path on Android because zlib comes
+# from the NDK. woff still requires DEP_Z_INCLUDE to compile its WOFF1 shim.
+DEP_Z_INCLUDE = { value = "../build-support/zlib", relative = true }
