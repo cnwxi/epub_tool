@@ -426,7 +426,7 @@ jobs:
 
   mobile_android:
     name: Android ${{ matrix.target }} Unsigned Compile Validation
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: quality
     permissions:
       contents: read
