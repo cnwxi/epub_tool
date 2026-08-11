@@ -67,7 +67,7 @@ jobs:
 
   quality:
     name: Pure Rust Quality Gate
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -149,7 +149,7 @@ jobs:
         target:
           - platform: linux
             arch: x64
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
             artifact_name: linux-x64-bundle
             bundle_targets: deb,rpm
           - platform: linux
