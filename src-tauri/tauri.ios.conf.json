@@ -1,0 +1,28 @@
+{
+  "build": {
+    "beforeDevCommand": {
+      "cwd": "..",
+      "script": "npm run dev:mobile"
+    },
+    "beforeBuildCommand": {
+      "cwd": "..",
+      "script": "npm run build:mobile-assets"
+    }
+  },
+  "app": {
+    "macOSPrivateApi": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Epub Tool NewUI",
+        "transparent": false,
+        "decorations": true
+      }
+    ]
+  },
+  "bundle": {
+    "resources": {
+      "bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*": null
+    }
+  }
+}

@@ -11,7 +11,7 @@
   <a href="https://github.com/cnwxi/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-cnwxi%2Ftap-FBB040" alt="Homebrew Tap"></a>
 </p>
 
-一个面向 EPUB 批量处理的桌面工具。桌面端采用 `Tauri 2 + Vue 3 + TypeScript + Rust`，围绕“批量导入、统一执行、结果回看、日志定位”组织工作流。所有发布任务均由 Rust 后端执行；Python 实现仅用于黄金回归与维护工具。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
+一个面向 EPUB 批量处理的跨平台工具，采用 `Tauri 2 + Vue 3 + TypeScript + Rust`。Linux、macOS、Windows 通过隔离的 Rust Worker 执行任务；Android/iOS 在应用进程内执行相同的 Rust 任务核心。Python 实现仅用于黄金回归与维护工具。文件解密/加密功能处理的是 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密。
 
 ![Epub Tool 桌面端界面预览](./assets/img/epub_tool_newui.png)
 
@@ -28,9 +28,9 @@
 - `replace_cover`：为每本 EPUB 指定 JPG、PNG 或 WebP 封面，并同步更新封面清单和内容页引用
 - `chinese_convert`：使用 OpenCC 双向转换可见简体/繁体中文文本，保留资源路径、ID、CSS 与脚本内容
 
-## 当前桌面版实现
+## 当前实现
 
-桌面版通过统一任务界面提供文件导入、参数配置、批量执行、进度与日志查看、结果回顾等能力。不同处理功能复用同一套前后端任务协议，并可按各自需求扩展配置和交互。
+各平台复用统一任务界面、前后端协议和 Rust 业务核心。平台差异集中在运行时适配层：桌面端负责 Worker 生命周期、目录扫描和路径打开；移动端负责系统文件 URI、缓存暂存和结果导出。移动 ONNX Runtime 接入前，Android/iOS 暂不启用字体 OCR 解密。
 
 ## 安装
 
@@ -75,13 +75,13 @@ brew upgrade --cask epub-tool-newui
 
 ## 本地开发与编译
 
-详见 [本地开发指南](./assets/docs/LOCAL_DEVELOPMENT.md)。其中包括 macOS、Windows、Linux 的
-系统依赖，Node.js 与 Rust 环境配置、桌面端启动、Rust 测试、安装包构建、OCR 资源校验及
+详见 [本地开发指南](./assets/docs/LOCAL_DEVELOPMENT.md)。其中包括 Linux、macOS、Windows、Android、iOS 的
+系统依赖，Node.js 与 Rust 环境配置、应用启动、Rust 测试、安装包构建、OCR 资源校验及
 `cargo metadata` 报错排查。Python/Conda 只在黄金回归与 OCR 模型维护时需要。
 
 ## 仓库结构
 
-- `frontend/`：Vue 3 桌面前端
+- `frontend/`：Vue 3 跨平台前端
 - `src-tauri/`：Tauri 壳层、Rust 任务引擎、ONNX/OpenCC 资源与打包配置
 - `src-tauri/src/rust_backend/`：按 `epub`、`image`、`text`、`font` 分类的任务实现
 - `python_backend/`：黄金回归参照实现与维护工具，不参与桌面运行或发布

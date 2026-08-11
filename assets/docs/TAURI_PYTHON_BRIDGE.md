@@ -9,6 +9,9 @@ Vue 组件
   → invoke("run_epub_task", EngineRequest)
   → Tauri Rust command
   → engine_adapter（Protobuf ↔ Rust 内部任务模型）
+  → EngineRuntime
+      ├─ DesktopWorkerRuntime → JSON Lines → rust-task-runner
+      └─ MobileInProcessRuntime → 进程内调用
   → rust_backend::run
   → EpubTask 注册表
   → EPUB workspace 读写与任务实现
@@ -25,14 +28,20 @@ Vue 组件
 - 读取打包资源中的 ONNX OCR 模型与 OpenCC 词典；
 - 写入输出 EPUB 和 `log.txt`。
 
+Tauri 组装入口位于 `src-tauri/src/app.rs`，IPC 命令位于 `src-tauri/src/commands/`，平台差异
+集中在 `src-tauri/src/runtime/`。`RuntimeServices` 统一提供引擎、文件、资源和能力接口，
+`rust_backend/` 不处理桌面路径、移动 URI 或 Worker 生命周期。
+
 任务类型由 `src-tauri/src/rust_backend/mod.rs` 的注册表统一分发。前端 IPC 命令名和事件字段
 保持稳定，以避免前端协议因后端迁移发生变化。
 
 ## 资源与运行时
 
-- `decrypt_font` 使用 Rust `ort` 运行 ONNX OCR 模型；
+- 桌面端 `decrypt_font` 使用 Rust `ort` 运行 ONNX OCR 模型；
 - `chinese_convert` 使用打包的 OpenCC 词典；
-- 默认运行不会下载模型、调用系统 Python 或启动外部后端进程。
+- Android/iOS 会把 OpenCC 资产复制到应用数据目录，再交给共享任务核心；
+- 移动 ONNX Runtime 尚未接入时，平台能力会禁用 `decrypt_font`；
+- 默认运行不会下载模型或调用系统 Python。
 
 ## Python 的保留用途
 

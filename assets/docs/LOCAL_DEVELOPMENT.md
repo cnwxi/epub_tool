@@ -52,6 +52,22 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 
 其他发行版请按 [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/) 安装对应包。
 
+### Android
+
+安装 Android Studio、Android SDK/NDK、JDK 和 Rustup，然后初始化原生工程：
+
+```bash
+npm run tauri:android:init
+```
+
+### iOS
+
+在 macOS 安装完整 Xcode、xcodegen 和 Rustup，并准备 Apple 开发签名配置：
+
+```bash
+npm run tauri:ios:init
+```
+
 ## 安装依赖
 
 在仓库根目录执行：
@@ -69,11 +85,13 @@ npm --prefix frontend install
 npm run tauri:dev
 ```
 
-该命令会校验已提交的 ONNX OCR 资源、启动 Vite，并启动 Tauri 桌面窗口。任务执行路径为：
+该命令会校验已提交的 ONNX OCR 资源、启动 Vite，并启动 Tauri 桌面窗口。桌面任务执行路径为：
 
 ```text
-Vue invoke("run_epub_task") → Tauri Rust command → rust_backend::run → EpubTask
+Vue → Tauri command → EngineRuntime → rust-task-runner → rust_backend → EpubTask
 ```
+
+Android/iOS 使用相同的 `EngineRuntime` 接口，但直接在应用进程内调用 `rust_backend`。
 
 仅调试前端样式时可运行：
 
@@ -110,6 +128,17 @@ npm run tauri:build
 ```
 
 Tauri 打包只携带 Rust 可执行程序、前端静态资源、ONNX OCR 模型与 OpenCC 词典；不会构建、携带或启动 Python sidecar。
+
+移动端开发和构建命令：
+
+```bash
+npm run tauri:android:dev
+npm run tauri:android:build
+npm run tauri:ios:dev
+npm run tauri:ios:build
+```
+
+移动构建不生成桌面 Worker，也不携带 ONNX OCR 模型；字体 OCR 会在前端显示为当前平台不可用。
 
 ## `cargo metadata` 或 Cargo 不可用
 

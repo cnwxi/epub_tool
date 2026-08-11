@@ -250,20 +250,22 @@ let brandEasterHideTimer = 0;
 const {
   collectEpubFiles,
   getLogPath,
-  getOpenedUrls,
+  takeOpenedSources,
   getPersistedStorePath,
   getPythonWorkerStatus,
   isMobileRuntime,
   isTauriRuntime,
   listFontTargetsBatch,
   openPath,
+  platformCapabilities,
   readImagePreview,
+  refreshPlatformCapabilities,
   resolveInputSources,
   restartPythonWorker,
   runTask,
   setPythonWorkerAutoRestartLimit,
-  stageMobileSourceForTask,
-  exportMobileOutput,
+  stageSourceForTask,
+  exportOutput,
   validateOutputDirectory,
 } = useTaskBridge();
 
@@ -1977,7 +1979,7 @@ const pickCoverForFile = async (file: QueuedFile) => {
   });
   if (typeof selected === "string") {
     try {
-      const stagedCover = await stageMobileSourceForTask(selected, "cover");
+      const stagedCover = await stageSourceForTask(selected, "cover");
       const preview = await readImagePreview(stagedCover);
       if (file.coverPreviewUrl) {
         URL.revokeObjectURL(file.coverPreviewUrl);
@@ -2220,6 +2222,10 @@ const runSelectedTask = async () => {
     return;
   }
   const taskType = activeTask.value;
+  if (taskType === "decrypt_font" && !platformCapabilities.value.supportsFontOcr) {
+    taskStatus.value = "当前平台尚未接入 ONNX Runtime，暂不支持字体 OCR 解密";
+    return;
+  }
   if (outputDir.value && isTauriRuntime() && !isMobileRuntime()) {
     const configuredOutputDir = outputDir.value;
     try {
@@ -2312,7 +2318,7 @@ const openPersistedStoreFile = () => {
   void openPath(currentPersistedStorePath.value);
 };
 
-const exportMobileResult = async (sourcePath: string) => {
+const exportResult = async (sourcePath: string) => {
   if (!isMobileRuntime()) {
     return;
   }
@@ -2325,7 +2331,7 @@ const exportMobileResult = async (sourcePath: string) => {
     return;
   }
   try {
-    await exportMobileOutput(sourcePath, destination);
+    await exportOutput(sourcePath, destination);
     taskStatus.value = "处理结果已导出";
   } catch (error) {
     taskStatus.value = toErrorMessage(error, "导出处理结果失败。");
@@ -2334,7 +2340,7 @@ const exportMobileResult = async (sourcePath: string) => {
 
 const openOutputFolder = (path: string) => {
   if (isMobileRuntime()) {
-    void exportMobileResult(path);
+    void exportResult(path);
     return;
   }
   void openPath(getContainingDirectory(path));
@@ -2559,6 +2565,11 @@ onMounted(async () => {
   }
   aboutAnimatedStats.value = { ...aboutStats.value };
   if (isTauriRuntime()) {
+    try {
+      await refreshPlatformCapabilities();
+    } catch {
+      // 能力发现失败时保留保守默认值，其它运行时信息仍可继续加载。
+    }
     await syncPythonWorkerAutoRestartLimit();
     await refreshPythonWorkerStatus();
     if (typeof window !== "undefined") {
@@ -2596,7 +2607,7 @@ onMounted(async () => {
   }
   if (isMobileRuntime()) {
     try {
-      const initialUrls = await getOpenedUrls();
+      const initialUrls = await takeOpenedSources();
       if (initialUrls.length > 0) {
         await resolveAndQueuePaths(initialUrls);
       }
@@ -2957,9 +2968,16 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                         </p>
                       </div>
 
-                      <button class="primary-btn wide" :disabled="taskRunning || files.length === 0" type="button"
+                      <p v-if="activeTask === 'decrypt_font' && !platformCapabilities.supportsFontOcr"
+                        class="muted">
+                        当前平台尚未接入 ONNX Runtime，字体 OCR 解密暂不可用。
+                      </p>
+                      <button class="primary-btn wide"
+                        :disabled="taskRunning || files.length === 0 || (activeTask === 'decrypt_font' && !platformCapabilities.supportsFontOcr)"
+                        type="button"
                         @click="runSelectedTask">
-                        {{ taskRunning ? "处理中..." : "开始执行" }}
+                        {{ taskRunning ? "处理中..." : (activeTask === "decrypt_font" && !platformCapabilities.supportsFontOcr
+                          ? "当前平台不可用" : "开始执行") }}
                       </button>
                     </div>
                   </article>
@@ -3210,9 +3228,11 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                 <div>
                   <p class="eyebrow">处理引擎</p>
                   <h3>Rust 处理引擎</h3>
-                  <p class="muted">常驻处理引擎会复用已加载模块与 OCR 模型；重启不会自动重放中断任务。</p>
+                  <p class="muted">{{ platformCapabilities.runtime === "worker"
+                    ? "桌面端通过常驻 Worker 复用处理模块，并隔离原生库与主界面进程。"
+                    : "移动端在应用进程内直接执行共享 Rust 任务核心。" }}</p>
                 </div>
-                <div class="panel-actions">
+                <div v-if="platformCapabilities.supportsEngineRestart" class="panel-actions">
                   <button class="ghost-btn settings-action-btn engine-restart-btn" :disabled="pythonWorkerRestarting"
                     type="button" @click="restartCurrentPythonWorker">
                     {{ pythonWorkerRestarting ? "重启中..." : "重启引擎" }}
@@ -3231,14 +3251,18 @@ activeSection.value = normalizeSectionKey(activeSection.value);
                   </div>
                 </article>
                 <div class="settings-log-card glass-medium">
-                  <strong class="worker-card-title">Worker 进程</strong>
-                  <span class="worker-card-value">{{ pythonWorkerStatus.pid ? `PID ${pythonWorkerStatus.pid}` : "尚未提供进程 ID" }}</span>
+                  <strong class="worker-card-title">执行模式</strong>
+                  <span class="worker-card-value">{{ platformCapabilities.runtime === "worker"
+                    ? (pythonWorkerStatus.pid ? `Worker · PID ${pythonWorkerStatus.pid}` : "Worker 进程")
+                    : "应用进程内执行" }}</span>
                 </div>
               </div>
-              <p v-if="pythonWorkerStatus.recoveryAttempts > 0" class="worker-recovery-note">
+              <p v-if="platformCapabilities.supportsEngineRestart && pythonWorkerStatus.recoveryAttempts > 0"
+                class="worker-recovery-note">
                 本次会话已自动恢复 {{ pythonWorkerStatus.recoveryAttempts }}/{{ pythonWorkerStatus.autoRestartLimit }} 次。
               </p>
-              <p v-if="pythonWorkerStatus.manualRestartCount > 0" class="worker-recovery-note">
+              <p v-if="platformCapabilities.supportsEngineRestart && pythonWorkerStatus.manualRestartCount > 0"
+                class="worker-recovery-note">
                 本次会话已手动重启 {{ pythonWorkerStatus.manualRestartCount }} 次。
               </p>
               <p v-if="pythonWorkerStatus.lastError" class="worker-error-message">

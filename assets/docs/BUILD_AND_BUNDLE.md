@@ -2,15 +2,19 @@
 
 ## 构建目标
 
-当前桌面应用由 Vue 前端、Tauri 壳层和 Rust EPUB 任务引擎组成。发布产物不包含
-Python 解释器、Conda 环境或 Python sidecar。
+应用由 Vue 前端、Tauri 壳层和共享 Rust EPUB 任务核心组成。桌面端通过常驻
+`rust-task-runner` 子进程执行任务；Android/iOS 在应用进程内执行同一套任务核心。
+发布产物不包含 Python 解释器、Conda 环境或 Python sidecar。
 
 安装包会携带：
 
 - Tauri/Rust 可执行程序；
 - `frontend/` 构建出的静态资源；
-- `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`；
+- 桌面包携带 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`；
 - `src-tauri/bundle-resources/opencc/` 词典资源。
+
+移动包暂不携带 ONNX OCR 模型。移动端原生 ONNX Runtime 接入前，字体 OCR 解密会由
+平台能力接口禁用，其它处理任务不受影响。
 
 ## 本地开发与构建
 
@@ -42,6 +46,27 @@ npm run tauri:build
 `tauri:build` 的 `beforeBuildCommand` 会执行 `build:bundle-assets`。因此正常发布不需要
 执行任何 Python、Conda、PyInstaller 或 sidecar 准备步骤。
 
+## Android 与 iOS
+
+首次构建前安装对应 Tauri 前置依赖并初始化原生工程：
+
+```bash
+npm run tauri:android:init
+npm run tauri:ios:init
+```
+
+iOS 初始化和构建只能在安装完整 Xcode 的 macOS 上进行。随后可执行：
+
+```bash
+npm run tauri:android:dev
+npm run tauri:android:build
+npm run tauri:ios:dev
+npm run tauri:ios:build
+```
+
+`tauri.android.conf.json` 和 `tauri.ios.conf.json` 会覆盖桌面构建钩子：移动构建只生成
+前端资源，不构建桌面 Worker，也不校验或打包桌面 ONNX OCR 模型。
+
 ## 发布前验证
 
 至少执行：
@@ -67,6 +92,9 @@ npm run tauri:build
 当前 CI 会安装 Python 来运行现有黄金样本回归，并配置 OCR 模型变体；这些步骤不会构建或
 打包 Python sidecar。安装包本身仍只有 Rust 后端和已提交资源。纯 Rust 的构建门槛是
 `cargo test`、前端构建、资源校验与 Tauri 打包；Python 回归是额外的兼容性验证。
+
+Android/iOS 依赖树已与桌面 `ort` 依赖隔离。将移动原生工程纳入 CI 前，还需确定 Android
+签名、Apple Team/证书及移动 ONNX Runtime 的发布方式。
 
 ## 版本号与 Release
 

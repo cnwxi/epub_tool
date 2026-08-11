@@ -1,4 +1,6 @@
 mod app;
+mod commands;
+mod runtime;
 
 pub mod engine_adapter;
 pub mod engine_protocol;

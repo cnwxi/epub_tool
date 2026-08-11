@@ -6,7 +6,9 @@ pub mod util;
 
 use crate::FrontendTaskRequest;
 use epub::{DecryptEpubTask, EncryptEpubTask, ReformatEpubTask};
-use font::{DecryptFontTask, EncryptFontTask};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use font::DecryptFontTask;
+use font::EncryptFontTask;
 use image::{ImageProcessOutcome, ImageTask, ReplaceCoverTask};
 use serde_json::{json, Value};
 use std::{
@@ -291,7 +293,7 @@ fn task_for(task_type: &str) -> Option<Box<dyn EpubTask>> {
         "decrypt_epub" => Some(Box::new(DecryptEpubTask)),
         "encrypt_epub" => Some(Box::new(EncryptEpubTask)),
         "encrypt_font" => Some(Box::new(EncryptFontTask)),
-        "decrypt_font" => Some(Box::new(DecryptFontTask)),
+        "decrypt_font" => decrypt_font_task(),
         "image_compress" => Some(Box::new(image::image_compress::task())),
         "image_to_webp" => Some(Box::new(image::image_to_webp::task())),
         "webp_to_img" => Some(Box::new(image::webp_to_img::task())),
@@ -299,6 +301,16 @@ fn task_for(task_type: &str) -> Option<Box<dyn EpubTask>> {
         "chinese_convert" => Some(Box::new(ChineseConvertTask)),
         _ => None,
     }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn decrypt_font_task() -> Option<Box<dyn EpubTask>> {
+    Some(Box::new(DecryptFontTask))
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn decrypt_font_task() -> Option<Box<dyn EpubTask>> {
+    None
 }
 
 fn output_path(input: &Path, output_dir: Option<&str>, suffix: &str) -> Result<PathBuf, String> {

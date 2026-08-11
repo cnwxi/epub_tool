@@ -1,3 +1,4 @@
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod decrypt_font;
 pub mod encrypt_font;
 mod font_cascade;
@@ -9,5 +10,6 @@ mod font_stylesheet;
 pub mod font_targets;
 mod font_values;
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) use decrypt_font::DecryptFontTask;
 pub(crate) use encrypt_font::EncryptFontTask;

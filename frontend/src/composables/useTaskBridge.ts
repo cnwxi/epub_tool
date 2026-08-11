@@ -1,9 +1,11 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { shallowRef } from "vue";
 
 import type {
   EngineEvent,
   EngineResponse,
   ImagePreviewResponse,
+  PlatformCapabilities,
   PythonWorkerStatus,
   TaskRequest,
 } from "../types";
@@ -12,12 +14,31 @@ const isTauriRuntime = (): boolean =>
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 
-const isMobileRuntime = (): boolean =>
-  isTauriRuntime() &&
-  typeof navigator !== "undefined" &&
-  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
 export function useTaskBridge() {
+  const platformCapabilities = shallowRef<PlatformCapabilities>({
+    platform: "unknown",
+    runtime: "browser",
+    supportsDirectoryPicker: false,
+    supportsDirectoryScan: false,
+    supportsOpenPath: false,
+    supportsEngineRestart: false,
+    requiresOutputExport: false,
+    supportsFileAssociations: false,
+    supportsFontOcr: false,
+  });
+
+  const refreshPlatformCapabilities = async (): Promise<PlatformCapabilities> => {
+    if (isTauriRuntime()) {
+      platformCapabilities.value = await invoke<PlatformCapabilities>(
+        "get_platform_capabilities",
+      );
+    }
+    return platformCapabilities.value;
+  };
+
+  const isMobileRuntime = (): boolean =>
+    platformCapabilities.value.runtime === "inProcess";
+
   const runTask = async (
     request: TaskRequest,
     onEvent: (event: EngineEvent) => void,
@@ -79,11 +100,11 @@ export function useTaskBridge() {
     return invoke<string>("get_persisted_store_path");
   };
 
-  const getOpenedUrls = async (): Promise<string[]> => {
-    if (!isMobileRuntime()) {
+  const takeOpenedSources = async (): Promise<string[]> => {
+    if (!isTauriRuntime()) {
       return [];
     }
-    return invoke<string[]>("opened_urls");
+    return invoke<string[]>("take_opened_sources");
   };
 
   const getPythonWorkerStatus = async (): Promise<PythonWorkerStatus | null> => {
@@ -129,27 +150,27 @@ export function useTaskBridge() {
     });
   };
 
-  const stageMobileSourceForTask = async (
+  const stageSourceForTask = async (
     sourcePath: string,
     extension: string,
   ): Promise<string> => {
-    if (!isMobileRuntime()) {
+    if (!isTauriRuntime()) {
       return sourcePath;
     }
-    return invoke<string>("stage_mobile_source_for_task", {
+    return invoke<string>("stage_source_for_task", {
       sourcePath,
       extension,
     });
   };
 
-  const exportMobileOutput = async (
+  const exportOutput = async (
     sourcePath: string,
     destinationPath: string,
   ): Promise<void> => {
-    if (!isMobileRuntime()) {
+    if (!isTauriRuntime()) {
       return;
     }
-    await invoke("export_mobile_output", { sourcePath, destinationPath });
+    await invoke("export_output", { sourcePath, destinationPath });
   };
 
   const validateOutputDirectory = async (directoryPath: string): Promise<void> => {
@@ -183,7 +204,7 @@ export function useTaskBridge() {
   return {
     collectEpubFiles,
     getLogPath,
-    getOpenedUrls,
+    takeOpenedSources,
     getPersistedStorePath,
     getPythonWorkerStatus,
     isMobileRuntime,
@@ -192,13 +213,15 @@ export function useTaskBridge() {
     loadPersistedState,
     openPath,
     readImagePreview,
+    refreshPlatformCapabilities,
     resolveInputSources,
     runTask,
     savePersistedState,
-    stageMobileSourceForTask,
-    exportMobileOutput,
+    stageSourceForTask,
+    exportOutput,
     setPythonWorkerAutoRestartLimit,
     restartPythonWorker,
+    platformCapabilities,
     validateOutputDirectory,
   };
 }

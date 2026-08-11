@@ -111,6 +111,18 @@ export interface PythonWorkerStatus {
   manualRestartCount: number;
 }
 
+export interface PlatformCapabilities {
+  platform: "linux" | "macos" | "windows" | "android" | "ios" | "unknown";
+  runtime: "worker" | "inProcess" | "browser";
+  supportsDirectoryPicker: boolean;
+  supportsDirectoryScan: boolean;
+  supportsOpenPath: boolean;
+  supportsEngineRestart: boolean;
+  requiresOutputExport: boolean;
+  supportsFileAssociations: boolean;
+  supportsFontOcr: boolean;
+}
+
 export interface FontDecryptSettings {
   ocrCharPolicy: OcrCharPolicy;
   minOcrConfidence: number;
