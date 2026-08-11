@@ -993,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "epub_tool_newui"
-version = "26.7.29"
+version = "26.8.11"
 dependencies = [
  "blitz-dom",
  "blitz-html",
