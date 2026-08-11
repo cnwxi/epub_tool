@@ -117,6 +117,9 @@ fn desktop_build(arguments: &[String]) -> Result<(), String> {
 fn mobile_build(arguments: &[String]) -> Result<(), String> {
     let platform = arguments.first().ok_or_else(usage)?;
     let target = arguments.get(1).ok_or_else(usage)?;
+    if platform == "android" {
+        ensure_android_project_icon()?;
+    }
     // Verify the model with the host runtime before mobile linker variables are set.
     verify_ocr_model(None)?;
     let prepared = prepare_mobile_ort(platform, Some(target))?;
@@ -139,6 +142,9 @@ fn mobile_build(arguments: &[String]) -> Result<(), String> {
 fn mobile_dev(arguments: &[String]) -> Result<(), String> {
     let platform = arguments.first().ok_or_else(usage)?;
     let target = arguments.get(1).ok_or_else(usage)?;
+    if platform == "android" {
+        ensure_android_project_icon()?;
+    }
     verify_ocr_model(None)?;
     let prepared = prepare_mobile_ort(platform, Some(target))?;
     let mut command = npm_command();
@@ -154,6 +160,48 @@ fn mobile_dev(arguments: &[String]) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("Tauri {platform} 开发环境失败: {status}"))
+    }
+}
+
+fn ensure_android_project_icon() -> Result<(), String> {
+    let root = repo_root()?;
+    let project_dir = root.join("src-tauri/gen/android");
+    if !project_dir.join("app/build.gradle.kts").is_file() {
+        let status = npm_command()
+            .current_dir(&root)
+            .args([
+                "run",
+                "tauri",
+                "--",
+                "android",
+                "init",
+                "--ci",
+                "--skip-targets-install",
+            ])
+            .status()
+            .map_err(|error| format!("初始化 Android 原生工程失败: {error}"))?;
+        if !status.success() {
+            return Err(format!("初始化 Android 原生工程失败: {status}"));
+        }
+    }
+
+    let status = npm_command()
+        .current_dir(&root)
+        .args([
+            "run",
+            "tauri",
+            "--",
+            "icon",
+            "assets/img/icon.png",
+            "--output",
+            "src-tauri/.icon-build",
+        ])
+        .status()
+        .map_err(|error| format!("生成 Android launcher 图标失败: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("生成 Android launcher 图标失败: {status}"))
     }
 }
 

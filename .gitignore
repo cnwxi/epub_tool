@@ -17,6 +17,7 @@ node_modules/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/.mobile-runtime/
+src-tauri/.icon-build/
 xtask/target/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep

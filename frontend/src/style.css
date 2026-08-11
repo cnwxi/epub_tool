@@ -249,24 +249,30 @@ input {
   color: #f9f2e6;
 }
 
-.nav-animated-panel>.nav-animated-block {
+.nav-animated-panel>.nav-animated-block,
+.nav-groups>.nav-animated-block {
   animation: nav-block-enter 320ms ease-out both;
 }
 
-.nav-animated-panel>.nav-animated-block:nth-child(1) {
+.nav-groups>.nav-animated-block:nth-child(1) {
   animation-delay: 0ms;
 }
 
-.nav-animated-panel>.nav-animated-block:nth-child(2) {
+.nav-groups>.nav-animated-block:nth-child(2) {
   animation-delay: 55ms;
 }
 
-.nav-animated-panel>.nav-animated-block:nth-child(3) {
+.nav-groups>.nav-animated-block:nth-child(3) {
   animation-delay: 110ms;
 }
 
-.nav-animated-panel>.nav-animated-block:nth-child(4) {
-  animation-delay: 165ms;
+.compact-nav-bar {
+  display: none;
+}
+
+.nav-groups {
+  display: grid;
+  gap: 12px;
 }
 
 .nav-group {
@@ -2983,26 +2989,163 @@ input {
 }
 
 @media (max-width: 900px) {
-  .side-nav-frame {
+  html,
+  body,
+  #app {
+    min-height: 100%;
     height: auto;
-    max-height: none;
+    overflow-x: hidden;
+  }
+
+  body {
+    overflow-y: auto;
+    touch-action: pan-y;
+  }
+
+  .side-nav-frame {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    min-height: 64px;
+    height: 64px;
     overflow: visible;
   }
 
   .side-nav-shell {
-    height: auto;
-    max-height: none;
+    height: 64px;
     overflow: visible;
   }
 
   .side-nav-shell>div {
-    min-height: 0;
+    min-height: 64px;
     display: block;
   }
 
   .side-nav {
+    min-height: 64px;
+    height: 64px;
+    padding: 0;
+    gap: 0;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .compact-nav-bar {
+    display: flex;
+    height: 64px;
+    padding: 0 16px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .compact-brand-button,
+  .compact-nav-menu-toggle {
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .compact-brand-button {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 0;
+    background: transparent;
+    text-align: left;
+  }
+
+  .compact-brand-name {
+    color: rgba(249, 242, 230, 0.98);
+    font-size: 18px;
+    font-weight: 760;
+    line-height: 1;
+  }
+
+  .compact-brand-caption {
+    color: rgba(242, 191, 94, 0.88);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+  }
+
+  .compact-nav-menu-toggle {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    padding: 10px;
+    gap: 4px;
+    align-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 6px;
+  }
+
+  .compact-nav-menu-toggle span {
+    display: block;
+    width: 100%;
+    height: 2px;
+    background: rgba(249, 242, 230, 0.94);
+    transition: transform 180ms ease, opacity 180ms ease;
+  }
+
+  .compact-menu-open .compact-nav-menu-toggle span:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+  }
+
+  .compact-menu-open .compact-nav-menu-toggle span:nth-child(2) {
+    opacity: 0;
+  }
+
+  .compact-menu-open .compact-nav-menu-toggle span:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+
+  .nav-group-brand {
+    display: none;
+  }
+
+  .nav-groups {
+    position: absolute;
+    top: 64px;
+    right: 0;
+    left: 0;
+    display: none;
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px 16px 18px;
+    background: linear-gradient(180deg, rgba(34, 52, 75, 0.98), rgba(45, 67, 94, 0.98));
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 18px 30px rgba(11, 19, 33, 0.24);
+  }
+
+  .side-nav.compact-menu-open .nav-groups {
+    display: grid;
+  }
+
+  .nav-groups>.nav-animated-block {
+    animation: none;
+  }
+
+  .nav-group-toggle {
+    min-height: 44px;
+    padding: 0 4px;
+  }
+
+  .nav-list {
+    gap: 6px;
+  }
+
+  .nav-item {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  .workspace-frame {
     min-height: 0;
     height: auto;
+    overflow: visible;
   }
 
   .workspace-shell {
@@ -3019,7 +3162,7 @@ input {
   .app-shell {
     grid-template-columns: 1fr;
     height: auto;
-    min-height: 100vh;
+    min-height: 100dvh;
     overflow: visible;
   }
 
@@ -3031,17 +3174,12 @@ input {
 
   html,
   #app,
-  .app-shell,
-  .side-nav {
+  .app-shell {
     height: auto;
   }
 
   .side-nav {
-    position: static;
-    gap: 14px;
-    overflow: visible;
-    padding-bottom: 10px;
-    height: auto;
+    position: relative;
   }
 
   .workspace {
