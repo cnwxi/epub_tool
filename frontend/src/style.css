@@ -595,6 +595,7 @@ input {
 
 .nav-item.active,
 .nav-item.active:hover {
+  isolation: isolate;
   transform: none;
   border: 0;
   padding: 11px 14px;
@@ -608,23 +609,16 @@ input {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(90deg,
-    rgba(242, 191, 94, 0.24) 0%,
-    rgba(242, 191, 94, 0.1) 38%,
-    rgba(242, 191, 94, 0) 62%);
-  animation: nav-active-marker-pulse 1s ease-in-out 2;
+  z-index: 0;
+  background: linear-gradient(to left,
+    rgba(246, 241, 232, 0.3) 0%,
+    rgba(246, 241, 232, 0.1) 62%,
+    rgba(246, 241, 232, 0) 100%);
 }
 
-@keyframes nav-active-marker-pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nav-item.active::before {
-    animation: none;
-  }
+.nav-item.active > span {
+  position: relative;
+  z-index: 1;
 }
 
 .nav-worker-status {
@@ -837,7 +831,7 @@ input {
   width: 8px;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 180ms ease;
+  transition: opacity 900ms ease;
   z-index: 30;
   overflow: hidden;
 }

@@ -630,9 +630,12 @@ const sideNavScrollbarVisible = ref(false);
 const sideNavScrollbarThumbHeight = ref(0);
 const sideNavScrollbarThumbTop = ref(0);
 
+const CUSTOM_SCROLLBAR_HIDE_DELAY_MS = 900;
 let masonryResizeObserver: ResizeObserver | null = null;
 let customScrollbarResizeObserver: ResizeObserver | null = null;
 let customScrollbarAnimationFrame = 0;
+let workspaceScrollbarHideTimer = 0;
+let sideNavScrollbarHideTimer = 0;
 const handleMasonryWindowResize = () => {
   void measureMasonryBoard();
 };
@@ -660,12 +663,12 @@ const updateCustomScrollbar = (
   thumbHeightRef: { value: number },
   thumbTopRef: { value: number },
   visibleRef: { value: boolean },
-) => {
+): boolean => {
   if (!element || typeof window === "undefined") {
     thumbHeightRef.value = 0;
     thumbTopRef.value = 0;
     visibleRef.value = false;
-    return;
+    return false;
   }
 
   const { scrollTop, scrollHeight, clientHeight } = element;
@@ -676,7 +679,7 @@ const updateCustomScrollbar = (
     thumbHeightRef.value = 0;
     thumbTopRef.value = 0;
     visibleRef.value = false;
-    return;
+    return false;
   }
 
   const rawThumbHeight = (clientHeight / scrollHeight) * trackHeight;
@@ -686,10 +689,10 @@ const updateCustomScrollbar = (
   const thumbTop = maxThumbTravel * scrollRatio;
   thumbHeightRef.value = thumbHeight;
   thumbTopRef.value = thumbTop;
-  visibleRef.value = true;
+  return true;
 };
 
-const updateWorkspaceScrollbar = () => {
+const updateWorkspaceScrollbar = () =>
   updateCustomScrollbar(
     workspaceRef.value,
     workspaceScrollbarTrackRef.value,
@@ -697,9 +700,8 @@ const updateWorkspaceScrollbar = () => {
     workspaceScrollbarThumbTop,
     workspaceScrollbarVisible,
   );
-};
 
-const updateSideNavScrollbar = () => {
+const updateSideNavScrollbar = () =>
   updateCustomScrollbar(
     sideNavShellRef.value,
     sideNavScrollbarTrackRef.value,
@@ -707,6 +709,52 @@ const updateSideNavScrollbar = () => {
     sideNavScrollbarThumbTop,
     sideNavScrollbarVisible,
   );
+
+const scheduleCustomScrollbarHide = (
+  visibleRef: { value: boolean },
+  hideTimer: "workspace" | "side-nav",
+) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const timer = hideTimer === "workspace"
+    ? workspaceScrollbarHideTimer
+    : sideNavScrollbarHideTimer;
+  if (timer) {
+    window.clearTimeout(timer);
+  }
+
+  const nextTimer = window.setTimeout(() => {
+    visibleRef.value = false;
+    if (hideTimer === "workspace") {
+      workspaceScrollbarHideTimer = 0;
+    } else {
+      sideNavScrollbarHideTimer = 0;
+    }
+  }, CUSTOM_SCROLLBAR_HIDE_DELAY_MS);
+
+  if (hideTimer === "workspace") {
+    workspaceScrollbarHideTimer = nextTimer;
+  } else {
+    sideNavScrollbarHideTimer = nextTimer;
+  }
+};
+
+const handleWorkspaceScrollbarScroll = () => {
+  if (!updateWorkspaceScrollbar()) {
+    return;
+  }
+  workspaceScrollbarVisible.value = true;
+  scheduleCustomScrollbarHide(workspaceScrollbarVisible, "workspace");
+};
+
+const handleSideNavScrollbarScroll = () => {
+  if (!updateSideNavScrollbar()) {
+    return;
+  }
+  sideNavScrollbarVisible.value = true;
+  scheduleCustomScrollbarHide(sideNavScrollbarVisible, "side-nav");
 };
 
 const updateAllCustomScrollbars = () => {
@@ -2502,8 +2550,8 @@ onMounted(async () => {
     }
   }
 
-  sideNavShellRef.value?.addEventListener("scroll", updateSideNavScrollbar, { passive: true });
-  workspaceRef.value?.addEventListener("scroll", updateWorkspaceScrollbar, { passive: true });
+  sideNavShellRef.value?.addEventListener("scroll", handleSideNavScrollbarScroll, { passive: true });
+  workspaceRef.value?.addEventListener("scroll", handleWorkspaceScrollbarScroll, { passive: true });
   if (customScrollbarResizeObserver) {
     if (sideNavShellRef.value) {
       customScrollbarResizeObserver.observe(sideNavShellRef.value);
@@ -2595,13 +2643,21 @@ onBeforeUnmount(() => {
     window.cancelAnimationFrame(customScrollbarAnimationFrame);
     customScrollbarAnimationFrame = 0;
   }
+  if (workspaceScrollbarHideTimer && typeof window !== "undefined") {
+    window.clearTimeout(workspaceScrollbarHideTimer);
+    workspaceScrollbarHideTimer = 0;
+  }
+  if (sideNavScrollbarHideTimer && typeof window !== "undefined") {
+    window.clearTimeout(sideNavScrollbarHideTimer);
+    sideNavScrollbarHideTimer = 0;
+  }
   removeMasonryResizeListener?.();
   removeCustomScrollbarResizeListener?.();
   if (typeof document !== "undefined") {
     document.removeEventListener("pointerdown", handleOcrPolicyOutsidePointerDown);
   }
-  sideNavShellRef.value?.removeEventListener("scroll", updateSideNavScrollbar);
-  workspaceRef.value?.removeEventListener("scroll", updateWorkspaceScrollbar);
+  sideNavShellRef.value?.removeEventListener("scroll", handleSideNavScrollbarScroll);
+  workspaceRef.value?.removeEventListener("scroll", handleWorkspaceScrollbarScroll);
   customScrollbarResizeObserver?.disconnect();
   customScrollbarResizeObserver = null;
   unlistenDrop?.();
