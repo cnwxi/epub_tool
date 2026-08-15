@@ -55,7 +55,7 @@ Vue 3 界面 ──invoke──> Rust (Tauri) ──spawn 子进程──> Pytho
 - **`python_backend/cli.py`** — Sidecar 的 CLI 入口。提供一次性 `run` 和常驻 Worker 使用的 `serve` 子命令；两者均使用 `EngineRequest`、`EngineEvent` 与 `EngineResponse` 协议信封。
 - **`python_backend/task_runner.py`** — 编排批量任务执行。按任务类型动态导入 `python_backend/services/` 下的处理模块，将其 `logger` 替换为 `BroadcastLogger`，同时写入 `log.txt` 和 stdout JSON Lines 事件。按 `{stem}_{suffix}.epub` 规则推断输出路径。
 - **`python_backend/protocol.py`** — 数据类定义：`TaskRequest`、`TaskEvent`、`TaskResult`。
-- **`python_backend/services/`** — EPUB 处理服务模块，按功能分为 `epub/`（格式化与文件加解密）、`font/`（字体加解密）、`image/`（图片转换、压缩、封面与图片处理共享逻辑）、`text/`（简繁转换）和 `utils/`（日志等跨领域共享工具）。任务模块对外暴露统一的 `run()` 入口，内部使用共享的 `logger` 对象，运行时由 `task_runner` 替换。
+- **`python_backend/services/`** — EPUB 处理服务模块，按功能分为 `epub/`（文件重构与文件加解密）、`font/`（字体加解密）、`image/`（图片转换、压缩、封面与图片处理共享逻辑）、`text/`（简繁转换）和 `utils/`（日志等跨领域共享工具）。任务模块对外暴露统一的 `run()` 入口，内部使用共享的 `logger` 对象，运行时由 `task_runner` 替换。
 - **`scripts/`** — `verify_ocr_onnx_models.py`（校验已提交 ONNX OCR 模型）、`prepare_ocr_models.py`（维护者刷新模型时准备官方 Paddle 源模型）、`prepare_ocr_onnx_models.py`（维护者刷新模型时转换 ONNX OCR 模型）、`build_python_sidecar.py`（PyInstaller `--onefile` 构建 ONNX-only sidecar）、`prepare_bundle_resources.py`（将 sidecar 复制到 `bundle-resources/`）。
 - **`tests/`** — 自动化测试。
 - **`fixtures/`** — 本地测试用 EPUB 样本（默认不提交）。

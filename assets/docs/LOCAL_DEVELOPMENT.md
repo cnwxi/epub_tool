@@ -295,14 +295,27 @@ conda run -n epub_tool npm run tauri:build
 `src-tauri/bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/`，落盘约 20 MiB。
 该模型会在构建时直接打包进桌面安装包，运行时无需下载，也不会加载 Paddle Python 运行时。
 
-如需本地验证高准确率模型，可设置 `EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec`
-后重新准备模型并转换为 ONNX。GitHub Release 当前只发布 `_small` 安装包；
-本地构建与 Homebrew 安装也默认使用 small 版，Homebrew 会自动匹配 Intel / Apple Silicon 架构。
+如需本地验证或打包高准确率模型，请同时设置 `EPUB_TOOL_OCR_MODEL_NAME` 和
+`EPUB_TOOL_DEFAULT_OCR_MODEL_NAME`，完成模型准备、变体配置后再构建：
+
+```bash
+export EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec
+export EPUB_TOOL_DEFAULT_OCR_MODEL_NAME=PP-OCRv6_medium_rec
+conda run -n epub_tool npm run maintenance:fetch-ocr-model
+conda run -n epub_tool npm run maintenance:convert-ocr-onnx
+python scripts/configure_ocr_bundle_variant.py
+conda run -n epub_tool npm run tauri:dev
+```
+
+PowerShell 使用 `$env:EPUB_TOOL_OCR_MODEL_NAME` 和
+`$env:EPUB_TOOL_DEFAULT_OCR_MODEL_NAME` 设置同名变量。GitHub Release 当前只发布
+`_small` 安装包；本地构建与 Homebrew 安装也默认使用 small 版，Homebrew 会自动匹配
+Intel / Apple Silicon 架构。
 
 OCR 默认最低置信度为 `0.8`。桌面 UI 支持将阈值下调至 `0`，并会随任务请求显式传入。
 默认字符筛选策略为 `strict`，适合处理本工具生成的字体混淆 EPUB，
 可识别同宽码位池混淆后的半角/全角拉丁字母和数字。处理外部混淆工具生成的文件时，
-可将 `ocr_char_policy` 设为 `compatible`。该模式保留 `strict` 的识别范围，
+可将 wire 字段 `ocrCharPolicy` 设为 `compatible`。该模式保留 `strict` 的识别范围，
 并对用户选中目标字体命中的文本放宽筛选，允许更多非 ASCII 可见字符进入 OCR，
 但仍排除空白、控制字符、真实中文标点、ASCII 标点和普通符号。需要注意，
 识别范围扩大后，目标字体下的真实特殊符号也可能被 OCR 改写。

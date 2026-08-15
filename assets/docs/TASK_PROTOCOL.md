@@ -72,7 +72,7 @@ Tauri IPC 与 Python Worker 都直接传递完整的 `EngineEvent` 和 `EngineRe
 ## Options oneof
 
 - 无参数任务：`{ "empty": {} }`
-- 字体任务：`font.targetFontFamiliesByFile`（值为 `{ "values": [...] }`），以及可选的 `ocrCharPolicy`、`minOcrConfidence`
+- 字体任务：`font.targetFontFamiliesByFile`（值为 `{ "values": [...] }`），可选的默认字体列表 `font.targetFontFamilies`，以及可选的 `ocrCharPolicy`、`minOcrConfidence`
 - 图片压缩：`imageCompress.jpegQuality`、`webpQuality`、`pngToJpg`、`pngQuantize`
 - WebP/图片转换：`imageConversion.quality`、`pngQuantize`
 - 简繁转换：`chineseConvert.direction`（`s2t` 或 `t2s`）

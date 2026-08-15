@@ -110,7 +110,9 @@ watch(
           type="button" @click="emit('select', overviewItem.key)">
           <span>{{ overviewItem.label }}</span>
         </button>
-        <button class="nav-item nav-worker-status" :class="`state-${props.pythonWorkerStatus.state}`"
+        <button
+          class="nav-item nav-worker-status"
+          :class="['state-' + props.pythonWorkerStatus.state, { active: active === 'engine' }]"
           type="button" :title="`${props.pythonWorkerStatusLabel}：${props.pythonWorkerStatus.message}`"
           @click="emit('select', 'engine')">
           <span class="nav-worker-name">处理引擎</span>

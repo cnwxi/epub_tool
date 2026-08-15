@@ -2,7 +2,7 @@
 
 任务模块负责解析 OPF、决定资源目标名和提供少量格式差异；本模块负责
 读取资源、改写链接、更新 OPF 并写出归档。它刻意不依赖 ``EpubWorkspace``：
-EPUB 格式化任务需要保留对畸形 container/OPF 的既有容错路径。
+EPUB 文件重构任务需要保留对畸形 container/OPF 的既有容错路径。
 """
 
 from __future__ import annotations

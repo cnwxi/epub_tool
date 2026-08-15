@@ -153,7 +153,7 @@ class EpubTaskBase:
         self._parse_opf()
 
     def _initialize_task_state(self) -> None:
-        """初始化任务专属状态；普通格式化任务无需额外状态。"""
+        """初始化任务专属状态；普通文件重构任务无需额外状态。"""
 
     def set_output_path(self, output_path: str | None) -> None:
         if output_path is not None and os.path.isdir(output_path):

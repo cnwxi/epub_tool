@@ -58,7 +58,7 @@ const sectionItems: Array<{
 }> = [
   { key: "overview", label: "功能概览", description: "按类别选择 EPUB 处理工具" },
   { key: "engine", label: "处理引擎", description: "查看并管理 Python Worker 状态" },
-  { key: "reformat_epub", label: "格式化", description: "重构 EPUB 目录与引用" },
+  { key: "reformat_epub", label: "文件重构", description: "重构 EPUB 目录与引用" },
   { key: "decrypt_epub", label: "文件解密", description: "还原文件名混淆" },
   { key: "encrypt_epub", label: "文件加密", description: "生成文件名混淆版" },
   { key: "decrypt_font", label: "字体解密", description: "OCR 反混淆字体字形" },
@@ -1138,7 +1138,7 @@ const activeTitle = computed(() => {
     case "engine":
       return "处理引擎";
     case "reformat_epub":
-      return "格式化";
+      return "文件重构";
     case "decrypt_epub":
       return "文件解密";
     case "encrypt_epub":
@@ -2041,7 +2041,7 @@ const handleOcrPolicyOutsidePointerDown = (event: PointerEvent) => {
 const formatTaskType = (taskType: TaskType): string => {
   switch (taskType) {
     case "reformat_epub":
-      return "格式化";
+      return "文件重构";
     case "decrypt_epub":
       return "文件解密";
     case "encrypt_epub":

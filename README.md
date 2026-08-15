@@ -103,7 +103,7 @@ brew upgrade --cask epub-tool-newui
 ## 常见排查
 
 - 处理失败时，先看“最近一次执行摘要”中的失败原因、跳过原因，再看“处理日志”
-- 如果书籍结构异常，可先执行“格式化”再继续其他流程
+- 如果书籍结构异常，可先执行“文件重构”再继续其他流程
 - `encrypt_font` 只处理 EPUB 内已嵌入的字体，不处理系统字体
 - `decrypt_font` 只使用内置 ONNX OCR 模型，不依赖系统 OCR 工具、Paddle Python 运行时或运行时联网下载
 - `decrypt_epub` 只还原文件名与资源引用混淆；如果 EPUB 内容本身被 DRM 或加密资源保护，工具无法还原明文

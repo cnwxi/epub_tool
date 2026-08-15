@@ -1,5 +1,12 @@
 # 更新日志
 
+### 26.8.15
+统一任务名称文案，将“格式化”调整为“文件重构”，并同步更新界面、运行日志、代码注释和项目文档。<br>
+优化左侧导航的 hover 与 active 状态：当前功能项保持常规底色，叠加由左向右淡出的暖黄色标记，并在激活时播放两次、每次 1 秒的低强度脉冲动画；后续延长标记影响范围，将 `38%` 设为过渡点、`62%` 设为透明终点；处理引擎状态项同步支持 active 样式，避免当前项与悬停项混淆。<br>
+修复 active 导航项因边框和内阴影产生白色边框线的问题，统一窄幅状态标记与常规导航底色。<br>
+调整前端 TypeScript 模块解析配置为 `ESNext` 与 `Bundler`，匹配 Vite + Vue 的构建方式，改善编辑器对相对模块导入的解析。<br>
+更新构建、开发、协议与 UI 设计文档，补充 OCR 模型变体、字体任务选项和当前导航视觉规则说明。<br>
+
 ### 26.7.29
 将 Vue、Tauri 与 Python engine 的任务执行、事件流、任务结果和字体扫描统一为版本化的 schema-first 协议；新增 Protobuf + Buf 定义与三端生成类型，所有外部 JSON 字段统一为 camelCase。<br>
 重构 Python Worker 与 CLI：统一使用带 `requestId` 的 `EngineRequest`、`EngineEvent`、`EngineResponse` 信封，移除旧 snake_case 请求解析与重复的字体扫描协议路径。<br>

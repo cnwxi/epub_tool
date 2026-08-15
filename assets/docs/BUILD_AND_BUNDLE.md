@@ -49,14 +49,21 @@ conda run -n epub_tool npm run maintenance:fetch-ocr-model
 conda run -n epub_tool npm run maintenance:convert-ocr-onnx
 ```
 
-如需本地生成高准确率档，可执行：
+如需本地生成并打包高准确率档，可执行以下流程。`EPUB_TOOL_OCR_MODEL_NAME` 选择维护模型，
+`EPUB_TOOL_DEFAULT_OCR_MODEL_NAME` 让 Tauri 编译时使用同一默认模型，配置脚本负责将对应
+ONNX 目录写入 `tauri.conf.json`：
 
 ```bash
-EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec conda run -n epub_tool npm run maintenance:fetch-ocr-model
-EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec conda run -n epub_tool npm run maintenance:convert-ocr-onnx
+export EPUB_TOOL_OCR_MODEL_NAME=PP-OCRv6_medium_rec
+export EPUB_TOOL_DEFAULT_OCR_MODEL_NAME=PP-OCRv6_medium_rec
+conda run -n epub_tool npm run maintenance:fetch-ocr-model
+conda run -n epub_tool npm run maintenance:convert-ocr-onnx
+python scripts/configure_ocr_bundle_variant.py
+conda run -n epub_tool npm run build:bundle-assets
+conda run -n epub_tool npm run tauri:build
 ```
 
-`PP-OCRv6_medium_rec` 不改变本地默认 bundle 资源，避免本地默认安装包重新回到 70 MiB 以上模型体积。
+仅准备 `PP-OCRv6_medium_rec` 不会改变默认 small bundle；完成上述配置并重新构建后，才会生成 medium bundle。
 GitHub Actions 发布构建当前只发布 small 版产物：small 版内置
 `PP-OCRv6_small_rec_onnx`，发布资产文件名以 `_small` 结尾；Homebrew Tap 继续选择
 small 版安装包，并通过 cask `arch` 自动匹配 `macos_x64_small.dmg` 与

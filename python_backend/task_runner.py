@@ -39,7 +39,7 @@ TASK_SUFFIX = {
     "replace_cover": "_replace_cover.epub",
 }
 TASK_LABELS = {
-    "reformat_epub": "格式化",
+    "reformat_epub": "文件重构",
     "decrypt_epub": "文件解密",
     "encrypt_epub": "文件加密",
     "encrypt_font": "字体加密",

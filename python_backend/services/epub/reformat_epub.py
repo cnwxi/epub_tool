@@ -66,7 +66,7 @@ class EpubTool(EpubTaskBase):
 
     def _configure_resources(self) -> None:
         def create_target_href(_id: str, href: str, _mime: str) -> str:
-            """格式化不改变资源名，保留与加解密任务一致的资源字段。"""
+            """文件重构不改变资源名，保留与加解密任务一致的资源字段。"""
             return href
 
         self._classify_manifest_resources(create_target_href)

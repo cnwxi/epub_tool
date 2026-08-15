@@ -1,1 +1,1 @@
-"""EPUB structure, encryption, and reformatting tasks."""
+"""EPUB structure, encryption, and file restructuring tasks."""
