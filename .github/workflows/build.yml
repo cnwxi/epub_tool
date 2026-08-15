@@ -480,6 +480,8 @@ jobs:
           ### macOS
 
           ```bash
+          # 未安装 Homebrew 时，先安装 Homebrew
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           # 首次安装：添加项目 Tap
           brew tap cnwxi/tap
           # 首次安装或重新安装应用
