@@ -480,8 +480,12 @@ jobs:
           ### macOS
 
           ```bash
+          # 首次安装：添加项目 Tap
           brew tap cnwxi/tap
+          # 首次安装或重新安装应用
           brew install --cask epub-tool-newui
+          # 已安装旧版本时更新到最新版本
+          brew upgrade --cask epub-tool-newui
           ```
 
           Homebrew 默认安装 small 版，并会自动匹配 Intel / Apple Silicon 架构。也可下载下方 `macos_x64_small.dmg` 或 `macos_arm64_small.dmg`。
