@@ -45,7 +45,7 @@ npm run build
 
 # Android 无签名构建示例
 npm run tauri:android:init -- --ci
-npm run tauri:android:build -- aarch64 --release --apk --ci
+npm run tauri:android:build -- aarch64 --split-per-abi --apk --ci
 ```
 
 Android 可用 target 为 `aarch64`、`armv7`、`x86_64`、`i686`，分别生成 `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` APK。Node 版本见 `.nvmrc`；Android 还需要 SDK 36、NDK `29.0.13846066`、JDK 17 与对应 Rustup target。

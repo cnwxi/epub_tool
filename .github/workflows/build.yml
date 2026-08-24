@@ -130,14 +130,14 @@ jobs:
       - name: Build unsigned release APK
         run: >-
           cargo run --locked --manifest-path xtask/Cargo.toml --
-          mobile-build android ${{ matrix.target.tauri_target }} --apk --ci
+          mobile-build android ${{ matrix.target.tauri_target }} --split-per-abi --apk --ci
 
       - name: Upload unsigned Android compile artifact
         if: ${{ !inputs.release }}
         uses: actions/upload-artifact@v7
         with:
           name: android-${{ matrix.target.abi }}-unsigned-release
-          path: src-tauri/gen/android/app/build/outputs/apk/release/**/*.apk
+          path: src-tauri/gen/android/app/build/outputs/apk/*/release/**/*.apk
           if-no-files-found: error
 
       - name: Prepare renamed Android release asset
@@ -149,15 +149,15 @@ jobs:
           PRODUCT_STEM: Epub.Tool.Android
         run: |
           set -euo pipefail
-          apk=$(find src-tauri/gen/android/app/build/outputs/apk/release \
-            -type f -name '*.apk' -print -quit)
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f -path '*/release/*.apk' -print -quit)
           if [ -z "$apk" ]; then
             echo "未找到 release Android APK" >&2
             exit 1
           fi
           case "$apk" in
-            */outputs/apk/release/*) ;;
-            *) echo "选择的 APK 不在 release 输出目录: $apk" >&2; exit 1 ;;
+            */outputs/apk/*/release/*) ;;
+            *) echo "选择的 APK 不在 ABI release 输出目录: $apk" >&2; exit 1 ;;
           esac
           mkdir -p release-assets
           cp "$apk" "release-assets/${PRODUCT_STEM}_${ASSET_VERSION}_android_${ABI}_unsigned-release.apk"

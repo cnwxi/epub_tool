@@ -30,7 +30,7 @@ GitHub Actions 不再构建桌面 bundle；该命令仅用于本地桌面打包�
 
 ```bash
 npm run tauri:android:init -- --ci
-npm run tauri:android:build -- aarch64 --release --apk --ci
+npm run tauri:android:build -- aarch64 --split-per-abi --apk --ci
 ```
 
 目标映射：
