@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Create a GitHub release with unsigned Android APKs"
+        description: "Create a GitHub release with signed Android APKs"
         required: true
         default: true
         type: boolean
@@ -60,7 +60,7 @@ jobs:
           echo "release_version=v$asset_version" >> "$GITHUB_OUTPUT"
 
   android:
-    name: Android ${{ matrix.target.abi }} Unsigned Compile Validation
+    name: Android ${{ matrix.target.abi }} Release APK
     runs-on: ubuntu-24.04
     needs:
       - prepare
@@ -127,16 +127,74 @@ jobs:
       - name: Initialize generated Android project
         run: npm run tauri -- android init --ci --skip-targets-install
 
-      - name: Build unsigned release APK
+      - name: Build release APK
         run: >-
           cargo run --locked --manifest-path xtask/Cargo.toml --
           mobile-build android ${{ matrix.target.tauri_target }} --split-per-abi --apk --ci
 
-      - name: Upload unsigned Android compile artifact
+      - name: Sign Android release APK
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f -path '*/release/*.apk' -print -quit)
+          if [ -z "$apk" ]; then
+            echo "未找到 release Android APK" >&2
+            exit 1
+          fi
+
+          keystore="$RUNNER_TEMP/android-release.keystore"
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            if [ -z "${ANDROID_KEYSTORE_PASSWORD:-}" ] || \
+              [ -z "${ANDROID_KEY_ALIAS:-}" ] || \
+              [ -z "${ANDROID_KEY_PASSWORD:-}" ]; then
+              echo "Android keystore 已配置，但密码或 alias secret 不完整" >&2
+              exit 1
+            fi
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+            store_password="$ANDROID_KEYSTORE_PASSWORD"
+            key_alias="$ANDROID_KEY_ALIAS"
+            key_password="$ANDROID_KEY_PASSWORD"
+          else
+            echo "未配置 Android release keystore，使用本次 CI 临时签名；后续版本不能依靠该签名覆盖升级。" >&2
+            store_password="android"
+            key_alias="androidrelease"
+            key_password="android"
+            keytool -genkeypair -v \
+              -keystore "$keystore" \
+              -storepass "$store_password" \
+              -keypass "$key_password" \
+              -alias "$key_alias" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Epub Tool, OU=Development, O=cnwxi, C=CN"
+          fi
+
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner \
+            | sort -V | tail -n 1)
+          if [ -z "$apksigner" ]; then
+            echo "Android SDK 中未找到 apksigner" >&2
+            exit 1
+          fi
+          "$apksigner" sign \
+            --ks "$keystore" \
+            --ks-pass "pass:$store_password" \
+            --ks-key-alias "$key_alias" \
+            --key-pass "pass:$key_password" \
+            "$apk"
+          "$apksigner" verify --verbose "$apk"
+
+      - name: Upload signed Android compile artifact
         if: ${{ !inputs.release }}
         uses: actions/upload-artifact@v7
         with:
-          name: android-${{ matrix.target.abi }}-unsigned-release
+          name: android-${{ matrix.target.abi }}-release
           path: src-tauri/gen/android/app/build/outputs/apk/*/release/**/*.apk
           if-no-files-found: error
 
@@ -160,7 +218,7 @@ jobs:
             *) echo "选择的 APK 不在 ABI release 输出目录: $apk" >&2; exit 1 ;;
           esac
           mkdir -p release-assets
-          cp "$apk" "release-assets/${PRODUCT_STEM}_${ASSET_VERSION}_android_${ABI}_unsigned-release.apk"
+          cp "$apk" "release-assets/${PRODUCT_STEM}_${ASSET_VERSION}_android_${ABI}_release.apk"
 
       - name: Upload renamed Android release asset
         if: inputs.release
@@ -201,7 +259,7 @@ jobs:
             printf '%s\n' "$RELEASE_BODY" > release-body.md
             exit 0
           fi
-          printf '## Android 构建\n\n本次发布提供无签名 release APK：`arm64-v8a`、`armeabi-v7a`、`x86_64` 和 `x86`。\n\n请下载与设备 ABI 匹配的 APK。Google Play 正式发布仍需要仓库外的 keystore 与签名配置。\n' > release-body.md
+          printf '## Android 构建\n\n本次发布提供已签名的 release APK：`arm64-v8a`、`armeabi-v7a`、`x86_64` 和 `x86`。\n\n请下载与设备 ABI 匹配的 APK。若仓库未配置稳定的 Android keystore，本次构建会使用临时签名，后续版本无法覆盖安装升级；需要持续升级时请配置并长期保留仓库外的 keystore。Google Play 正式发布仍需要商店签名配置。\n\n### 安装说明\n\n1. 根据设备 ABI 下载对应 APK。大多数现代安卓手机请选择 `arm64-v8a`。\n2. 在系统设置中允许当前浏览器或文件管理器“安装未知来源应用”。\n3. 打开 APK 完成安装；如果设备上已安装同包名的旧版本，签名不一致时请先卸载旧版本。\n' > release-body.md
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3

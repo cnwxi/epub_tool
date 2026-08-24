@@ -53,11 +53,11 @@ Vue / TypeScript
 | Windows | x64、arm64 | in-process | NSIS |
 | macOS | x64、arm64 | in-process | app、DMG |
 | Linux | x64、arm64 | in-process | deb、rpm |
-| Android | arm64-v8a、armeabi-v7a、x86_64、x86 | in-process | unsigned release APK |
+| Android | arm64-v8a、armeabi-v7a、x86_64、x86 | in-process | signed release APK |
 | iOS | arm64 device、arm64 simulator | in-process | device library、unsigned simulator app |
 
 目录选择、目录扫描和打开路径是桌面能力；移动端使用文件 URI、缓存暂存与结果导出。
 
 ## 验证边界
 
-宿主单元/集成测试验证业务逻辑、类型化 contract 和进程内运行时。Android/iOS 必须由相应 SDK、NDK、Xcode 和 Rust target 完成真实交叉链接。CI 的移动产物不带生产签名；Android release keystore、Apple Team、证书、provisioning、device archive、IPA、商店上传和公证属于外部凭据边界。
+宿主单元/集成测试验证业务逻辑、类型化 contract 和进程内运行时。Android/iOS 必须由相应 SDK、NDK、Xcode 和 Rust target 完成真实交叉链接。CI 的 Android 产物使用仓库配置的 keystore，未配置时使用临时签名；Android release keystore、Apple Team、证书、provisioning、device archive、IPA、商店上传和公证属于外部凭据边界。

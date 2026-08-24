@@ -42,11 +42,13 @@ npm run tauri:android:build -- aarch64 --split-per-abi --apk --ci
 | `x86_64` | `x86_64-linux-android` | `x86_64` |
 | `i686` | `i686-linux-android` | `x86` |
 
-每个 target 单独生成无签名 release APK，避免把全部 ABI 打入 universal APK，并避免携带 Debug 符号。Play 发布需要 keystore、签名配置和商店凭据。
+每个 target 单独生成 release APK，避免把全部 ABI 打入 universal APK，并避免携带 Debug 符号。CI 会在构建后使用配置的 Android keystore 签名；未配置时使用仅适用于本次安装验证的临时 keystore。Play 发布需要稳定 keystore、签名配置和商店凭据。
+
+要让后续版本覆盖升级，请在 GitHub Actions Secrets 中配置 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`，并长期保留同一 keystore。
 
 ## 质量门槛
 
-发布 workflow 在 Android ABI 矩阵前执行：
+发布 workflow 直接进入 Android ABI 矩阵构建，不执行 Rust And Frontend Quality Gate。提交前可按需在本地执行：
 
 ```bash
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
@@ -65,4 +67,4 @@ APK 还应在目标 Android 设备或模拟器上做启动、任务执行、导�
 
 版本唯一来源是 `src-tauri/Cargo.toml` 的 `package.version`，Vite、Tauri 与 Release workflow 均读取该值。版本采用“年.月.日”形式，同日修订可加 `-1`、`-2` 后缀。
 
-GitHub Release 发布 `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` 四种未签名 Android release APK，命名为 `Epub.Tool.Android_{version}_android_{abi}_unsigned-release.apk`。发布前在 `assets/docs/CHANGELOG.md` 添加对应版本记录。
+GitHub Release 发布 `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` 四种已签名 Android release APK，命名为 `Epub.Tool.Android_{version}_android_{abi}_release.apk`。发布前在 `assets/docs/CHANGELOG.md` 添加对应版本记录。

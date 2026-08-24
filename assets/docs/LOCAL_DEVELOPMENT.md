@@ -126,7 +126,7 @@ npm run tauri:build
 npm run tauri:android:init -- --ci
 ```
 
-指定目标构建无签名 release APK（以下示例为 `arm64-v8a`）：
+指定目标构建 release APK（以下示例为 `arm64-v8a`）：
 
 ```bash
 npm run tauri:android:build -- aarch64 --split-per-abi --apk --ci
@@ -139,6 +139,8 @@ npm run tauri:android:dev -- aarch64
 ```
 
 该命令通过 Rust xtask 调用 Tauri build，不再下载额外运行时。
+
+本地构建默认不会配置发布 keystore。要在设备上安装，需使用 Android `apksigner` 对 APK 签名；同一 keystore 才能支持后续版本覆盖升级。
 
 ## iOS 构建
 
