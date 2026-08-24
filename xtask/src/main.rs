@@ -137,16 +137,28 @@ fn ensure_android_project_icon() -> Result<(), String> {
         return Err(format!("生成 Android launcher 图标失败: {status}"));
     }
 
-    let source = icon_output.join("android");
-    if !source.is_dir() {
-        return Err(format!(
-            "Android launcher 图标目录不存在: {}",
-            source.display()
-        ));
-    }
     let destination = project_dir.join("app/src/main/res");
-    copy_directory_contents(&source, &destination)
-        .map_err(|error| format!("同步 Android launcher 图标失败: {error}"))
+    let source = icon_output.join("android");
+    if source.is_dir() {
+        copy_directory_contents(&source, &destination)
+            .map_err(|error| format!("同步 Android launcher 图标失败: {error}"))?;
+    }
+
+    // Tauri writes directly to the generated Android project when it already exists.
+    // When that happens there is no separate output/android directory to copy.
+    for file in [
+        "mipmap-xxxhdpi/ic_launcher.png",
+        "mipmap-xxxhdpi/ic_launcher_foreground.png",
+        "mipmap-anydpi-v26/ic_launcher.xml",
+    ] {
+        if !destination.join(file).is_file() {
+            return Err(format!(
+                "Android launcher 图标生成后缺少文件: {}",
+                destination.join(file).display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn copy_directory_contents(source: &Path, destination: &Path) -> std::io::Result<()> {

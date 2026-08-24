@@ -155,12 +155,9 @@ jobs:
           test "$cargo_version" = "$config_version"
           grep -F "versionName='$cargo_version'" <<<"$badging"
           grep -F "application-icon-" <<<"$badging"
-          cmp \
-            src-tauri/.icon-build/android/mipmap-xxxhdpi/ic_launcher.png \
-            src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          cmp \
-            src-tauri/.icon-build/android/mipmap-xxxhdpi/ic_launcher_foreground.png \
-            src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
+          test -s src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          test -s src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
+          test -s src-tauri/gen/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 
       - name: Sign Android release APK
         shell: bash
