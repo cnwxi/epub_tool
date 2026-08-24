@@ -50,6 +50,7 @@ app-state.json
 .AppleDouble
 .LSOverride
 fixtures/
+__pycache__/
 
 # 编辑器配置
 .vscode/

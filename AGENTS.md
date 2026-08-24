@@ -11,8 +11,6 @@ Epub Tool 是面向 EPUB 批量处理的跨平台应用，技术栈为 Tauri 2�
 - `reformat_epub`
 - `decrypt_epub`
 - `encrypt_epub`
-- `encrypt_font`
-- `decrypt_font`
 - `webp_to_img`
 - `image_compress`
 - `image_to_webp`
@@ -44,9 +42,6 @@ npm run protocol:check
 
 # 前端类型检查和构建
 npm run build
-
-# 使用 Rust/ONNX Runtime 校验已提交 OCR 模型
-npm run build:verify-ocr-model
 
 # 当前桌面平台生产打包
 npm run tauri:build
@@ -81,11 +76,11 @@ Vue / generated TypeScript protobuf types
 - `frontend/`：Vue 单页应用、任务队列、设置、历史记录和生成的 TypeScript 协议类型。
 - `proto/epub_tool/v1/engine.proto`：Tauri IPC wire contract 的唯一来源。
 - `src-tauri/src/task_types.rs`：平台无关的 `TaskSpec`、`TaskOptions`、`TaskEvent`、`TaskResult`。
-- `src-tauri/src/rust_backend/`：统一 EPUB 业务核心，按 `epub`、`font`、`image`、`text` 分类。
+- `src-tauri/src/rust_backend/`：统一 EPUB 业务核心，按 `epub`、`image`、`text` 分类。
 - `src-tauri/src/runtime/`：全平台进程内运行时、平台能力、路径和资源定位。
 - `src-tauri/tests/`：跨模块任务与核心协议集成回归。
-- `xtask/`：OCR 模型校验、移动 ONNX Runtime 准备、移动构建和发布维护工具。
-- `src-tauri/bundle-resources/`：OCR 模型与 OpenCC 运行资源。
+- `xtask/`：移动构建和发布维护工具。
+- `src-tauri/bundle-resources/`：OpenCC 运行资源。
 - `assets/docs/`：架构、协议、构建、发布和 UI 规范。
 
 ### 核心约束
@@ -94,22 +89,16 @@ Vue / generated TypeScript protobuf types
 - 新任务必须实现统一 `EpubTask`，通过 `TaskSpec`/`TaskOptions` 输入并产生 `TaskEvent`/`TaskResult`。
 - 桌面与移动必须调用同一 `rust_backend`；平台差异只能留在 `runtime`、权限、资源定位与 IPC 层。
 - 所有平台必须通过 `spawn_blocking` 调用同一个进程内 `EngineRuntime`，不得新增任务子进程、sidecar 或动态适配层。
-- `font_style.rs` 中的 Stylo 是生产环境唯一的 CSS 选择器、级联与计算样式引擎。不得添加第二套 cascade、旧规则 fallback 或按节点静默降级。
-- 字体扫描、加密和解密必须复用 `FontEncryptionPlan` 及其字符级字体分配结果。
-- 字体管线必须保留 family stack、weight、style、stretch、`unicode-range`、多 `src`、来源顺序、继承、变量、`!important` 与复杂选择器语义。
-- TTF、OTF、WOFF、WOFF2 必须以原容器格式读取、改写 cmap 并回写。
-- OCR 低置信度或非单字结果不得猜测替换；必须保留状态码、置信度、Top-K 候选与字形图片供复核。
-- CSS/OPF 中已解密字体引用的清理只能消费字体决策结果，不得自行决定元素或字符使用哪个字体。
 
 ## 平台与发布
 
-| 平台 | 架构 / ABI | 运行方式 | 字体 OCR | CI 产物 |
-| --- | --- | --- | --- | --- |
-| Windows | x64、arm64 | 进程内 | 启用 | NSIS |
-| macOS | x64、arm64 | 进程内 | 启用 | app、DMG |
-| Linux | x64、arm64 | 进程内 | 启用 | deb、rpm |
-| Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | 启用 | 无签名 debug APK 编译验证 |
-| iOS | arm64 device、arm64 simulator | 进程内 | 启用 | device Rust library 与无签名 simulator app 编译验证 |
+| 平台 | 架构 / ABI | 运行方式 | CI 产物 |
+| --- | --- | --- | --- |
+| Windows | x64、arm64 | 进程内 | NSIS |
+| macOS | x64、arm64 | 进程内 | app、DMG |
+| Linux | x64、arm64 | 进程内 | deb、rpm |
+| Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | 无签名 debug APK 编译验证 |
+| iOS | arm64 device、arm64 simulator | 进程内 | device Rust library 与无签名 simulator app 编译验证 |
 
 Android release 签名、iOS device archive/IPA、商店上传、公证与生产代码签名需要外部凭据；没有凭据时只能声明编译验证，不能声明签名发布成功。
 
@@ -142,7 +131,6 @@ cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D w
 cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
 npm run protocol:check
 npm run build
-npm run build:verify-ocr-model
 ```
 
 仅在安装对应 SDK、NDK、Xcode 与 Rust targets 的主机上声明移动构建通过。真实设备、代码签名、公证和商店发布未执行时必须明确说明。

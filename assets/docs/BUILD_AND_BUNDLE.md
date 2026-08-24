@@ -34,7 +34,7 @@ npm run tauri:build
 
 ## 移动构建
 
-移动端构建直接调用 Tauri，不再下载额外 OCR/ONNX Runtime 依赖。
+移动端构建直接调用 Tauri，不再下载额外运行时依赖。
 
 ## Android
 
