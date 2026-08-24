@@ -172,6 +172,38 @@ impl MobileFiles {
 }
 
 #[cfg(mobile)]
+fn staged_file_name(source_path: &str, extension: &str) -> String {
+    use percent_encoding::percent_decode_str;
+
+    let source = source_path.split(['?', '#']).next().unwrap_or(source_path);
+    let decoded = percent_decode_str(source).decode_utf8_lossy().into_owned();
+    let candidate = decoded
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty() && *name != "." && *name != "..")
+        .unwrap_or("input");
+    let mut safe = candidate
+        .chars()
+        .map(|character| match character {
+            '/' | '\\' | ':' => '_',
+            character if character.is_control() => '_',
+            character => character,
+        })
+        .collect::<String>();
+    if safe.is_empty() {
+        safe = "input".to_string();
+    }
+    if !safe
+        .rsplit_once('.')
+        .is_some_and(|(_, value)| value.eq_ignore_ascii_case(extension))
+    {
+        safe.push('.');
+        safe.push_str(extension);
+    }
+    safe
+}
+
+#[cfg(mobile)]
 impl PlatformFiles for MobileFiles {
     fn collect_epub_files(&self, _directory_path: &str) -> Result<Vec<String>, String> {
         Err("Android 和 iOS 不支持目录扫描，请直接选择 EPUB 文件。".to_string())
@@ -215,9 +247,23 @@ impl PlatformFiles for MobileFiles {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|value| value.as_nanos())
             .unwrap_or_default();
-        let destination = self
-            .staging_directory()?
-            .join(format!("{timestamp}.{extension}"));
+        let directory = self.staging_directory()?;
+        let file_name = staged_file_name(source_path, &extension);
+        let initial_destination = directory.join(&file_name);
+        let destination = if initial_destination.exists() {
+            let path = std::path::Path::new(&file_name);
+            let stem = path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or("input");
+            let suffix = path
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or(&extension);
+            directory.join(format!("{stem}-{timestamp}.{suffix}"))
+        } else {
+            initial_destination
+        };
         let mut destination_file = fs::File::create(&destination)
             .map_err(|error| format!("创建暂存文件失败 {}: {error}", destination.display()))?;
         std::io::copy(&mut source, &mut destination_file)

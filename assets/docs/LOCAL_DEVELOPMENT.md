@@ -126,10 +126,10 @@ npm run tauri:build
 npm run tauri:android:init -- --ci
 ```
 
-指定目标构建无签名 debug APK（以下示例为 `arm64-v8a`）：
+指定目标构建无签名 release APK（以下示例为 `arm64-v8a`）：
 
 ```bash
-npm run tauri:android:build -- aarch64 --debug --apk --ci
+npm run tauri:android:build -- aarch64 --release --apk --ci
 ```
 
 连接相同 ABI 的设备进行开发：

@@ -30,7 +30,7 @@ GitHub Actions 不再构建桌面 bundle；该命令仅用于本地桌面打包�
 
 ```bash
 npm run tauri:android:init -- --ci
-npm run tauri:android:build -- aarch64 --debug --apk --ci
+npm run tauri:android:build -- aarch64 --release --apk --ci
 ```
 
 目标映射：
@@ -42,7 +42,7 @@ npm run tauri:android:build -- aarch64 --debug --apk --ci
 | `x86_64` | `x86_64-linux-android` | `x86_64` |
 | `i686` | `i686-linux-android` | `x86` |
 
-每个 target 单独生成无签名 debug APK，避免把全部 ABI 打入 universal APK。Play 发布需要 keystore、签名配置和商店凭据。
+每个 target 单独生成无签名 release APK，避免把全部 ABI 打入 universal APK，并避免携带 Debug 符号。Play 发布需要 keystore、签名配置和商店凭据。
 
 ## 质量门槛
 
@@ -65,4 +65,4 @@ APK 还应在目标 Android 设备或模拟器上做启动、任务执行、导�
 
 版本唯一来源是 `src-tauri/Cargo.toml` 的 `package.version`，Vite、Tauri 与 Release workflow 均读取该值。版本采用“年.月.日”形式，同日修订可加 `-1`、`-2` 后缀。
 
-GitHub Release 发布 `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` 四种未签名 Android debug APK，命名为 `Epub.Tool.Android_{version}_android_{abi}_unsigned-debug.apk`。发布前在 `assets/docs/CHANGELOG.md` 添加对应版本记录。
+GitHub Release 发布 `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` 四种未签名 Android release APK，命名为 `Epub.Tool.Android_{version}_android_{abi}_unsigned-release.apk`。发布前在 `assets/docs/CHANGELOG.md` 添加对应版本记录。

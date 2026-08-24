@@ -162,8 +162,18 @@ jobs:
         with:
           targets: ${{ matrix.target.rust_target }}
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Configure preinstalled Android SDK
+        shell: bash
+        run: |
+          sdk_root="/usr/local/lib/android/sdk"
+          if [ ! -x "$sdk_root/cmdline-tools/latest/bin/sdkmanager" ]; then
+            echo "GitHub runner 未找到预安装的 Android SDK: $sdk_root" >&2
+            exit 1
+          fi
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"
+          echo "$sdk_root/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$sdk_root/platform-tools" >> "$GITHUB_PATH"
 
       - name: Install Android SDK 36 and NDK 29
         shell: bash
@@ -177,16 +187,16 @@ jobs:
       - name: Initialize generated Android project
         run: npm run tauri -- android init --ci --skip-targets-install
 
-      - name: Build unsigned debug APK
+      - name: Build unsigned release APK
         run: >-
           cargo run --locked --manifest-path xtask/Cargo.toml --
-          mobile-build android ${{ matrix.target.tauri_target }} --debug --apk --ci
+          mobile-build android ${{ matrix.target.tauri_target }} --release --apk --ci
 
       - name: Upload unsigned Android compile artifact
         if: ${{ !inputs.release }}
         uses: actions/upload-artifact@v7
         with:
-          name: android-${{ matrix.target.abi }}-unsigned-debug
+          name: android-${{ matrix.target.abi }}-unsigned-release
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
@@ -205,7 +215,7 @@ jobs:
             exit 1
           fi
           mkdir -p release-assets
-          cp "$apk" "release-assets/${PRODUCT_STEM}_${ASSET_VERSION}_android_${ABI}_unsigned-debug.apk"
+          cp "$apk" "release-assets/${PRODUCT_STEM}_${ASSET_VERSION}_android_${ABI}_unsigned-release.apk"
 
       - name: Upload renamed Android release asset
         if: inputs.release
@@ -246,7 +256,7 @@ jobs:
             printf '%s\n' "$RELEASE_BODY" > release-body.md
             exit 0
           fi
-          printf '## Android 构建\n\n本次发布提供无签名 debug APK：`arm64-v8a`、`armeabi-v7a`、`x86_64` 和 `x86`。\n\n请下载与设备 ABI 匹配的 APK。Google Play 正式发布仍需要仓库外的 keystore 与签名配置。\n' > release-body.md
+          printf '## Android 构建\n\n本次发布提供无签名 release APK：`arm64-v8a`、`armeabi-v7a`、`x86_64` 和 `x86`。\n\n请下载与设备 ABI 匹配的 APK。Google Play 正式发布仍需要仓库外的 keystore 与签名配置。\n' > release-body.md
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3

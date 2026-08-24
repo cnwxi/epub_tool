@@ -205,6 +205,7 @@ onMounted(async () => {
       <article v-if="result" class="panel mobile-result-panel">
         <div class="panel-head"><h2>处理结果</h2><span class="status-pill">{{ result.status }}</span></div>
         <p class="muted">成功 {{ result.summary.success }} 项，失败 {{ result.summary.failed }} 项。</p>
+        <p v-if="result.outputs.length" class="mobile-save-hint">处理已完成，请点击下方“导出”按钮并选择保存位置。</p>
         <div v-if="result.outputs.length" class="mobile-output-list"><button v-for="output in result.outputs" :key="output" type="button" class="ghost-btn" :disabled="!isMobileRuntime()" @click="exportResult(output)">{{ isMobileRuntime() ? `导出 ${output.split(/[\\/]/).pop()}` : output.split(/[\\/]/).pop() }}</button></div>
       </article>
       <article class="panel mobile-log-panel"><div class="panel-head"><h2>处理日志</h2><button type="button" class="ghost-btn" @click="logs = []">清空</button></div><div class="log-list"><p v-for="(log, index) in logs" :key="index">{{ log }}</p><p v-if="!logs.length" class="muted">暂无日志。</p></div></article>

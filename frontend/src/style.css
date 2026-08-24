@@ -3400,3 +3400,32 @@ input {
     width: 100%;
   }
 }
+
+/* Keep compact controls compact even though the task card stacks on narrow screens. */
+.mobile-result-panel .panel-head,
+.mobile-log-panel .panel-head {
+  align-items: center;
+}
+
+.mobile-result-panel .status-pill,
+.mobile-log-panel .panel-head > .ghost-btn {
+  align-self: center;
+  flex: 0 0 auto;
+  height: 44px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.mobile-result-panel .status-pill {
+  height: 32px;
+  min-height: 32px;
+}
+
+.mobile-save-hint {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--accent-dark);
+  background: rgba(232, 194, 122, 0.16);
+  font-size: 14px;
+}

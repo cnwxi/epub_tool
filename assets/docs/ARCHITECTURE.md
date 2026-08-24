@@ -53,7 +53,7 @@ Vue / TypeScript
 | Windows | x64、arm64 | in-process | NSIS |
 | macOS | x64、arm64 | in-process | app、DMG |
 | Linux | x64、arm64 | in-process | deb、rpm |
-| Android | arm64-v8a | in-process | unsigned debug APK |
+| Android | arm64-v8a、armeabi-v7a、x86_64、x86 | in-process | unsigned release APK |
 | iOS | arm64 device、arm64 simulator | in-process | device library、unsigned simulator app |
 
 目录选择、目录扫描和打开路径是桌面能力；移动端使用文件 URI、缓存暂存与结果导出。

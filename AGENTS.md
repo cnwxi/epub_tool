@@ -45,7 +45,7 @@ npm run build
 
 # Android 无签名构建示例
 npm run tauri:android:init -- --ci
-npm run tauri:android:build -- aarch64 --debug --apk --ci
+npm run tauri:android:build -- aarch64 --release --apk --ci
 ```
 
 Android 可用 target 为 `aarch64`、`armv7`、`x86_64`、`i686`，分别生成 `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` APK。Node 版本见 `.nvmrc`；Android 还需要 SDK 36、NDK `29.0.13846066`、JDK 17 与对应 Rustup target。
@@ -92,7 +92,7 @@ Vue / generated TypeScript protobuf types
 | Windows | x64、arm64 | 进程内 | 本地打包 |
 | macOS | x64、arm64 | 进程内 | 本地打包 |
 | Linux | x64、arm64 | 进程内 | 本地打包 |
-| Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | CI 无签名 debug APK 编译验证 |
+| Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | CI 无签名 release APK 编译验证 |
 | iOS | arm64 device、arm64 simulator | 进程内 | 本地打包 |
 
 Android release 签名、iOS device archive/IPA、商店上传、公证与生产代码签名需要外部凭据；没有凭据时只能声明编译验证，不能声明签名发布成功。
