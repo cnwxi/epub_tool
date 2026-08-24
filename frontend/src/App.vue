@@ -7,7 +7,7 @@ import { useTaskBridge } from "./composables/useTaskBridge";
 import type { EngineEvent, QueuedFile, TaskRequest, TaskResult, TaskType } from "./types";
 
 const tasks: Array<{ type: TaskType; label: string; description: string }> = [
-  { type: "reformat_epub", label: "格式化", description: "整理 EPUB 目录与资源引用。" },
+  { type: "reformat_epub", label: "文件重构", description: "重构 EPUB 目录与引用。" },
   { type: "decrypt_epub", label: "文件解密", description: "还原 EPUB 内部文件名与资源引用。" },
   { type: "encrypt_epub", label: "文件加密", description: "混淆 EPUB 内部文件名与资源引用。" },
   { type: "image_compress", label: "图片压缩", description: "压缩内嵌图片，减小文件体积。" },
