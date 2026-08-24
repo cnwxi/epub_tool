@@ -190,7 +190,7 @@ jobs:
       - name: Build unsigned release APK
         run: >-
           cargo run --locked --manifest-path xtask/Cargo.toml --
-          mobile-build android ${{ matrix.target.tauri_target }} --release --apk --ci
+          mobile-build android ${{ matrix.target.tauri_target }} --apk --ci
 
       - name: Upload unsigned Android compile artifact
         if: ${{ !inputs.release }}
