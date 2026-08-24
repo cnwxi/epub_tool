@@ -117,7 +117,7 @@ jobs:
 
       - name: Install Android SDK 36 and NDK 29
         shell: bash
-        run: sdkmanager "platform-tools" "platforms;android-36" "ndk;29.0.13846066"
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;29.0.13846066"
 
       - name: Install JavaScript dependencies
         run: |
