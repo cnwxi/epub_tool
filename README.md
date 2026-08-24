@@ -34,13 +34,13 @@
 
 | 平台 | 架构 / ABI | 任务运行方式 | 构建状态 |
 | --- | --- | --- | --- |
-| Windows | x64、arm64 | 进程内 | NSIS |
-| macOS | x64、arm64 | 进程内 | app、DMG |
-| Linux | x64、arm64 | 进程内 | deb、rpm |
-| Android | arm64-v8a | 进程内 | CI 无签名 debug APK |
-| iOS | arm64 device、arm64 simulator | 进程内 | CI device library / simulator app |
+| Windows | x64、arm64 | 进程内 | 本地打包 |
+| macOS | x64、arm64 | 进程内 | 本地打包 |
+| Linux | x64、arm64 | 进程内 | 本地打包 |
+| Android | arm64-v8a、armeabi-v7a、x86_64、x86 | 进程内 | CI 无签名 debug APK |
+| iOS | arm64 device、arm64 simulator | 进程内 | 本地打包 |
 
-移动商店包、真实设备发布和生产签名需要平台凭据；CI 中的移动产物是编译与链接验证，不代表已签名发布。
+GitHub Actions 仅编译 Android；移动商店包、真实设备发布和生产签名需要平台凭据。CI 产物是编译与链接验证，不代表已签名发布。
 
 ## 安装
 

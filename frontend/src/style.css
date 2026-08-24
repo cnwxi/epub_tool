@@ -3209,3 +3209,194 @@ input {
   }
 
 }
+
+/* Android-first single-column shell. Kept separate from the legacy desktop layout while it is retired. */
+.mobile-app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 14px;
+  width: min(100%, 720px);
+  min-height: 100dvh;
+  height: auto;
+  margin: 0 auto;
+  padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overflow: visible;
+  background:
+    radial-gradient(circle at top right, rgba(232, 194, 122, 0.26), transparent 34%),
+    linear-gradient(180deg, #f7f2e9 0%, #eee5d8 100%);
+}
+
+.mobile-app-header,
+.task-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-app-header h1 {
+  margin: 2px 0 0;
+  font-size: clamp(24px, 7vw, 32px);
+  line-height: 1.18;
+}
+
+.mobile-app .eyebrow {
+  margin: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid rgba(177, 108, 47, 0.22);
+  border-radius: 999px;
+  color: var(--accent-dark);
+  background: rgba(255, 249, 240, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-tabs {
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -2px;
+  padding: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.task-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.task-tabs button {
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border: 1px solid rgba(34, 52, 75, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--text-secondary);
+  font-weight: 650;
+}
+
+.task-tabs button.active {
+  border-color: transparent;
+  background: #20304d;
+  box-shadow: 0 8px 18px rgba(32, 48, 77, 0.2);
+  color: #fff;
+}
+
+.mobile-app .dropzone {
+  min-height: 174px;
+  align-items: stretch;
+  padding: 18px;
+}
+
+.mobile-app .dropzone-actions {
+  width: 100%;
+}
+
+.mobile-app .dropzone-actions button,
+.mobile-app .primary-btn,
+.mobile-output-list .ghost-btn {
+  min-height: 46px;
+}
+
+.mobile-app .dropzone-actions .primary-btn {
+  flex: 1 1 160px;
+}
+
+.mobile-workspace {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  gap: 14px;
+}
+
+.mobile-app .panel {
+  padding: 18px;
+}
+
+.mobile-task-panel .primary-btn {
+  min-width: 116px;
+}
+
+.mobile-file-list,
+.mobile-output-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.mobile-cover-action {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.mobile-cover-action .secondary-btn {
+  min-height: 44px;
+}
+
+.mobile-file-list {
+  list-style: none;
+}
+
+.mobile-file-list li {
+  overflow: hidden;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.54);
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-output-list .ghost-btn {
+  width: 100%;
+  overflow: hidden;
+  justify-content: flex-start;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-log-panel .log-list {
+  max-height: min(30dvh, 280px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mobile-log-panel .log-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .mobile-app {
+    gap: 12px;
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
+
+  .mobile-app-header {
+    align-items: flex-start;
+  }
+
+  .mobile-app .panel-head {
+    align-items: stretch;
+  }
+
+  .mobile-task-panel .primary-btn {
+    width: 100%;
+  }
+}

@@ -31,7 +31,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "Usage: desktop-build [options]; mobile-build <android|ios> [options]; mobile-dev <android|ios> [options]; update-homebrew-cask <formula> <version> <arm-sha256> <x64-sha256> <url>".to_string()
+    "Usage: desktop-build [options]; mobile-build <android|ios> [target] [options]; mobile-dev <android|ios> [target] [options]; update-homebrew-cask <formula> <version> <arm-sha256> <x64-sha256> <url>".to_string()
 }
 fn root() -> Result<PathBuf, String> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -55,7 +55,7 @@ fn build(platform: &str, args: &[String]) -> Result<(), String> {
         command.args([platform, "build"]);
     }
     let status = command
-        .args(args)
+        .args(mobile_target_args(platform, args))
         .status()
         .map_err(|e| format!("启动 Tauri 构建失败: {e}"))?;
     status
@@ -68,7 +68,7 @@ fn dev(platform: &str, args: &[String]) -> Result<(), String> {
     command
         .current_dir(root()?)
         .args(["run", "tauri", "--", platform, "dev"])
-        .args(args);
+        .args(mobile_target_args(platform, args));
     let status = command
         .status()
         .map_err(|e| format!("启动 Tauri 开发环境失败: {e}"))?;
@@ -76,6 +76,18 @@ fn dev(platform: &str, args: &[String]) -> Result<(), String> {
         .success()
         .then_some(())
         .ok_or_else(|| format!("Tauri 开发环境失败: {status}"))
+}
+
+fn mobile_target_args(platform: &str, args: &[String]) -> Vec<String> {
+    if platform == "desktop" || args.first().is_none_or(|value| value.starts_with('-')) {
+        return args.to_vec();
+    }
+
+    let mut command_args = Vec::with_capacity(args.len() + 1);
+    command_args.push("--target".to_string());
+    command_args.push(args[0].clone());
+    command_args.extend_from_slice(&args[1..]);
+    command_args
 }
 fn update_homebrew_cask(args: &[String]) -> Result<(), String> {
     let [formula, version, arm, intel, url] = args else {

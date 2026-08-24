@@ -47,6 +47,9 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 | Tauri target | Rust target | Android ABI |
 | --- | --- | --- |
 | `aarch64` | `aarch64-linux-android` | `arm64-v8a` |
+| `armv7` | `armv7-linux-androideabi` | `armeabi-v7a` |
+| `x86_64` | `x86_64-linux-android` | `x86_64` |
+| `i686` | `i686-linux-android` | `x86` |
 
 应用最低 Android API 为 24。
 
@@ -123,10 +126,10 @@ npm run tauri:build
 npm run tauri:android:init -- --ci
 ```
 
-默认构建 `arm64-v8a` 的无签名 debug APK：
+指定目标构建无签名 debug APK（以下示例为 `arm64-v8a`）：
 
 ```bash
-npm run tauri:android:build -- --debug --apk --ci
+npm run tauri:android:build -- aarch64 --debug --apk --ci
 ```
 
 连接相同 ABI 的设备进行开发：

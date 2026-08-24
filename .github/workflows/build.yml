@@ -1,4 +1,4 @@
-name: Build And Release
+name: Android Build And Release
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Create a GitHub release with bundled artifacts"
+        description: "Create a GitHub release with unsigned Android APKs"
         required: true
         default: true
         type: boolean
@@ -26,7 +26,7 @@ on:
         required: false
         default: ""
       body:
-        description: "Release body text（留空使用更新日志与默认安装指引）"
+        description: "Release body text（留空使用更新日志与 Android 安装说明）"
         required: false
         default: ""
 
@@ -35,7 +35,6 @@ jobs:
     name: Resolve Release Version
     runs-on: ubuntu-22.04
     outputs:
-      app_version: ${{ steps.release_version.outputs.app_version }}
       asset_version: ${{ steps.release_version.outputs.asset_version }}
       release_version: ${{ steps.release_version.outputs.release_version }}
     steps:
@@ -52,21 +51,16 @@ jobs:
             exit 1
           fi
 
-          if [ -n "${{ inputs.version }}" ]; then
-            asset_version="${{ inputs.version }}"
-            asset_version="${asset_version#v}"
-          else
+          asset_version="${{ inputs.version }}"
+          asset_version="${asset_version#v}"
+          if [ -z "$asset_version" ]; then
             asset_version="$app_version"
           fi
-
-          release_version="v$asset_version"
-
-          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
           echo "asset_version=$asset_version" >> "$GITHUB_OUTPUT"
-          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+          echo "release_version=v$asset_version" >> "$GITHUB_OUTPUT"
 
   quality:
-    name: Pure Rust Quality Gate
+    name: Rust And Frontend Quality Gate
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -93,15 +87,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            curl \
-            file \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libssl-dev \
             libwebkit2gtk-4.1-dev \
             libxdo-dev \
-            patchelf \
-            wget
+            patchelf
 
       - name: Install JavaScript dependencies
         run: |
@@ -111,27 +102,21 @@ jobs:
       - name: Verify generated protocol code
         run: npm run protocol:check
 
-      - name: Check Rust formatting
+      - name: Check Rust formatting, tests, and clippy
         run: |
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
           cargo fmt --manifest-path xtask/Cargo.toml -- --check
-
-      - name: Run Rust tests
-        run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml
           cargo test --locked --manifest-path xtask/Cargo.toml
-
-      - name: Run Rust clippy
-        run: |
           cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
           cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
 
       - name: Build frontend
         run: npm run build
 
-  build:
-    name: Build ${{ matrix.target.platform }}-${{ matrix.target.arch }}
-    runs-on: ${{ matrix.target.runner }}
+  android:
+    name: Android ${{ matrix.target.abi }} Unsigned Compile Validation
+    runs-on: ubuntu-24.04
     needs:
       - prepare
       - quality
@@ -141,282 +126,18 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - platform: linux
-            arch: x64
-            runner: ubuntu-24.04
-            artifact_name: linux-x64-bundle
-            bundle_targets: deb,rpm
-          - platform: linux
-            arch: arm64
-            runner: ubuntu-24.04-arm
-            artifact_name: linux-arm64-bundle
-            bundle_targets: deb,rpm
-          - platform: windows
-            arch: x64
-            runner: windows-2022
-            artifact_name: windows-x64-bundle
-            bundle_targets: nsis
-          - platform: windows
-            arch: arm64
-            runner: windows-11-arm
-            artifact_name: windows-arm64-bundle
-            bundle_targets: nsis
-          - platform: macos
-            arch: x64
-            runner: macos-15-intel
-            artifact_name: macos-x64-bundle
-          - platform: macos
-            arch: arm64
-            runner: macos-14
-            artifact_name: macos-arm64-bundle
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js with npm cache
-        if: github.ref == 'refs/heads/main'
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: ".nvmrc"
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
-
-      - name: Setup Node.js without npm cache
-        if: github.ref != 'refs/heads/main'
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: ".nvmrc"
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.97.1
-
-      - name: Install Linux dependencies
-        if: matrix.target.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            curl \
-            file \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libxdo-dev \
-            patchelf \
-            wget
-
-      - name: Install JavaScript dependencies
-        run: |
-          npm ci
-          npm --prefix frontend ci
-
-      - name: Verify generated protocol code
-        run: npm run protocol:check
-
-      - name: Fetch Rust dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd src-tauri
-          for attempt in 1 2 3 4 5; do
-            if cargo fetch --locked; then
-              exit 0
-            fi
-            delay=$((attempt * 15))
-            echo "cargo fetch failed on attempt ${attempt}; retrying in ${delay}s..."
-            sleep "$delay"
-          done
-          cargo fetch --locked
-
-      - name: Build Tauri app
-        if: matrix.target.platform != 'macos'
-        uses: tauri-apps/tauri-action@v0.6.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: .
-          tauriScript: npm run tauri
-          args: --bundles ${{ matrix.target.bundle_targets }}
-
-      - name: Build macOS app bundle
-        if: matrix.target.platform == 'macos'
-        run: npm run tauri:build -- --bundles app
-
-      - name: Create macOS DMG
-        if: matrix.target.platform == 'macos'
-        shell: bash
-        env:
-          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
-          ARCH: ${{ matrix.target.arch }}
-        run: |
-          set -euo pipefail
-
-          app_path="src-tauri/target/release/bundle/macos/Epub Tool NewUI.app"
-          dmg_dir="src-tauri/target/release/bundle/dmg"
-          dmg_path="$dmg_dir/Epub Tool NewUI_${APP_VERSION}_${ARCH}.dmg"
-
-          if [ ! -d "$app_path" ]; then
-            echo "Tauri 未生成 .app，无法创建 DMG。" >&2
-            exit 1
-          fi
-
-          tmp_dir="$(mktemp -d)"
-          staging_dir="$tmp_dir/staging"
-          writable_dmg="$tmp_dir/writable.dmg"
-          mount_dir="$tmp_dir/mounted"
-          mounted=0
-          cleanup() {
-            if [ "$mounted" -eq 1 ]; then
-              hdiutil detach "$mount_dir" || true
-            fi
-            rm -rf "$tmp_dir"
-          }
-          trap cleanup EXIT
-
-          mkdir -p "$dmg_dir"
-          rm -f "$dmg_path"
-          mkdir -p "$staging_dir" "$mount_dir"
-          ditto "$app_path" "$staging_dir/Epub Tool NewUI.app"
-          ln -s /Applications "$staging_dir/Applications"
-          cp assets/img/icon.icns "$staging_dir/.VolumeIcon.icns"
-          hdiutil create \
-            -volname "Epub Tool NewUI" \
-            -srcfolder "$staging_dir" \
-            -ov \
-            -format UDRW \
-            "$writable_dmg"
-          hdiutil attach \
-            -readwrite \
-            -noverify \
-            -noautoopen \
-            -mountpoint "$mount_dir" \
-            "$writable_dmg"
-          mounted=1
-          "$(xcrun --find SetFile)" -a C "$mount_dir"
-          hdiutil detach "$mount_dir"
-          mounted=0
-          hdiutil convert "$writable_dmg" -format UDZO -o "$dmg_path"
-          hdiutil verify "$dmg_path"
-          ls -lh "$dmg_path"
-
-      - name: Prepare renamed release assets
-        if: inputs.release && matrix.target.platform != 'windows'
-        shell: bash
-        env:
-          ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
-          PLATFORM: ${{ matrix.target.platform }}
-          ARCH: ${{ matrix.target.arch }}
-          PRODUCT_STEM: Epub.Tool.NewUI
-        run: |
-          set -euo pipefail
-
-          bundle_dir="src-tauri/target/release/bundle"
-          release_dir="release-assets"
-          mkdir -p "$release_dir"
-
-          while IFS= read -r -d '' file; do
-            filename="$(basename "$file")"
-            case "$filename" in
-              *.deb)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.deb"
-                ;;
-              *.rpm)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.rpm"
-                ;;
-              *.dmg)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.dmg"
-                ;;
-              *.app.tar.gz)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.app.tar.gz"
-                ;;
-              *-setup.exe)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_setup.exe"
-                ;;
-              *)
-                continue
-                ;;
-            esac
-
-            cp "$file" "$release_dir/$target"
-          done < <(find "$bundle_dir" -type f -print0)
-
-          if [ -z "$(find "$release_dir" -type f -print -quit)" ]; then
-            echo "未找到可上传的 release 资产" >&2
-            exit 1
-          fi
-
-          ls -la "$release_dir"
-
-      - name: Prepare renamed release assets (Windows)
-        if: inputs.release && matrix.target.platform == 'windows'
-        shell: pwsh
-        env:
-          ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
-          PLATFORM: ${{ matrix.target.platform }}
-          ARCH: ${{ matrix.target.arch }}
-          PRODUCT_STEM: Epub.Tool.NewUI
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $bundleDir = 'src-tauri/target/release/bundle'
-          $releaseDir = 'release-assets'
-          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-
-          Get-ChildItem -Path $bundleDir -File -Recurse | ForEach-Object {
-            $target = $null
-            switch -Regex ($_.Name) {
-              '\.deb$' {
-                $target = '{0}_{1}_{2}_{3}.deb' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
-              }
-              '\.rpm$' {
-                $target = '{0}_{1}_{2}_{3}.rpm' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
-              }
-              '\.dmg$' {
-                $target = '{0}_{1}_{2}_{3}.dmg' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
-              }
-              '\.app\.tar\.gz$' {
-                $target = '{0}_{1}_{2}_{3}.app.tar.gz' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
-              }
-              '-setup\.exe$' {
-                $target = '{0}_{1}_{2}_{3}_setup.exe' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
-              }
-            }
-            if ($null -ne $target) {
-              Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $releaseDir $target)
-            }
-          }
-
-          if (-not (Get-ChildItem -Path $releaseDir -File)) {
-            throw '未找到可上传的 release 资产'
-          }
-          Get-ChildItem -Path $releaseDir -File
-
-      - name: Upload renamed release assets
-        if: inputs.release
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-assets-${{ matrix.target.platform }}-${{ matrix.target.arch }}
-          path: release-assets
-          if-no-files-found: error
-
-      - name: Upload workflow artifacts
-        if: ${{ !inputs.release }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.target.artifact_name }}
-          path: src-tauri/target/release/bundle
-          if-no-files-found: error
-
-  mobile_android:
-    name: Android arm64-v8a Unsigned Compile Validation
-    runs-on: ubuntu-24.04
-    needs:
-      - prepare
-      - quality
-    permissions:
-      contents: read
+          - tauri_target: aarch64
+            rust_target: aarch64-linux-android
+            abi: arm64-v8a
+          - tauri_target: armv7
+            rust_target: armv7-linux-androideabi
+            abi: armeabi-v7a
+          - tauri_target: x86_64
+            rust_target: x86_64-linux-android
+            abi: x86_64
+          - tauri_target: i686
+            rust_target: i686-linux-android
+            abi: x86
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -439,30 +160,14 @@ jobs:
       - name: Setup Rust Android target
         uses: dtolnay/rust-toolchain@1.97.1
         with:
-          targets: aarch64-linux-android
+          targets: ${{ matrix.target.rust_target }}
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK 36 and NDK 29
         shell: bash
-        run: |
-          sdkmanager "platform-tools" "platforms;android-36" "ndk;29.0.13846066"
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            curl \
-            file \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libxdo-dev \
-            patchelf \
-            wget
+        run: sdkmanager "platform-tools" "platforms;android-36" "ndk;29.0.13846066"
 
       - name: Install JavaScript dependencies
         run: |
@@ -475,13 +180,13 @@ jobs:
       - name: Build unsigned debug APK
         run: >-
           cargo run --locked --manifest-path xtask/Cargo.toml --
-          mobile-build android aarch64 --debug --apk --ci
+          mobile-build android ${{ matrix.target.tauri_target }} --debug --apk --ci
 
       - name: Upload unsigned Android compile artifact
         if: ${{ !inputs.release }}
         uses: actions/upload-artifact@v7
         with:
-          name: android-arm64-v8a-unsigned-debug
+          name: android-${{ matrix.target.abi }}-unsigned-debug
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
@@ -490,163 +195,33 @@ jobs:
         shell: bash
         env:
           ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
-          PRODUCT_STEM: Epub.Tool.NewUI
+          ABI: ${{ matrix.target.abi }}
+          PRODUCT_STEM: Epub.Tool.Android
         run: |
           set -euo pipefail
-
-          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)
           if [ -z "$apk" ]; then
             echo "未找到可上传的 Android APK" >&2
             exit 1
           fi
-
-          release_dir="release-assets"
-          mkdir -p "$release_dir"
-          cp "$apk" "$release_dir/${PRODUCT_STEM}_${ASSET_VERSION}_android_arm64.apk"
+          mkdir -p release-assets
+          cp "$apk" "release-assets/${PRODUCT_STEM}_${ASSET_VERSION}_android_${ABI}_unsigned-debug.apk"
 
       - name: Upload renamed Android release asset
         if: inputs.release
         uses: actions/upload-artifact@v7
         with:
-          name: release-assets-android-arm64
+          name: release-assets-android-${{ matrix.target.abi }}
           path: release-assets
           if-no-files-found: error
 
-  mobile_ios:
-    name: iOS Unsigned Compile Validation
-    runs-on: macos-15
-    needs: quality
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: ".nvmrc"
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
-
-      - name: Setup Rust iOS targets
-        uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
-
-      - name: Install JavaScript dependencies
-        run: |
-          npm ci
-          npm --prefix frontend ci
-
-      - name: Initialize generated iOS project
-        run: npm run tauri -- ios init --ci --skip-targets-install
-
-      - name: Compile device Rust library without signing
-        run: cargo build --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios --lib
-
-      - name: Build unsigned simulator app
-        run: >-
-          cargo run --locked --manifest-path xtask/Cargo.toml --
-          mobile-build ios aarch64-sim --debug --ci
-
-      - name: Upload unsigned iOS simulator artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-arm64-simulator-unsigned-debug
-          path: src-tauri/gen/apple/build/**/*.app
-          if-no-files-found: error
-
-  cleanup_node_cache:
-    name: Cleanup npm caches
-    if: always()
-    runs-on: ubuntu-22.04
-    needs:
-      - build
-      - mobile_android
-      - mobile_ios
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Prune GitHub Actions npm caches
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          MAIN_REF: refs/heads/main
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          main_cache_json="$(gh cache list --ref "$MAIN_REF" --key "node-cache-" --limit 1000 --json id,key,createdAt)"
-          main_cache_count="$(printf '%s' "$main_cache_json" | jq 'length')"
-          echo "main 分支 npm cache 数量: $main_cache_count"
-
-          keep_main_ids="$(
-            printf '%s' "$main_cache_json" | jq -r '
-              sort_by(.key | sub("-[^-]+$"; ""))
-              | group_by(.key | sub("-[^-]+$"; ""))
-              | .[]
-              | sort_by(.createdAt)
-              | reverse
-              | .[0].id
-            '
-          )"
-
-          delete_main_ids="$(
-            printf '%s' "$main_cache_json" | jq -r '
-              sort_by(.key | sub("-[^-]+$"; ""))
-              | group_by(.key | sub("-[^-]+$"; ""))
-              | .[]
-              | sort_by(.createdAt)
-              | reverse
-              | .[1:][]?
-              | .id
-            '
-          )"
-
-          other_branch_ids="$(
-            gh cache list --key "node-cache-" --limit 1000 --json id,ref \
-              | jq -r --arg main_ref "$MAIN_REF" '.[] | select(.ref != $main_ref) | .id'
-          )"
-
-          delete_ids="$(
-            {
-              printf '%s\n' "$delete_main_ids"
-              printf '%s\n' "$other_branch_ids"
-            } | awk 'NF' | sort -u
-          )"
-
-          echo "保留的 main cache:"
-          if [ -n "$keep_main_ids" ]; then
-            printf '%s\n' "$keep_main_ids"
-          else
-            echo "无"
-          fi
-
-          if [ -z "$delete_ids" ]; then
-            echo "没有需要删除的 npm cache。"
-            exit 0
-          fi
-
-          echo "开始删除以下 npm cache:"
-          printf '%s\n' "$delete_ids"
-
-          while IFS= read -r cache_id; do
-            [ -n "$cache_id" ] || continue
-            gh cache delete "$cache_id"
-          done <<< "$delete_ids"
-
   publish_release:
-    name: Publish Release
+    name: Publish Android Release
     if: inputs.release
     runs-on: ubuntu-22.04
     needs:
       - prepare
-      - build
-      - mobile_android
+      - android
     permissions:
       contents: write
     steps:
@@ -656,7 +231,7 @@ jobs:
       - name: Download renamed release assets
         uses: actions/download-artifact@v8
         with:
-          pattern: release-assets-*
+          pattern: release-assets-android-*
           path: release-assets
           merge-multiple: true
 
@@ -671,45 +246,7 @@ jobs:
             printf '%s\n' "$RELEASE_BODY" > release-body.md
             exit 0
           fi
-
-          changelog_version="${ASSET_VERSION%%-*}"
-          release_notes="$(
-            awk -v heading="### $changelog_version" '
-              $0 == heading { capture = 1; next }
-              capture && substr($0, 1, 3) == "###" { exit }
-              capture { print }
-            ' assets/docs/CHANGELOG.md
-          )"
-
-          if [ -z "$release_notes" ]; then
-            echo "CHANGELOG 中未找到版本 $changelog_version 的更新日志" >&2
-            exit 1
-          fi
-
-          printf '## 版本信息\n%s\n' "$release_notes" > release-body.md
-
-          cat >> release-body.md <<'MARKDOWN'
-          ## 安装
-
-          当前发布包仅包含 Rust 核心与 OpenCC 资源。
-
-          ### macOS
-
-          ```bash
-          brew tap cnwxi/tap
-          brew install --cask epub-tool-newui
-          ```
-
-          Homebrew 默认安装 small 版，并会自动匹配 Intel / Apple Silicon 架构。也可下载下方 `macos_x64_small.dmg` 或 `macos_arm64_small.dmg`。
-
-          ### Linux
-
-          下载与架构匹配的 `linux_x64_small.deb` / `linux_arm64_small.deb`，或对应 `.rpm` 包安装。
-
-          ### Windows
-
-          下载下方 `windows_x64_small_setup.exe` / `windows_arm64_small_setup.exe`，双击安装。
-          MARKDOWN
+          printf '## Android 构建\n\n本次发布提供无签名 debug APK：`arm64-v8a`、`armeabi-v7a`、`x86_64` 和 `x86`。\n\n请下载与设备 ABI 匹配的 APK。Google Play 正式发布仍需要仓库外的 keystore 与签名配置。\n' > release-body.md
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
@@ -722,130 +259,3 @@ jobs:
           overwrite_files: true
           prerelease: ${{ inputs.release_type == 'pre_release' }}
           make_latest: ${{ inputs.release_type == 'latest' && 'true' || 'false' }}
-
-  update_homebrew_tap:
-    name: Update Homebrew Tap
-    if: inputs.release && inputs.release_type == 'latest'
-    runs-on: ubuntu-22.04
-    needs:
-      - prepare
-      - publish_release
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout Rust release tooling
-        uses: actions/checkout@v6
-        with:
-          path: source-repo
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.97.1
-
-      - name: Find macOS dmg assets
-        id: asset
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${{ needs.prepare.outputs.release_version }}"
-
-          arm_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .name' | head -n 1)
-          arm_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos_arm64_small\\.dmg$")) | .url' | head -n 1)
-          intel_name=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos_x64_small\\.dmg$")) | .name' | head -n 1)
-          intel_url=$(gh release view "$tag" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[] | select(.name | test("macos_x64_small\\.dmg$")) | .url' | head -n 1)
-
-          if [ -z "$arm_url" ] || [ -z "$intel_url" ]; then
-            echo "未找到完整 macOS small dmg 资产，跳过 Homebrew Tap 更新"
-            echo "  arm64: ${arm_name:-missing}"
-            echo "  x64:   ${intel_name:-missing}"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "arm_name=$arm_name" >> "$GITHUB_OUTPUT"
-          echo "arm_url=$arm_url" >> "$GITHUB_OUTPUT"
-          echo "intel_name=$intel_name" >> "$GITHUB_OUTPUT"
-          echo "intel_url=$intel_url" >> "$GITHUB_OUTPUT"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
-      - name: Compute sha256
-        if: steps.asset.outputs.skip != 'true'
-        id: sha
-        shell: bash
-        run: |
-          set -euo pipefail
-          arm_url="${{ steps.asset.outputs.arm_url }}"
-          intel_url="${{ steps.asset.outputs.intel_url }}"
-
-          echo "正在下载 arm64: $arm_url"
-          curl -fsSL "$arm_url" -o /tmp/epub-tool-arm64.dmg
-          sha_arm=$(shasum -a 256 /tmp/epub-tool-arm64.dmg | awk '{print $1}')
-
-          echo "正在下载 x64: $intel_url"
-          curl -fsSL "$intel_url" -o /tmp/epub-tool-x64.dmg
-          sha_intel=$(shasum -a 256 /tmp/epub-tool-x64.dmg | awk '{print $1}')
-
-          echo "sha256_arm=$sha_arm"
-          echo "sha256_intel=$sha_intel"
-          echo "sha256_arm=$sha_arm" >> "$GITHUB_OUTPUT"
-          echo "sha256_intel=$sha_intel" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout tap repo
-        if: steps.asset.outputs.skip != 'true'
-        uses: actions/checkout@v6
-        with:
-          repository: cnwxi/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: tap-repo
-
-      - name: Update cask formula
-        if: steps.asset.outputs.skip != 'true'
-        shell: bash
-        run: |
-          VERSION="${{ needs.prepare.outputs.asset_version }}"
-          SHA_ARM="${{ steps.sha.outputs.sha256_arm }}"
-          SHA_INTEL="${{ steps.sha.outputs.sha256_intel }}"
-          FORMULA="tap-repo/Casks/epub-tool-newui.rb"
-          VERSION_PLACEHOLDER='#{version}'
-          ARCH_PLACEHOLDER='#{arch}'
-          URL="https://github.com/cnwxi/epub_tool/releases/download/v${VERSION_PLACEHOLDER}/Epub.Tool.NewUI_${VERSION_PLACEHOLDER}_macos_${ARCH_PLACEHOLDER}_small.dmg"
-
-          echo "更新公式:"
-          echo "  version:      $VERSION"
-          echo "  sha256 arm:   $SHA_ARM"
-          echo "  sha256 intel: $SHA_INTEL"
-          echo "  url:          $URL"
-
-          cargo run --locked --manifest-path source-repo/xtask/Cargo.toml -- \
-            update-homebrew-cask \
-            "$FORMULA" \
-            "$VERSION" \
-            "$SHA_ARM" \
-            "$SHA_INTEL" \
-            "$URL"
-
-          echo "--- 更新后的公式 ---"
-          cat "$FORMULA"
-
-      - name: Commit and push
-        if: steps.asset.outputs.skip != 'true'
-        shell: bash
-        env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          cd tap-repo
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${TAP_TOKEN}@github.com/cnwxi/homebrew-tap.git"
-          git add Casks/epub-tool-newui.rb
-          if git diff --staged --quiet; then
-            echo "公式无变化，跳过提交"
-            exit 0
-          fi
-          git commit -m "Update epub-tool-newui to v${{ needs.prepare.outputs.asset_version }}"
-          git push origin main
