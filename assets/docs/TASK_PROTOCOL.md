@@ -37,15 +37,13 @@ TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 }
 ```
 
-`EngineRequest.operation` 是 `runTask` 或 `scanFonts`。`protocolVersion` 必须是 `PROTOCOL_VERSION_V1`；`requestId` 必须在每个事件与终止响应中回显。
+`EngineRequest.operation` 是 `runTask`。`protocolVersion` 必须是 `PROTOCOL_VERSION_V1`；`requestId` 必须在每个事件与终止响应中回显。
 
 任务枚举：
 
 - `TASK_TYPE_REFORMAT_EPUB`
 - `TASK_TYPE_DECRYPT_EPUB`
 - `TASK_TYPE_ENCRYPT_EPUB`
-- `TASK_TYPE_ENCRYPT_FONT`
-- `TASK_TYPE_DECRYPT_FONT`
 - `TASK_TYPE_WEBP_TO_IMG`
 - `TASK_TYPE_IMAGE_COMPRESS`
 - `TASK_TYPE_IMAGE_TO_WEBP`
@@ -55,13 +53,12 @@ TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 ## Options oneof
 
 - 无参数任务：`{ "empty": {} }`
-- 字体任务：`font.targetFontFamiliesByFile`、`targetFontFamilies`、`ocrCharPolicy`、`minOcrConfidence`
 - 图片压缩：`imageCompress.jpegQuality`、`webpQuality`、`pngToJpg`、`pngQuantize`
 - 图片格式转换：`imageConversion.quality`、`pngQuantize`
 - 简繁转换：`chineseConvert.direction`，值为 `s2t` 或 `t2s`
 - 更换封面：`replaceCover.coverPathByFile`
 
-`targetFontFamiliesByFile` 的 map value 是 `FontFamilies`，JSON 形式为 `{ "values": ["Family"] }`。任务类型和 option kind 不匹配时 adapter 直接拒绝请求，不让无效组合进入核心。
+任务类型和 option kind 不匹配时 adapter 直接拒绝请求，不让无效组合进入核心。
 
 ## 流事件
 
@@ -94,16 +91,14 @@ TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 
 最后一个事件携带完整 `TaskResult`。单文件失败与跳过分别进入 `errors`、`skipped`；`summary` 包含 `total`、`success`、`failed`、`skipped`。`status` 为 `success`、`partial` 或 `error`。
 
-`progress` 始终表示整个批量任务的 `0..100` 进度。核心任务可通过类型化文件内进度更新推进 `task.log`；运行时按当前文件索引折算为总体进度并保证不回退。字体 OCR 在首个字符、每 100 个字符及最后一个字符更新进度，OCR 阶段最高到当前文件的 99%，文件改写和写盘完成后的 `task.file.finished` 才到达该文件终点。
+`progress` 始终表示整个批量任务的 `0..100` 进度。核心任务可通过类型化文件内进度更新推进 `task.log`；运行时按当前文件索引折算为总体进度并保证不回退。文件改写和写盘完成后的 `task.file.finished` 才到达该文件终点。
 
-字体扫描用 `fontScanProgress` 流式返回每本 EPUB 的 `fontFamilies` 或结构化错误，终止响应使用 `fontScanResult`。
 
 ## 响应与错误
 
 `EngineResponse.payload` 是：
 
 - `taskResult`
-- `fontScanResult`
 - `error`
 
 协议/参数错误使用结构化 `EngineError`；任务处理错误按输入文件进入 `TaskResult.errors`。适配层当前使用的错误类别包括 `INVALID_ARGUMENT`、`IO_ERROR`、`DEPENDENCY_ERROR` 和 `INTERNAL`。

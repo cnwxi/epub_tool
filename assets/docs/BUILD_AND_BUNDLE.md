@@ -5,7 +5,7 @@
 应用由 Vue 前端、Tauri 壳层、统一 Rust EPUB 核心和运行资源组成：
 
 - Windows、macOS、Linux、Android、iOS 都将同一 Rust 核心链接进应用进程；
-- 所有平台携带 `PP-OCRv6_small_rec_onnx` 与 OpenCC 词典；
+- 所有平台携带 OpenCC 词典；
 - Protobuf 只用于 Tauri IPC，业务核心使用类型化 `TaskSpec`、`TaskOptions`、`TaskEvent`、`TaskResult`。
 
 ## 桌面构建
@@ -20,8 +20,7 @@ npm run tauri:build
 桌面 `beforeBuildCommand` 会执行 `build:bundle-assets`：
 
 1. 构建 Vue 前端；
-2. 以真实 Rust ONNX Runtime session 校验 OCR 模型；
-3. 由 Tauri 生成包含 Rust 核心的目标平台 bundle；macOS 会先准备官方 ONNX Runtime xcframework 并静态链接其通用切片，因此 Intel 与 Apple Silicon 都不依赖 `ort-sys` 的预编译下载。
+2. 由 Tauri 生成包含 Rust 核心的目标平台 bundle。
 
 发布 workflow 的桌面矩阵：
 
@@ -33,21 +32,9 @@ npm run tauri:build
 
 当前 macOS 配置使用 ad-hoc identity，Windows 安装包也未配置生产证书。CI 能验证构建和打包；正式代码签名、公证和信誉链需要仓库外凭据。
 
-## 移动 ONNX Runtime
+## 移动构建
 
-`xtask` 固定并校验以下官方 ONNX Runtime `1.24.3` 归档：
-
-| 平台 | 官方归档 | SHA-256 | 切片 / ABI |
-| --- | --- | --- | --- |
-| Android | `onnxruntime-android-1.24.3.aar` | `67397e4a970e75617f765d2015ceaf911917e1d822276cfb5792744e8085cbce` | arm64-v8a、armeabi-v7a、x86、x86_64 |
-| iOS | `onnxruntime-c-1.24.3.zip` | `b7eedc45932bac758ffd057cac0feb3f682269e47750b159e4c865145cbf0a8e` | ios-arm64、ios-arm64_x86_64-simulator |
-
-来源：
-
-- Android：`https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.24.3/onnxruntime-android-1.24.3.aar`
-- iOS：`https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.24.3.zip`
-
-Android 使用动态 `libonnxruntime.so`，由 `ORT_LIB_PATH` 与 `ORT_PREFER_DYNAMIC_LINK=1` 驱动 `ort-sys`，并复制到生成工程 `jniLibs`。iOS 使用静态 xcframework，由 `ORT_IOS_XCFWK_PATH` 驱动 `ort-sys`。生成和下载内容位于已忽略的 `src-tauri/.mobile-runtime/`。
+移动端构建直接调用 Tauri，不再下载额外 OCR/ONNX Runtime 依赖。
 
 ## Android
 
@@ -64,7 +51,7 @@ npm run tauri:android:build -- --debug --apk --ci
 | --- | --- | --- |
 | `aarch64` | `aarch64-linux-android` | `arm64-v8a` |
 
-本地与 CI 均固定构建 `aarch64`（`arm64-v8a`），避免生成包含全部 ABI 的 universal APK。CI 会检查 `lib/arm64-v8a/libonnxruntime.so` 已实际打入 APK。该 APK 是无签名编译产物；Play 发布需要 keystore、签名配置和商店凭据。
+本地与 CI 均固定构建 `aarch64`（`arm64-v8a`），避免生成包含全部 ABI 的 universal APK。该 APK 是无签名编译产物；Play 发布需要 keystore、签名配置和商店凭据。
 
 ## iOS
 
@@ -77,7 +64,7 @@ npm run tauri:ios:build -- aarch64-sim --debug --ci
 
 CI 执行两层验证：
 
-- `aarch64-apple-ios`：直接编译 device Rust static library，验证 device slice 和 ORT 静态链接，不生成 IPA；
+- `aarch64-apple-ios`：直接编译 device Rust static library，不生成 IPA；
 - `aarch64-apple-ios-sim`：通过 Tauri 构建 arm64 simulator app。
 
 device archive、IPA export、TestFlight/App Store 上传需要完整 Apple Team、证书和 provisioning profile；没有这些凭据时不能声明 device 发布完成。
@@ -95,7 +82,6 @@ cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D w
 cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
 npm run protocol:check
 npm run build
-npm run build:verify-ocr-model
 ```
 
 安装包还应在目标系统上做启动、任务执行、输出、日志和真实 EPUB 回归。宿主测试不能替代 Android/iOS 目标链接、真实设备或签名验证。

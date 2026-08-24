@@ -38,7 +38,6 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*": "ocr-models/PP-OCRv6_small_rec_onnx/",
       "bundle-resources/opencc/*": "opencc/"
     },
     "fileAssociations": [

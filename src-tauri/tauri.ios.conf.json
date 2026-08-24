@@ -24,7 +24,6 @@
       "minimumSystemVersion": "15.1"
     },
     "resources": {
-      "bundle-resources/ocr-models/PP-OCRv6_small_rec_onnx/*": "ocr-models/PP-OCRv6_small_rec_onnx/",
       "bundle-resources/opencc/*": "opencc/"
     }
   }

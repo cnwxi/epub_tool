@@ -17,37 +17,21 @@ protoc-bin-vendored = "3"
 pbjson-build = "0.7"
 
 [dependencies]
-blitz-dom = { version = "=0.3.0-beta.1", default-features = false }
-blitz-html = { version = "=0.3.0-beta.1", default-features = false }
-blitz-traits = { version = "=0.3.0-beta.1" }
 encoding_rs = "0.8"
-dom_query = { version = "0.27", default-features = false }
-fontdue = "0.9"
 image = { version = "0.25.5", default-features = false, features = ["bmp", "jpeg", "png", "webp"] }
-icu_properties = "2.2"
-ndarray = "0.17"
 percent-encoding = "2.3"
 png = "0.18"
-rand = "0.8"
 regex = "1.12"
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "api-24"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha1 = "0.10"
-style = { package = "stylo", version = "0.19" }
 prost = "0.13"
 pbjson = "0.7"
-ttf-parser = "0.25"
 tauri = { version = "2.2.5", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2.2.0"
 webp = "0.3"
-write-fonts = { version = "0.51", features = ["read"] }
-woff = "0.6.3"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 tauri-plugin-fs = "2.5.1"
-
-[target.'cfg(all(not(any(target_os = "android", target_os = "ios")), not(target_os = "macos")))'.dependencies]
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-native", "copy-dylibs", "api-24"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

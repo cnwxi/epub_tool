@@ -63,7 +63,6 @@ pub fn run() {
             commands::engine::get_platform_capabilities,
             commands::state::get_persisted_store_path,
             commands::engine::get_engine_status,
-            commands::tasks::list_font_targets_batch,
             commands::state::load_persisted_state,
             commands::files::open_path,
             commands::files::read_image_preview,

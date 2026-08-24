@@ -23,7 +23,6 @@ export function useTaskBridge() {
     supportsOpenPath: false,
     requiresOutputExport: false,
     supportsFileAssociations: false,
-    supportsFontOcr: false,
   });
 
   const refreshPlatformCapabilities = async (): Promise<PlatformCapabilities> => {
@@ -53,26 +52,6 @@ export function useTaskBridge() {
 
     return invoke<EngineResponse>("run_epub_task", {
       request,
-      onEvent: channel,
-    });
-  };
-
-  const listFontTargetsBatch = async (
-    filePaths: string[],
-    onEvent: (event: EngineEvent) => void,
-  ): Promise<EngineResponse> => {
-    if (!isTauriRuntime()) {
-      throw new Error("当前环境不支持该功能，请在桌面应用中使用。");
-    }
-    const channel = new Channel<EngineEvent>((event) => {
-      onEvent(event);
-    });
-    return invoke<EngineResponse>("list_font_targets_batch", {
-      request: {
-        protocolVersion: "PROTOCOL_VERSION_V1",
-        requestId: crypto.randomUUID(),
-        scanFonts: { inputFiles: filePaths },
-      },
       onEvent: channel,
     });
   };
@@ -193,7 +172,6 @@ export function useTaskBridge() {
     getEngineStatus,
     isMobileRuntime,
     isTauriRuntime,
-    listFontTargetsBatch,
     loadPersistedState,
     openPath,
     readImagePreview,

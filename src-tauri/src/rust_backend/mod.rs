@@ -1,5 +1,4 @@
 pub mod epub;
-pub mod font;
 pub mod image;
 pub mod text;
 pub(crate) mod text_encoding;
@@ -9,8 +8,6 @@ use crate::task_types::{
     FileIssue, TaskEvent, TaskOptions, TaskResult, TaskSpec, TaskSummary, TaskType,
 };
 use epub::{DecryptEpubTask, EncryptEpubTask, ReformatEpubTask};
-use font::DecryptFontTask;
-use font::EncryptFontTask;
 use image::{ImageProcessOutcome, ImageTask, ReplaceCoverTask};
 use std::{
     fs,
@@ -373,8 +370,6 @@ fn task_for(task_type: TaskType) -> Option<Box<dyn EpubTask>> {
         TaskType::ReformatEpub => Some(Box::new(ReformatEpubTask)),
         TaskType::DecryptEpub => Some(Box::new(DecryptEpubTask)),
         TaskType::EncryptEpub => Some(Box::new(EncryptEpubTask)),
-        TaskType::EncryptFont => Some(Box::new(EncryptFontTask)),
-        TaskType::DecryptFont => Some(Box::new(DecryptFontTask)),
         TaskType::ImageCompress => Some(Box::new(image::image_compress::task())),
         TaskType::ImageToWebp => Some(Box::new(image::image_to_webp::task())),
         TaskType::WebpToImg => Some(Box::new(image::webp_to_img::task())),
@@ -478,10 +473,10 @@ fn append_log(log_path: &Path, message: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        monotonic_file_progress, run, run_file, supports, task_progress_for_file, EpubTask,
-        TaskOutcome, TaskUpdate,
+        monotonic_file_progress, run, run_file, task_progress_for_file, EpubTask, TaskOutcome,
+        TaskUpdate,
     };
-    use crate::task_types::{FontTaskOptions, ImageTaskOptions, TaskOptions, TaskSpec, TaskType};
+    use crate::task_types::{ImageTaskOptions, TaskOptions, TaskSpec, TaskType};
     use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
     use std::{
         fs,
@@ -581,19 +576,6 @@ mod tests {
         );
         assert!(events.iter().all(|event| event.event == "task.log"));
         fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn font_capability_probe_leaves_epub_validation_to_each_file() {
-        let request = TaskSpec {
-            task_id: "font-capability".to_string(),
-            task_type: TaskType::EncryptFont,
-            input_files: vec!["missing.epub".into()],
-            output_dir: None,
-            options: TaskOptions::Font(FontTaskOptions::default()),
-        };
-
-        assert!(supports(&request));
     }
 
     #[test]

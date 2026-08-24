@@ -15,8 +15,6 @@ enum TaskType {
   TASK_TYPE_REFORMAT_EPUB = 1;
   TASK_TYPE_DECRYPT_EPUB = 2;
   TASK_TYPE_ENCRYPT_EPUB = 3;
-  TASK_TYPE_ENCRYPT_FONT = 4;
-  TASK_TYPE_DECRYPT_FONT = 5;
   TASK_TYPE_WEBP_TO_IMG = 6;
   TASK_TYPE_IMAGE_COMPRESS = 7;
   TASK_TYPE_IMAGE_TO_WEBP = 8;
@@ -25,17 +23,6 @@ enum TaskType {
 }
 
 message EmptyOptions {}
-
-message FontFamilies {
-  repeated string values = 1;
-}
-
-message FontOptions {
-  map<string, FontFamilies> target_font_families_by_file = 1;
-  repeated string target_font_families = 2;
-  optional string ocr_char_policy = 3;
-  optional double min_ocr_confidence = 4;
-}
 
 message ImageCompressOptions {
   optional uint32 jpeg_quality = 1;
@@ -60,7 +47,6 @@ message ReplaceCoverOptions {
 message TaskOptions {
   oneof kind {
     EmptyOptions empty = 1;
-    FontOptions font = 2;
     ImageCompressOptions image_compress = 3;
     ImageConversionOptions image_conversion = 4;
     ChineseConvertOptions chinese_convert = 5;
@@ -76,16 +62,11 @@ message RunTaskRequest {
   TaskOptions options = 5;
 }
 
-message FontScanRequest {
-  repeated string input_files = 1;
-}
-
 message EngineRequest {
   ProtocolVersion protocol_version = 1;
   string request_id = 2;
   oneof operation {
     RunTaskRequest run_task = 3;
-    FontScanRequest scan_fonts = 4;
   }
 }
 
@@ -125,25 +106,11 @@ message TaskEvent {
   TaskResult result = 11;
 }
 
-message FontTargetResult {
-  bool ok = 1;
-  string input_file = 2;
-  repeated string font_families = 3;
-  optional string error = 4;
-}
-
-message FontScanProgress {
-  uint32 current_index = 1;
-  uint32 total_files = 2;
-  FontTargetResult result = 3;
-}
-
 message EngineEvent {
   ProtocolVersion protocol_version = 1;
   string request_id = 2;
   oneof payload {
     TaskEvent task_event = 3;
-    FontScanProgress font_scan_progress = 4;
   }
 }
 
@@ -158,11 +125,6 @@ message EngineResponse {
   string request_id = 2;
   oneof payload {
     TaskResult task_result = 3;
-    FontScanResult font_scan_result = 4;
     EngineError error = 5;
   }
-}
-
-message FontScanResult {
-  repeated FontTargetResult results = 1;
 }

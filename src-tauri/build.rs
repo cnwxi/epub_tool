@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:rerun-if-env-changed=EPUB_TOOL_DEFAULT_OCR_MODEL_NAME");
     let protoc = protoc_bin_vendored::protoc_bin_path()?;
     // SAFETY: Cargo invokes this build script before compiling this crate, so
     // changing PROTOC cannot race with application code.

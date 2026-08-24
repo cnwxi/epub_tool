@@ -10,7 +10,6 @@ pub struct PlatformCapabilities {
     pub supports_open_path: bool,
     pub requires_output_export: bool,
     pub supports_file_associations: bool,
-    pub supports_font_ocr: bool,
 }
 
 impl PlatformCapabilities {
@@ -24,7 +23,6 @@ impl PlatformCapabilities {
             supports_open_path: !mobile,
             requires_output_export: mobile,
             supports_file_associations: true,
-            supports_font_ocr: true,
         }
     }
 }
@@ -58,6 +56,5 @@ mod tests {
         assert!(capabilities.supports_directory_scan);
         assert!(capabilities.supports_open_path);
         assert!(!capabilities.requires_output_export);
-        assert!(capabilities.supports_font_ocr);
     }
 }

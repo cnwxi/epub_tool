@@ -12,8 +12,6 @@ pub enum TaskType {
     ReformatEpub,
     DecryptEpub,
     EncryptEpub,
-    EncryptFont,
-    DecryptFont,
     WebpToImg,
     ImageCompress,
     ImageToWebp,
@@ -27,8 +25,6 @@ impl TaskType {
             Self::ReformatEpub => "reformat_epub",
             Self::DecryptEpub => "decrypt_epub",
             Self::EncryptEpub => "encrypt_epub",
-            Self::EncryptFont => "encrypt_font",
-            Self::DecryptFont => "decrypt_font",
             Self::WebpToImg => "webp_to_img",
             Self::ImageCompress => "image_compress",
             Self::ImageToWebp => "image_to_webp",
@@ -36,25 +32,6 @@ impl TaskType {
             Self::ReplaceCover => "replace_cover",
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct FontTaskOptions {
-    #[serde(default)]
-    pub target_font_families_by_file: BTreeMap<String, Vec<String>>,
-    #[serde(default)]
-    pub target_font_families: Vec<String>,
-    #[serde(default)]
-    pub ocr_char_policy: Option<OcrCharPolicy>,
-    #[serde(default)]
-    pub min_ocr_confidence: Option<f64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OcrCharPolicy {
-    Strict,
-    Compatible,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,7 +71,6 @@ pub struct ReplaceCoverOptions {
 pub enum TaskOptions {
     #[default]
     Empty,
-    Font(FontTaskOptions),
     Image(ImageTaskOptions),
     ChineseConvert {
         direction: Option<ChineseConversionDirection>,
@@ -103,13 +79,6 @@ pub enum TaskOptions {
 }
 
 impl TaskOptions {
-    pub fn font(&self) -> Option<&FontTaskOptions> {
-        match self {
-            Self::Font(options) => Some(options),
-            _ => None,
-        }
-    }
-
     pub fn image(&self) -> Option<&ImageTaskOptions> {
         match self {
             Self::Image(options) => Some(options),

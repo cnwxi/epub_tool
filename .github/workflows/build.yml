@@ -129,20 +129,14 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Verify bundled ONNX OCR model with Rust
-        run: npm run build:verify-ocr-model
-
   build:
-    name: Build ${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.ocr.variant }}
+    name: Build ${{ matrix.target.platform }}-${{ matrix.target.arch }}
     runs-on: ${{ matrix.target.runner }}
     needs:
       - prepare
       - quality
     permissions:
       contents: read
-    env:
-      EPUB_TOOL_OCR_MODEL_NAME: ${{ matrix.ocr.model_name }}
-      EPUB_TOOL_DEFAULT_OCR_MODEL_NAME: ${{ matrix.ocr.model_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -175,13 +169,6 @@ jobs:
             arch: arm64
             runner: macos-14
             artifact_name: macos-arm64-bundle
-        ocr:
-          - variant: small
-            model_name: PP-OCRv6_small_rec
-          # medium 版发布产物暂时关闭；保留模型配置，避免发布资产体积翻倍。
-          # - variant: medium
-          #   model_name: PP-OCRv6_medium_rec
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -322,7 +309,6 @@ jobs:
           ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
           PLATFORM: ${{ matrix.target.platform }}
           ARCH: ${{ matrix.target.arch }}
-          OCR_VARIANT: ${{ matrix.ocr.variant }}
           PRODUCT_STEM: Epub.Tool.NewUI
         run: |
           set -euo pipefail
@@ -335,19 +321,19 @@ jobs:
             filename="$(basename "$file")"
             case "$filename" in
               *.deb)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.deb"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.deb"
                 ;;
               *.rpm)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.rpm"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.rpm"
                 ;;
               *.dmg)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.dmg"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.dmg"
                 ;;
               *.app.tar.gz)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}.app.tar.gz"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}.app.tar.gz"
                 ;;
               *-setup.exe)
-                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_${OCR_VARIANT}_setup.exe"
+                target="${PRODUCT_STEM}_${ASSET_VERSION}_${PLATFORM}_${ARCH}_setup.exe"
                 ;;
               *)
                 continue
@@ -371,7 +357,6 @@ jobs:
           ASSET_VERSION: ${{ needs.prepare.outputs.asset_version }}
           PLATFORM: ${{ matrix.target.platform }}
           ARCH: ${{ matrix.target.arch }}
-          OCR_VARIANT: ${{ matrix.ocr.variant }}
           PRODUCT_STEM: Epub.Tool.NewUI
         run: |
           $ErrorActionPreference = 'Stop'
@@ -383,19 +368,19 @@ jobs:
             $target = $null
             switch -Regex ($_.Name) {
               '\.deb$' {
-                $target = '{0}_{1}_{2}_{3}_{4}.deb' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+                $target = '{0}_{1}_{2}_{3}.deb' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
               }
               '\.rpm$' {
-                $target = '{0}_{1}_{2}_{3}_{4}.rpm' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+                $target = '{0}_{1}_{2}_{3}.rpm' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
               }
               '\.dmg$' {
-                $target = '{0}_{1}_{2}_{3}_{4}.dmg' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+                $target = '{0}_{1}_{2}_{3}.dmg' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
               }
               '\.app\.tar\.gz$' {
-                $target = '{0}_{1}_{2}_{3}_{4}.app.tar.gz' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+                $target = '{0}_{1}_{2}_{3}.app.tar.gz' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
               }
               '-setup\.exe$' {
-                $target = '{0}_{1}_{2}_{3}_{4}_setup.exe' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH, $env:OCR_VARIANT
+                $target = '{0}_{1}_{2}_{3}_setup.exe' -f $env:PRODUCT_STEM, $env:ASSET_VERSION, $env:PLATFORM, $env:ARCH
               }
             }
             if ($null -ne $target) {
@@ -412,7 +397,7 @@ jobs:
         if: inputs.release
         uses: actions/upload-artifact@v7
         with:
-          name: release-assets-${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.ocr.variant }}
+          name: release-assets-${{ matrix.target.platform }}-${{ matrix.target.arch }}
           path: release-assets
           if-no-files-found: error
 
@@ -420,7 +405,7 @@ jobs:
         if: ${{ !inputs.release }}
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.target.artifact_name }}-${{ matrix.ocr.variant }}
+          name: ${{ matrix.target.artifact_name }}
           path: src-tauri/target/release/bundle
           if-no-files-found: error
 
@@ -487,26 +472,10 @@ jobs:
       - name: Initialize generated Android project
         run: npm run tauri -- android init --ci --skip-targets-install
 
-      - name: Build unsigned debug APK with bundled ONNX Runtime
+      - name: Build unsigned debug APK
         run: >-
           cargo run --locked --manifest-path xtask/Cargo.toml --
           mobile-build android aarch64 --debug --apk --ci
-
-      - name: Verify packaged ONNX Runtime library
-        shell: bash
-        env:
-          ANDROID_ABI: arm64-v8a
-        run: |
-          set -euo pipefail
-          source_library="src-tauri/gen/android/app/src/main/jniLibs/${ANDROID_ABI}/libonnxruntime.so"
-          test -f "$source_library"
-
-          apk=$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)
-          if [ -z "$apk" ]; then
-            echo "Android 构建未生成 APK" >&2
-            exit 1
-          fi
-          jar tf "$apk" | grep -Fx "lib/${ANDROID_ABI}/libonnxruntime.so"
 
       - name: Upload unsigned Android compile artifact
         if: ${{ !inputs.release }}
@@ -533,13 +502,13 @@ jobs:
 
           release_dir="release-assets"
           mkdir -p "$release_dir"
-          cp "$apk" "$release_dir/${PRODUCT_STEM}_${ASSET_VERSION}_android_arm64_small.apk"
+          cp "$apk" "$release_dir/${PRODUCT_STEM}_${ASSET_VERSION}_android_arm64.apk"
 
       - name: Upload renamed Android release asset
         if: inputs.release
         uses: actions/upload-artifact@v7
         with:
-          name: release-assets-android-arm64-small
+          name: release-assets-android-arm64
           path: release-assets
           if-no-files-found: error
 
@@ -575,15 +544,10 @@ jobs:
       - name: Initialize generated iOS project
         run: npm run tauri -- ios init --ci --skip-targets-install
 
-      - name: Prepare verified iOS ONNX Runtime framework
-        run: cargo run --locked --manifest-path xtask/Cargo.toml -- prepare-mobile-ort ios
-
       - name: Compile device Rust library without signing
-        env:
-          ORT_IOS_XCFWK_PATH: ${{ github.workspace }}/src-tauri/.mobile-runtime/onnxruntime-c-1.24.3/onnxruntime.xcframework
         run: cargo build --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios --lib
 
-      - name: Build unsigned simulator app with bundled ONNX Runtime
+      - name: Build unsigned simulator app
         run: >-
           cargo run --locked --manifest-path xtask/Cargo.toml --
           mobile-build ios aarch64-sim --debug --ci
@@ -727,7 +691,7 @@ jobs:
           cat >> release-body.md <<'MARKDOWN'
           ## 安装
 
-          当前发布包内置 small OCR 模型，速度更快，安装包体积更小。
+          当前发布包仅包含 Rust 核心与 OpenCC 资源。
 
           ### macOS
 

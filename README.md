@@ -20,8 +20,6 @@
 - `reformat_epub`：重构 EPUB 目录结构、OPF 清单与资源引用，标准化文件布局
 - `decrypt_epub`：还原 EPUB 内文件名与资源引用混淆，不提供 DRM 内容解密
 - `encrypt_epub`：生成文件名与资源引用混淆版 EPUB
-- `encrypt_font`：按每本 EPUB 单独选择字体 family，对内嵌字体与正文映射执行字形混淆
-- `decrypt_font`：按每本 EPUB 单独选择字体 family，渲染混淆字形，经内置 ONNX OCR 识别后回写正文，并用可见占位符标记低置信度字符
 - `image_compress`：压缩 EPUB 内 JPEG、PNG 与 WebP 图片，仅保留体积更小的结果；可选将无透明通道 PNG 转为 JPEG，或将仍保留为 PNG 的图片降色至 256 色
 - `webp_to_img`：将 EPUB 内透明 WebP 转为 PNG、非透明 WebP 转为 JPEG，并同步更新清单和内容引用
 - `image_to_webp`：将 EPUB 内 JPG、PNG、BMP 转为 WebP，并同步更新清单和内容引用；旧版阅读器可能不支持 WebP
@@ -31,8 +29,6 @@
 ## 当前实现
 
 各平台复用统一任务界面、类型化任务协议、进程内运行时和 Rust 业务核心。平台差异只集中在权限与文件适配层：桌面端负责目录扫描和路径打开；移动端负责系统文件 URI、缓存暂存和结果导出。
-
-字体扫描、加密和解密共用 `EPUB/XHTML/CSS → Stylo computed style → FontRequest → FontFaceResolver → 字符级字体分配` 流水线。Stylo 是唯一生产 CSS 选择器、级联与计算样式路径；字体容器支持 TTF、OTF、WOFF、WOFF2。桌面与移动均携带 ONNX OCR 模型并启用字体解密，低置信度结果会保留 Top-K 候选、置信度和字形图片供复核，不会猜测替换。
 
 平台覆盖：
 
@@ -90,16 +86,15 @@ brew upgrade --cask epub-tool-newui
 ## 本地开发与编译
 
 详见 [本地开发指南](./assets/docs/LOCAL_DEVELOPMENT.md)。其中包括 Linux、macOS、Windows、Android、iOS 的
-系统依赖，Node.js 与 Rust 环境配置、应用启动、Rust 测试、安装包构建、OCR 资源校验及
-`cargo metadata` 报错排查、移动 ONNX Runtime 准备和签名边界。
+系统依赖、Node.js 与 Rust 环境配置、应用启动、Rust 测试、安装包构建和签名边界。
 
 ## 仓库结构
 
 - `frontend/`：Vue 3 跨平台前端
-- `src-tauri/`：Tauri 壳层、Rust 任务引擎、ONNX/OpenCC 资源与打包配置
-- `src-tauri/src/rust_backend/`：按 `epub`、`image`、`text`、`font` 分类的任务实现
+- `src-tauri/`：Tauri 壳层、Rust 任务引擎、OpenCC 资源与打包配置
+- `src-tauri/src/rust_backend/`：按 `epub`、`image`、`text` 分类的任务实现
 - `src-tauri/tests/`：核心任务、输出、事件和进程内运行时集成回归
-- `xtask/`：OCR 模型校验、移动 ONNX Runtime、移动构建和发布维护工具
+- `xtask/`：移动构建和发布维护工具
 - `proto/`：Tauri IPC Protobuf wire contract
 - `assets/docs/`：架构、构建、协议与发布说明
 - `assets/img/`：README、前端与应用打包共用图像资源
@@ -117,8 +112,6 @@ brew upgrade --cask epub-tool-newui
 
 - 处理失败时，先看“最近一次执行摘要”中的失败原因、跳过原因，再看“处理日志”
 - 如果书籍结构异常，可先执行“格式化”再继续其他流程
-- `encrypt_font` 只处理 EPUB 内已嵌入的字体，不处理系统字体
-- `decrypt_font` 只使用内置 ONNX OCR 模型，不依赖系统 OCR 工具或运行时联网下载
 - `decrypt_epub` 只还原文件名与资源引用混淆；如果 EPUB 内容本身被 DRM 或加密资源保护，工具无法还原明文
 - `image_to_webp` 的输出在 EPUB 2 或较旧的阅读器中可能无法显示
 - `replace_cover` 会更新 EPUB 中常见的封面资源引用；未选择封面的队列项会跳过

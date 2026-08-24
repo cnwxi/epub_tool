@@ -22,8 +22,6 @@ const executionSectionKeys: SectionKey[] = [
   "reformat_epub",
   "decrypt_epub",
   "encrypt_epub",
-  "decrypt_font",
-  "encrypt_font",
   "image_compress",
   "webp_to_img",
   "image_to_webp",

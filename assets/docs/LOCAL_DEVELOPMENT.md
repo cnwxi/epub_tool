@@ -69,7 +69,7 @@ npm --prefix frontend ci
 npm run tauri:dev
 ```
 
-启动顺序是：校验内置 ONNX OCR 模型、启动 Vite、启动 Tauri。桌面与移动任务路径一致：
+启动顺序是：启动 Vite、启动 Tauri。桌面与移动任务路径一致：
 
 ```text
 Vue -> Tauri IPC -> spawn_blocking -> in-process EngineRuntime -> rust_backend
@@ -102,8 +102,6 @@ cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warni
 npm run protocol:check
 npm run build
 
-# 使用真实 Rust ONNX Runtime session 校验模型输入、输出和字典维度
-npm run build:verify-ocr-model
 ```
 
 `src-tauri/tests/core_regression.rs` 使用运行时生成的稳定 EPUB fixture 覆盖输出后缀、跳过行为、加密/解密往返、简繁转换和任务事件/结果。
@@ -115,7 +113,7 @@ npm run build:bundle-assets
 npm run tauri:build
 ```
 
-`build:bundle-assets` 构建前端并验证 OCR 模型。安装包携带前端、进程内 Rust 核心、OCR 模型和 OpenCC 词典。
+`build:bundle-assets` 构建前端。安装包携带前端、进程内 Rust 核心和 OpenCC 词典。
 
 ## Android 构建
 
@@ -137,15 +135,7 @@ npm run tauri:android:build -- --debug --apk --ci
 npm run tauri:android:dev -- aarch64
 ```
 
-该命令通过 Rust xtask：
-
-1. 使用宿主 ONNX Runtime 验证 OCR 模型；
-2. 下载并校验 ONNX Runtime Android `1.24.3` AAR；
-3. 提取目标 ABI 的 `libonnxruntime.so`；
-4. 复制到生成工程的 `app/src/main/jniLibs/<abi>/`；
-5. 设置 `ORT_LIB_PATH` 与 `ORT_PREFER_DYNAMIC_LINK=1` 后调用 Tauri build。
-
-离线时可设置 `EPUB_TOOL_ORT_ANDROID_ARCHIVE` 指向已下载且校验和匹配的 AAR。
+该命令通过 Rust xtask 调用 Tauri build，不再下载额外运行时。
 
 ## iOS 构建
 
@@ -167,14 +157,12 @@ npm run tauri:ios:build -- aarch64-sim --debug --ci
 npm run tauri:ios:dev -- aarch64-sim
 ```
 
-该命令验证 OCR 模型，下载并校验 ONNX Runtime iOS `1.24.3` xcframework，设置 `ORT_IOS_XCFWK_PATH` 后调用 Tauri build。离线时可设置 `EPUB_TOOL_ORT_IOS_ARCHIVE` 指向已下载且校验和匹配的归档。
+该命令通过 Rust xtask 调用 Tauri build，不再下载额外运行时。
 
 只验证 device Rust library、避免进入签名 archive/export：
 
 ```bash
-cargo run --locked --manifest-path xtask/Cargo.toml -- prepare-mobile-ort ios
-ORT_IOS_XCFWK_PATH="$PWD/src-tauri/.mobile-runtime/onnxruntime-c-1.24.3/onnxruntime.xcframework" \
-  cargo build --locked --manifest-path src-tauri/Cargo.toml \
+cargo build --locked --manifest-path src-tauri/Cargo.toml \
   --target aarch64-apple-ios --lib
 ```
 
