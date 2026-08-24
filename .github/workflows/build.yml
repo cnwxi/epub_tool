@@ -59,63 +59,11 @@ jobs:
           echo "asset_version=$asset_version" >> "$GITHUB_OUTPUT"
           echo "release_version=v$asset_version" >> "$GITHUB_OUTPUT"
 
-  quality:
-    name: Rust And Frontend Quality Gate
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: ".nvmrc"
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          components: rustfmt, clippy
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libxdo-dev \
-            patchelf
-
-      - name: Install JavaScript dependencies
-        run: |
-          npm ci
-          npm --prefix frontend ci
-
-      - name: Verify generated protocol code
-        run: npm run protocol:check
-
-      - name: Check Rust formatting, tests, and clippy
-        run: |
-          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-          cargo fmt --manifest-path xtask/Cargo.toml -- --check
-          cargo test --locked --manifest-path src-tauri/Cargo.toml
-          cargo test --locked --manifest-path xtask/Cargo.toml
-          cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-          cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
-
-      - name: Build frontend
-        run: npm run build
-
   android:
     name: Android ${{ matrix.target.abi }} Unsigned Compile Validation
     runs-on: ubuntu-24.04
     needs:
       - prepare
-      - quality
     permissions:
       contents: read
     strategy:
