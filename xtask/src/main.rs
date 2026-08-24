@@ -47,6 +47,9 @@ fn npm() -> Command {
     }
 }
 fn build(platform: &str, args: &[String]) -> Result<(), String> {
+    if platform == "android" {
+        ensure_android_project_icon()?;
+    }
     let mut command = npm();
     command.current_dir(root()?).args(["run", "tauri", "--"]);
     if platform == "desktop" {
@@ -64,6 +67,9 @@ fn build(platform: &str, args: &[String]) -> Result<(), String> {
         .ok_or_else(|| format!("Tauri 构建失败: {status}"))
 }
 fn dev(platform: &str, args: &[String]) -> Result<(), String> {
+    if platform == "android" {
+        ensure_android_project_icon()?;
+    }
     let mut command = npm();
     command
         .current_dir(root()?)
@@ -89,6 +95,68 @@ fn mobile_target_args(platform: &str, args: &[String]) -> Vec<String> {
     command_args.extend_from_slice(&args[1..]);
     command_args
 }
+
+fn ensure_android_project_icon() -> Result<(), String> {
+    let root = root()?;
+    let project_dir = root.join("src-tauri/gen/android");
+    if !project_dir.join("app/build.gradle.kts").is_file() {
+        let status = npm()
+            .current_dir(&root)
+            .args([
+                "run",
+                "tauri",
+                "--",
+                "android",
+                "init",
+                "--ci",
+                "--skip-targets-install",
+            ])
+            .status()
+            .map_err(|error| format!("初始化 Android 原生工程失败: {error}"))?;
+        if !status.success() {
+            return Err(format!("初始化 Android 原生工程失败: {status}"));
+        }
+    }
+
+    let icon_output = root.join("src-tauri/.icon-build");
+    let status = npm()
+        .current_dir(&root)
+        .args([
+            "run",
+            "tauri",
+            "--",
+            "icon",
+            "assets/img/icon.png",
+            "--output",
+            "src-tauri/.icon-build",
+        ])
+        .status()
+        .map_err(|error| format!("生成 Android launcher 图标失败: {error}"))?;
+    if !status.success() {
+        return Err(format!("生成 Android launcher 图标失败: {status}"));
+    }
+
+    let source = icon_output.join("android");
+    let destination = project_dir.join("app/src/main/res");
+    copy_directory_contents(&source, &destination)
+        .map_err(|error| format!("同步 Android launcher 图标失败: {error}"))
+}
+
+fn copy_directory_contents(source: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_directory_contents(&source_path, &destination_path)?;
+        } else {
+            fs::copy(source_path, destination_path)?;
+        }
+    }
+    Ok(())
+}
+
 fn update_homebrew_cask(args: &[String]) -> Result<(), String> {
     let [formula, version, arm, intel, url] = args else {
         return Err(usage());

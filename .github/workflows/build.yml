@@ -132,6 +132,36 @@ jobs:
           cargo run --locked --manifest-path xtask/Cargo.toml --
           mobile-build android ${{ matrix.target.tauri_target }} --split-per-abi --apk --ci
 
+      - name: Verify Android APK metadata and launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f -path '*/release/*.apk' -print -quit)
+          if [ -z "$apk" ]; then
+            echo "未找到 release Android APK" >&2
+            exit 1
+          fi
+          aapt2=$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 \
+            | sort -V | tail -n 1)
+          if [ -z "$aapt2" ]; then
+            echo "Android SDK 中未找到 aapt2" >&2
+            exit 1
+          fi
+          badging=$("$aapt2" dump badging "$apk")
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)
+          config_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          test -n "$cargo_version"
+          test "$cargo_version" = "$config_version"
+          grep -F "versionName='$cargo_version'" <<<"$badging"
+          grep -F "application-icon-" <<<"$badging"
+          cmp \
+            src-tauri/.icon-build/android/mipmap-xxxhdpi/ic_launcher.png \
+            src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          cmp \
+            src-tauri/.icon-build/android/mipmap-xxxhdpi/ic_launcher_foreground.png \
+            src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
+
       - name: Sign Android release APK
         shell: bash
         env:
