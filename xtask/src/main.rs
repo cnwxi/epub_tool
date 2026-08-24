@@ -119,6 +119,7 @@ fn ensure_android_project_icon() -> Result<(), String> {
     }
 
     let icon_output = root.join("src-tauri/.icon-build");
+    let icon_output_arg = icon_output.to_string_lossy().into_owned();
     let status = npm()
         .current_dir(&root)
         .args([
@@ -128,8 +129,8 @@ fn ensure_android_project_icon() -> Result<(), String> {
             "icon",
             "assets/img/icon.png",
             "--output",
-            "src-tauri/.icon-build",
         ])
+        .arg(&icon_output_arg)
         .status()
         .map_err(|error| format!("生成 Android launcher 图标失败: {error}"))?;
     if !status.success() {
@@ -137,6 +138,12 @@ fn ensure_android_project_icon() -> Result<(), String> {
     }
 
     let source = icon_output.join("android");
+    if !source.is_dir() {
+        return Err(format!(
+            "Android launcher 图标目录不存在: {}",
+            source.display()
+        ));
+    }
     let destination = project_dir.join("app/src/main/res");
     copy_directory_contents(&source, &destination)
         .map_err(|error| format!("同步 Android launcher 图标失败: {error}"))
