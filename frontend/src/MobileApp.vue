@@ -140,6 +140,7 @@ const runTask = async () => {
     });
     if (response.error?.message) logs.value.push(response.error.message);
     result.value = response.taskResult ?? null;
+    if (response.taskResult) files.value = [];
     if (response.taskResult?.status) logs.value.push(`状态：${response.taskResult.status}`);
   } catch (error) {
     logs.value.push(toErrorMessage(error));
