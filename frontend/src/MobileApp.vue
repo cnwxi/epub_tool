@@ -193,7 +193,10 @@ onMounted(async () => {
             <button type="button" class="ghost-btn" @click="clearResult">清空</button>
           </div>
         </div>
-        <p class="muted">成功 {{ result.summary.success }} 项，失败 {{ result.summary.failed }} 项。</p>
+        <p class="muted">
+          共 {{ result.summary?.total ?? 0 }} 项，成功 {{ result.summary?.success ?? 0 }} 项，失败
+          {{ result.summary?.failed ?? 0 }} 项，跳过 {{ result.summary?.skipped ?? 0 }} 项。
+        </p>
         <p v-if="result.outputs.length" class="mobile-save-hint">处理已完成，请点击下方“导出”按钮并选择保存位置。</p>
         <div v-if="result.outputs.length" class="mobile-output-list"><button v-for="output in result.outputs" :key="output" type="button" class="ghost-btn" @click="exportResult(output)">{{ `导出 ${output.split(/[\\/]/).pop()}` }}</button></div>
       </article>
