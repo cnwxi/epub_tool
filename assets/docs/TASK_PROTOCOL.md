@@ -42,6 +42,8 @@ TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 任务枚举：
 
 - `TASK_TYPE_REFORMAT_EPUB`
+- `TASK_TYPE_DECRYPT_EPUB`
+- `TASK_TYPE_ENCRYPT_EPUB`
 - `TASK_TYPE_WEBP_TO_IMG`
 - `TASK_TYPE_IMAGE_COMPRESS`
 - `TASK_TYPE_IMAGE_TO_WEBP`

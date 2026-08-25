@@ -1,5 +1,7 @@
 export type TaskType =
   | "reformat_epub"
+  | "decrypt_epub"
+  | "encrypt_epub"
   | "webp_to_img"
   | "image_compress"
   | "image_to_webp"
