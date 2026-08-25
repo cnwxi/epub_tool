@@ -21,7 +21,7 @@ npm run tauri:android:build -- aarch64 --split-per-abi --apk --ci
 
 可用目标：`aarch64`、`armv7`、`x86_64`、`i686`，分别对应 `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86`。
 
-Android 构建需要 JDK 17、Android SDK 36、NDK `29.0.13846066` 和对应 Rust target。
+Android 构建需要 JDK 17、Android SDK 36、NDK `29.0.14206865` 和对应 Rust target。
 
 ## 验证
 

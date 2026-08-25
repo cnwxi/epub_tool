@@ -7,7 +7,7 @@
 - Node.js 版本见 `.nvmrc`
 - JDK 17
 - Android SDK 36
-- Android NDK `29.0.13846066`
+- Android NDK `29.0.14206865`
 - Rust targets：`aarch64-linux-android`、`armv7-linux-androideabi`、`x86_64-linux-android`、`i686-linux-android`
 
 ## 命令

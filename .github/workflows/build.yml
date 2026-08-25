@@ -84,7 +84,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"
           echo "$sdk_root/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$sdk_root/platform-tools" >> "$GITHUB_PATH"
-          "$sdk_root/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;29.0.13846066"
+          "$sdk_root/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;29.0.14206865"
       - name: Install JavaScript dependencies
         run: |
           npm ci
@@ -92,7 +92,22 @@ jobs:
       - name: Initialize generated Android project
         run: npm run tauri -- android init --ci --skip-targets-install
       - name: Build release APK
-        run: cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build android ${{ matrix.target.tauri_target }} --split-per-abi --apk --ci
+        shell: bash
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.internal.http.connectionTimeout=120000 -Dorg.gradle.internal.http.socketTimeout=120000"
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "Android build attempt $attempt"
+            if cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build android ${{ matrix.target.tauri_target }} --split-per-abi --apk --ci --verbose; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Android build failed (attempt $attempt), waiting before retry..."
+              sleep $((attempt * 20))
+            fi
+          done
+          exit 1
       - name: Verify APK
         shell: bash
         run: |
