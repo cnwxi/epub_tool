@@ -7,7 +7,7 @@ pub mod util;
 use crate::task_types::{
     FileIssue, TaskEvent, TaskOptions, TaskResult, TaskSpec, TaskSummary, TaskType,
 };
-use epub::{DecryptEpubTask, EncryptEpubTask, ReformatEpubTask};
+use epub::ReformatEpubTask;
 use image::{ImageProcessOutcome, ImageTask, ReplaceCoverTask};
 use std::{
     fs,
@@ -368,8 +368,6 @@ fn take_update_error(error: &std::cell::RefCell<Option<String>>) -> Result<(), S
 fn task_for(task_type: TaskType) -> Option<Box<dyn EpubTask>> {
     match task_type {
         TaskType::ReformatEpub => Some(Box::new(ReformatEpubTask)),
-        TaskType::DecryptEpub => Some(Box::new(DecryptEpubTask)),
-        TaskType::EncryptEpub => Some(Box::new(EncryptEpubTask)),
         TaskType::ImageCompress => Some(Box::new(image::image_compress::task())),
         TaskType::ImageToWebp => Some(Box::new(image::image_to_webp::task())),
         TaskType::WebpToImg => Some(Box::new(image::webp_to_img::task())),

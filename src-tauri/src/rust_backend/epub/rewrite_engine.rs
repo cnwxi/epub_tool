@@ -1,10 +1,7 @@
-//! Shared resource rewrite engine for `encrypt_epub.rs` and `decrypt_epub.rs`.
+//! EPUB resource rewrite engine used by the reformat task.
 
 use super::{
-    task_base::{
-        basename, md5, md5_hex, replace_tag_block, split_extension, split_slim_href, ManifestItem,
-        ParsedBook, ResourceType,
-    },
+    task_base::{basename, replace_tag_block, split_extension, ParsedBook, ResourceType},
     workspace::{resolve_reference, EpubWorkspace},
 };
 use crate::rust_backend::text_encoding::{
@@ -16,28 +13,10 @@ use std::{
     sync::LazyLock,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RewriteMode {
-    Reformat,
-    Encrypt,
-    Decrypt,
-}
-
 #[derive(Debug, Clone)]
 struct Target {
     filename: String,
     resource_type: ResourceType,
-}
-
-pub fn is_encrypted_layout(book: &ParsedBook, workspace: &EpubWorkspace) -> bool {
-    workspace
-        .members
-        .keys()
-        .any(|path| path.eq_ignore_ascii_case("META-INF/encryption.xml"))
-        || book
-            .items
-            .iter()
-            .any(|item| has_unsafe_basename(&item.href))
 }
 
 pub fn supports_rewrite(workspace: &EpubWorkspace) -> Result<(), String> {
@@ -70,20 +49,10 @@ pub fn supports_rewrite(workspace: &EpubWorkspace) -> Result<(), String> {
     Ok(())
 }
 
-pub fn rewrite(
-    workspace: &mut EpubWorkspace,
-    mode: RewriteMode,
-    log: &mut dyn FnMut(String),
-) -> Result<(), String> {
+pub fn rewrite(workspace: &mut EpubWorkspace, log: &mut dyn FnMut(String)) -> Result<(), String> {
     let book = ParsedBook::parse(workspace)?;
     book.ensure_all_resources_are_manifested(workspace)?;
-    let is_encrypted = is_encrypted_layout(&book, workspace);
-    if (mode == RewriteMode::Encrypt && is_encrypted)
-        || (mode == RewriteMode::Decrypt && !is_encrypted)
-    {
-        return Err("当前 EPUB 的加密状态不适合 Rust 重写".to_string());
-    }
-    let plan = RewritePlan::build(&book, mode, log)?;
+    let plan = RewritePlan::build(&book, log)?;
     let mut output = BTreeMap::new();
     output.insert("mimetype".to_string(), b"application/epub+zip".to_vec());
     output.insert(
@@ -172,62 +141,23 @@ fn rewrite_container_rootfile(container: &[u8]) -> Result<Vec<u8>, String> {
 struct RewritePlan {
     targets: BTreeMap<String, Target>,
     output_ids: BTreeMap<String, String>,
-    mode: RewriteMode,
 }
 
 impl RewritePlan {
-    fn build(
-        book: &ParsedBook,
-        mode: RewriteMode,
-        log: &mut dyn FnMut(String),
-    ) -> Result<Self, String> {
-        let mut image_id_by_href = BTreeMap::new();
-        for item in &book.items {
-            let (base, _, slim) = split_slim_href(&item.href);
-            if item.resource_type == ResourceType::Image && !slim {
-                image_id_by_href.insert(base.to_ascii_lowercase(), item.id.clone());
-            }
-        }
+    fn build(book: &ParsedBook, log: &mut dyn FnMut(String)) -> Result<Self, String> {
         let mut output_ids = BTreeMap::new();
         let mut provisional = BTreeMap::new();
-        let mut used_ids: BTreeSet<String> =
-            book.items.iter().map(|item| item.id.clone()).collect();
         for item in &book.items {
             if Some(item.id.as_str()) == book.toc_id.as_deref() {
                 output_ids.insert(item.id.clone(), item.id.clone());
                 continue;
             }
-            let (base_href, extension, slim) = split_slim_href(&item.href);
-            let output_id = if mode == RewriteMode::Decrypt
-                && item.resource_type == ResourceType::Image
-                && slim
-            {
-                let base_id = image_id_by_href
-                    .get(&base_href.to_ascii_lowercase())
-                    .cloned()
-                    .unwrap_or_else(|| strip_slim_suffix_from_id(&item.id));
-                allocate_slim_id(&base_id, &item.id, &mut used_ids)
-            } else {
-                item.id.clone()
-            };
+            let output_id = item.id.clone();
             output_ids.insert(item.id.clone(), output_id.clone());
-            let filename = match mode {
-                RewriteMode::Reformat => basename(&item.href).to_string(),
-                RewriteMode::Encrypt => {
-                    encrypted_filename(item, &image_id_by_href, &base_href, &extension, slim)
-                }
-                RewriteMode::Decrypt => decrypted_filename(&output_id, &extension, slim),
-            };
+            let filename = basename(&item.href).to_string();
             log(format!(
-                "{} href: {}:{} -> {}",
-                match mode {
-                    RewriteMode::Reformat => "reformat",
-                    RewriteMode::Encrypt => "encrypt",
-                    RewriteMode::Decrypt => "decrypt",
-                },
-                item.id,
-                item.href,
-                filename
+                "reformat href: {}:{} -> {}",
+                item.id, item.href, filename
             ));
             provisional.insert(
                 item.source_path.clone(),
@@ -253,101 +183,8 @@ impl RewritePlan {
         Ok(Self {
             targets: provisional,
             output_ids,
-            mode,
         })
     }
-}
-
-fn encrypted_filename(
-    item: &ManifestItem,
-    image_id_by_href: &BTreeMap<String, String>,
-    base_href: &str,
-    extension: &str,
-    slim: bool,
-) -> String {
-    let id_name = if item.resource_type == ResourceType::Image && slim {
-        image_id_by_href
-            .get(&base_href.to_ascii_lowercase())
-            .cloned()
-            .unwrap_or_else(|| item.id.clone())
-    } else {
-        item.id.clone()
-    };
-    let id_name = id_name.split('.').next().unwrap_or(&id_name);
-    let hash = md5(id_name.as_bytes());
-    let number = u128::from_be_bytes(hash);
-    let binary = format!("{number:b}");
-    let obfuscated: String = binary
-        .chars()
-        .map(|character| if character == '1' { '*' } else { ':' })
-        .collect();
-    let slim_suffix = if item.resource_type == ResourceType::Image && slim {
-        "~slim"
-    } else {
-        ""
-    };
-    format!(
-        "_{obfuscated}{slim_suffix}{}",
-        extension.to_ascii_lowercase()
-    )
-}
-
-fn decrypted_filename(output_id: &str, extension: &str, slim: bool) -> String {
-    let (stem, _) = split_extension(output_id);
-    let stem = if has_unsafe_basename(output_id) {
-        md5_hex(stem.as_bytes())
-    } else {
-        stem.to_string()
-    };
-    let stem = if slim && stem.to_ascii_lowercase().ends_with("slim") {
-        strip_slim_suffix(&stem).to_string()
-    } else {
-        stem
-    };
-    format!(
-        "{stem}{}{}",
-        if slim { "~slim" } else { "" },
-        extension.to_ascii_lowercase()
-    )
-}
-
-fn allocate_slim_id(base_id: &str, old_id: &str, used_ids: &mut BTreeSet<String>) -> String {
-    let (stem, extension) = split_extension(base_id);
-    let mut candidate = format!("{stem}~slim{extension}");
-    let mut sequence = 1;
-    while candidate != old_id && used_ids.contains(&candidate) {
-        sequence += 1;
-        candidate = format!("{stem}_{sequence}~slim{extension}");
-    }
-    used_ids.remove(old_id);
-    used_ids.insert(candidate.clone());
-    candidate
-}
-
-fn strip_slim_suffix_from_id(item_id: &str) -> String {
-    let (stem, extension) = split_extension(item_id);
-    format!("{}{}", strip_slim_suffix(stem), extension)
-}
-
-fn strip_slim_suffix(value: &str) -> &str {
-    let lower = value.to_ascii_lowercase();
-    if !lower.ends_with("slim") {
-        return value;
-    }
-    let mut end = value.len() - "slim".len();
-    if value[..end].ends_with(['~', '_', '-']) {
-        end -= 1;
-    }
-    &value[..end]
-}
-
-fn has_unsafe_basename(value: &str) -> bool {
-    basename(value).bytes().any(|byte| {
-        matches!(
-            byte,
-            b'\\' | b'/' | b':' | b'*' | b'?' | b'"' | b'<' | b'>' | b'|'
-        )
-    })
 }
 
 fn split_reference(reference: &str) -> (&str, &str) {
@@ -544,11 +381,7 @@ fn rewrite_opf(book: &ParsedBook, plan: &RewritePlan) -> Result<String, String> 
                 .map_or_else(
                     || captures[0].to_string(),
                     |value| {
-                        let prefix = if plan.mode == RewriteMode::Reformat {
-                            "../Text/"
-                        } else {
-                            "Text/"
-                        };
+                        let prefix = "../Text/";
                         format!(
                             "{}{prefix}{}{}{}",
                             &captures[1], value.filename, fragment, &captures[3]
@@ -561,26 +394,7 @@ fn rewrite_opf(book: &ParsedBook, plan: &RewritePlan) -> Result<String, String> 
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypted_filename, encrypted_filename, rewrite_container_rootfile};
-    use crate::rust_backend::epub::task_base::ManifestItem;
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn keeps_stable_filename_algorithms() {
-        let item = ManifestItem {
-            id: "f2".to_string(),
-            href: "Images/a.jpg".to_string(),
-            media_type: "image/jpeg".to_string(),
-            properties: String::new(),
-            source_path: String::new(),
-            resource_type: crate::rust_backend::epub::task_base::ResourceType::Image,
-        };
-        assert!(
-            encrypted_filename(&item, &BTreeMap::new(), "Images/a.jpg", ".jpg", false)
-                .ends_with(".jpg")
-        );
-        assert_eq!(decrypted_filename("f2~slim", ".jpg", true), "f2~slim.jpg");
-    }
+    use super::rewrite_container_rootfile;
 
     #[test]
     fn rewrites_nonstandard_container_rootfile_to_normalized_opf_path() {

@@ -1,47 +1,10 @@
-use std::path::PathBuf;
-
-#[cfg(mobile)]
 use std::fs;
 
 use tauri::{AppHandle, Manager};
 
-#[cfg(not(mobile))]
-use super::paths::workspace_root;
+#[derive(Debug, Clone, Copy)]
+pub struct RuntimeResources;
 
-#[derive(Debug, Clone)]
-pub struct RuntimeResources {
-    pub opencc_dir: Option<PathBuf>,
-}
-
-#[cfg(not(mobile))]
-pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
-    let resources = RuntimeResources {
-        opencc_dir: resolve_opencc_dir(app),
-    };
-    if let Some(directory) = &resources.opencc_dir {
-        crate::rust_backend::text::configure_resource_dir(directory.clone())?;
-    }
-    Ok(resources)
-}
-
-#[cfg(not(mobile))]
-fn resolve_opencc_dir(app: &AppHandle) -> Option<PathBuf> {
-    workspace_root()
-        .map(|root| {
-            root.join("src-tauri")
-                .join("bundle-resources")
-                .join("opencc")
-        })
-        .or_else(|| {
-            app.path()
-                .resource_dir()
-                .ok()
-                .map(|directory| directory.join("opencc"))
-        })
-        .filter(|directory| directory.is_dir())
-}
-
-#[cfg(mobile)]
 const OPENCC_FILES: [&str; 7] = [
     "NOTICE.txt",
     "STCharacters.txt",
@@ -52,19 +15,18 @@ const OPENCC_FILES: [&str; 7] = [
     "t2s.json",
 ];
 
-#[cfg(mobile)]
 pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
     use tauri::path::BaseDirectory;
 
     let root = app
         .path()
         .app_data_dir()
-        .map_err(|error| format!("无法定位移动端应用数据目录: {error}"))?
+        .map_err(|error| format!("无法定位 Android 应用数据目录: {error}"))?
         .join("runtime-resources");
     let opencc_dir = root.join("opencc");
     let version_path = root.join(".epub-tool-resource-version");
     fs::create_dir_all(&root)
-        .map_err(|error| format!("创建移动端资源目录失败 {}: {error}", root.display()))?;
+        .map_err(|error| format!("创建 Android 资源目录失败 {}: {error}", root.display()))?;
 
     let resources_are_current = fs::read_to_string(&version_path)
         .map(|value| value.trim() == env!("CARGO_PKG_VERSION"))
@@ -84,19 +46,16 @@ pub fn prepare(app: &AppHandle) -> Result<RuntimeResources, String> {
         }
         fs::write(&version_path, env!("CARGO_PKG_VERSION")).map_err(|error| {
             format!(
-                "写入移动端资源版本标记失败 {}: {error}",
+                "写入 Android 资源版本标记失败 {}: {error}",
                 version_path.display()
             )
         })?;
     }
 
     crate::rust_backend::text::configure_resource_dir(opencc_dir.clone())?;
-    Ok(RuntimeResources {
-        opencc_dir: Some(opencc_dir),
-    })
+    Ok(RuntimeResources)
 }
 
-#[cfg(mobile)]
 fn copy_resource(
     app: &AppHandle,
     relative_path: &str,

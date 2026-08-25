@@ -1,182 +1,23 @@
-# 本地开发
+# Android 本地开发
 
-应用由 Vue 前端、Tauri 壳层、统一 Rust EPUB 核心和 Rust `xtask` 维护工具组成。日常开发、测试、构建与打包只需要 Node.js、Rust 及目标平台工具链。
+项目当前只维护 Android 开发、构建和发布链路。
 
-## 前置依赖
+## 环境
 
-| 依赖 | 用途 | 验证命令 |
-| --- | --- | --- |
-| Node.js（版本见 `.nvmrc`） | 前端和 Tauri CLI | `node --version` |
-| npm | 安装依赖和运行脚本 | `npm --version` |
-| Rust stable / Cargo | 业务核心、Tauri、xtask | `rustc --version`、`cargo --version` |
+- Node.js 版本见 `.nvmrc`
+- JDK 17
+- Android SDK 36
+- Android NDK `29.0.13846066`
+- Rust targets：`aarch64-linux-android`、`armv7-linux-androideabi`、`x86_64-linux-android`、`i686-linux-android`
 
-### macOS
-
-桌面构建至少需要 Apple Command Line Tools：
-
-```bash
-xcode-select --install
-```
-
-iOS 构建必须安装完整 Xcode，并使用 Rustup 安装 `aarch64-apple-ios` 和 `aarch64-apple-ios-sim` targets。
-
-### Windows
-
-使用原生 PowerShell 或 Windows Terminal：
-
-1. 安装 Visual Studio Build Tools 的 **Desktop development with C++**。
-2. 安装 WebView2 Runtime。
-3. 通过 Rustup 安装 `stable-msvc`。
-
-### Linux
-
-Debian/Ubuntu 示例：
-
-```bash
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-```
-
-其他发行版按 Tauri 2 对应平台前置依赖安装。
-
-### Android
-
-安装 JDK 17、Android SDK 36、NDK `29.0.13846066` 和 Rustup。按需要安装以下 Rust target：
-
-| Tauri target | Rust target | Android ABI |
-| --- | --- | --- |
-| `aarch64` | `aarch64-linux-android` | `arm64-v8a` |
-| `armv7` | `armv7-linux-androideabi` | `armeabi-v7a` |
-| `x86_64` | `x86_64-linux-android` | `x86_64` |
-| `i686` | `i686-linux-android` | `x86` |
-
-应用最低 Android API 为 24。
-
-### iOS
-
-iOS 应用最低系统版本为 15.1。模拟器构建使用 `aarch64-sim`，设备 Rust 库使用 `aarch64` / `aarch64-apple-ios`。生成签名 device archive 或 IPA 还需要 Apple Development Team、证书和 provisioning profile。
-
-## 安装依赖
+## 命令
 
 ```bash
 npm ci
 npm --prefix frontend ci
-```
-
-## 启动与调试
-
-完整桌面开发环境：
-
-```bash
-npm run tauri:dev
-```
-
-启动顺序是：启动 Vite、启动 Tauri。桌面与移动任务路径一致：
-
-```text
-Vue -> Tauri IPC -> spawn_blocking -> in-process EngineRuntime -> rust_backend
-```
-
-仅调试前端时：
-
-```bash
-npm run dev
-```
-
-此模式没有 Tauri Runtime，不能执行 EPUB 任务。
-
-## 验证
-
-```bash
-# 格式
-cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-cargo fmt --manifest-path xtask/Cargo.toml -- --check
-
-# 单元和集成测试
-cargo test --locked --manifest-path src-tauri/Cargo.toml
-cargo test --locked --manifest-path xtask/Cargo.toml
-
-# 静态检查
-cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
-
-# wire contract 与前端
-npm run protocol:check
-npm run build
-
-```
-
-`src-tauri/tests/core_regression.rs` 使用运行时生成的稳定 EPUB fixture 覆盖输出后缀、跳过行为、加密/解密往返、简繁转换和任务事件/结果。
-
-## 桌面构建
-
-```bash
-npm run build:bundle-assets
-npm run tauri:build
-```
-
-`build:bundle-assets` 构建前端。安装包携带前端、进程内 Rust 核心和 OpenCC 词典。
-
-## Android 构建
-
-首次生成原生工程：
-
-```bash
 npm run tauri:android:init -- --ci
-```
-
-指定目标构建 release APK（以下示例为 `arm64-v8a`）：
-
-```bash
+npm run tauri:android:dev
 npm run tauri:android:build -- aarch64 --split-per-abi --apk --ci
 ```
 
-连接相同 ABI 的设备进行开发：
-
-```bash
-npm run tauri:android:dev -- aarch64
-```
-
-该命令通过 Rust xtask 调用 Tauri build，不再下载额外运行时。
-
-本地构建默认不会配置发布 keystore。要在设备上安装，需使用 Android `apksigner` 对 APK 签名；同一 keystore 才能支持后续版本覆盖升级。
-
-## iOS 构建
-
-首次生成原生工程：
-
-```bash
-npm run tauri:ios:init -- --ci
-```
-
-构建 arm64 simulator app：
-
-```bash
-npm run tauri:ios:build -- aarch64-sim --debug --ci
-```
-
-在 arm64 simulator 开发：
-
-```bash
-npm run tauri:ios:dev -- aarch64-sim
-```
-
-该命令通过 Rust xtask 调用 Tauri build，不再下载额外运行时。
-
-只验证 device Rust library、避免进入签名 archive/export：
-
-```bash
-cargo build --locked --manifest-path src-tauri/Cargo.toml \
-  --target aarch64-apple-ios --lib
-```
-
-## Cargo 排查
-
-若 Tauri 提示找不到 Cargo，在同一终端确认：
-
-```bash
-cargo --version
-```
-
-使用 Rustup 时重新加载其环境，或重新打开终端/IDE。移动编译失败时还需确认对应 Rust target、Android SDK/NDK 或完整 Xcode 已安装；缺失平台工具链时不能用宿主 `cargo check` 代替真实目标链接验证。
+文件选择通过 Android URI 进入应用，处理结果使用导出操作写回用户选择的位置。应用内 Rust 引擎负责全部 EPUB 处理。

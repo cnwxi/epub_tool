@@ -50,36 +50,6 @@ fn task_engine_preserves_suffix_skip_events_and_epub_round_trip() {
     let input = directory.path().join("book.epub");
     write_test_epub(&input);
 
-    let (encrypted, encrypt_events) = run_task(
-        directory.path(),
-        "encrypt",
-        TaskType::EncryptEpub,
-        input.clone(),
-        TaskOptions::Empty,
-    );
-    assert_eq!(encrypted.status, "success");
-    assert_eq!(encrypted.summary.success, 1);
-    assert_event_contract(&encrypt_events, "encrypt");
-    let encrypted_path = directory.path().join("book_encrypt_epub.epub");
-    assert_eq!(encrypted.outputs, [encrypted_path.to_string_lossy()]);
-    let encrypted_members = archive_members(&encrypted_path);
-    assert!(encrypted_members.contains(&"OEBPS/content.opf".to_string()));
-    assert!(!encrypted_members.contains(&"OEBPS/Text/chapter.xhtml".to_string()));
-
-    let (decrypted, decrypt_events) = run_task(
-        directory.path(),
-        "decrypt",
-        TaskType::DecryptEpub,
-        encrypted_path,
-        TaskOptions::Empty,
-    );
-    assert_eq!(decrypted.status, "success");
-    assert_event_contract(&decrypt_events, "decrypt");
-    let decrypted_path = directory.path().join("book_encrypt_epub_decrypt_epub.epub");
-    let decrypted_members = archive_members(&decrypted_path);
-    assert!(decrypted_members.contains(&"OEBPS/Text/chapter.xhtml".to_string()));
-    assert!(archive_text(&decrypted_path, "OEBPS/Text/chapter.xhtml").contains("汉语发展"));
-
     let already_formatted = directory.path().join("sample_reformat_epub.epub");
     fs::copy(&input, &already_formatted).unwrap();
     let (skipped, skip_events) = run_task(

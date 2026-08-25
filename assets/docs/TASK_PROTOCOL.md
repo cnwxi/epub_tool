@@ -19,7 +19,7 @@ EngineRequest / EngineEvent / EngineResponse (protobuf wire)
 TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 ```
 
-`engine_adapter` 是唯一 wire/core 转换边界。业务任务不接收 Protobuf message、Tauri command 参数或动态 JSON。所有平台的进程内运行时直接调用相同 core，不做 wire -> 动态 JSON -> wire 往返。
+`engine_adapter` 是唯一 wire/core 转换边界。业务任务不接收 Protobuf message、Tauri command 参数或动态 JSON。Android 的进程内运行时直接调用相同 core，不做 wire -> 动态 JSON -> wire 往返。
 
 ## 请求
 
@@ -42,8 +42,6 @@ TaskSpec / TaskOptions / TaskEvent / TaskResult (typed Rust core)
 任务枚举：
 
 - `TASK_TYPE_REFORMAT_EPUB`
-- `TASK_TYPE_DECRYPT_EPUB`
-- `TASK_TYPE_ENCRYPT_EPUB`
 - `TASK_TYPE_WEBP_TO_IMG`
 - `TASK_TYPE_IMAGE_COMPRESS`
 - `TASK_TYPE_IMAGE_TO_WEBP`

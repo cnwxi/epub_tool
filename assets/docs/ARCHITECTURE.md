@@ -14,7 +14,7 @@ Vue / TypeScript
   -> typed TaskEvent + TaskResult
 ```
 
-所有平台使用同一个进程内运行时，不启动任务子进程。Tauri 异步命令通过阻塞线程池调用业务核心，避免长任务阻塞 UI 事件循环。
+Android 使用同一个进程内运行时，不启动任务子进程。Tauri 异步命令通过阻塞线程池调用业务核心，避免长任务阻塞 UI 事件循环。
 
 ## 核心 contract
 
@@ -44,20 +44,16 @@ Vue / TypeScript
 
 - OpenCC：`bundle-resources/opencc/`
 
-桌面直接从开发目录或 Tauri resource dir 定位资源。移动端首次运行将已打包文件复制到应用数据目录，校验文件完整性后配置相同核心。
+Android 首次运行会将已打包文件复制到应用数据目录，校验文件完整性后配置相同核心。
 
-## 平台矩阵
+## 平台
 
 | 平台 | 架构 / ABI | Runtime | CI 验证 |
-| --- | --- | --- | --- | --- |
-| Windows | x64、arm64 | in-process | NSIS |
-| macOS | x64、arm64 | in-process | app、DMG |
-| Linux | x64、arm64 | in-process | deb、rpm |
-| Android | arm64-v8a、armeabi-v7a、x86_64、x86 | in-process | signed release APK |
-| iOS | arm64 device、arm64 simulator | in-process | device library、unsigned simulator app |
+| --- | --- | --- | --- |
+| Android | arm64-v8a、armeabi-v7a、x86_64、x86 | in-process | release APK |
 
-目录选择、目录扫描和打开路径是桌面能力；移动端使用文件 URI、缓存暂存与结果导出。
+Android 使用文件 URI、缓存暂存与结果导出，不支持目录扫描和应用内打开本地路径。
 
 ## 验证边界
 
-宿主单元/集成测试验证业务逻辑、类型化 contract 和进程内运行时。Android/iOS 必须由相应 SDK、NDK、Xcode 和 Rust target 完成真实交叉链接。CI 的 Android 产物使用仓库配置的 keystore，未配置时使用临时签名；Android release keystore、Apple Team、证书、provisioning、device archive、IPA、商店上传和公证属于外部凭据边界。
+宿主单元/集成测试验证业务逻辑、类型化 contract 和进程内运行时。Android 必须由相应 SDK、NDK 和 Rust target 完成真实交叉链接。CI 的 Android 产物使用仓库配置的 keystore，未配置时使用临时签名；Android release keystore 与商店上传属于外部凭据边界。

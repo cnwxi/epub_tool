@@ -10,8 +10,6 @@ use std::{collections::BTreeMap, path::PathBuf};
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
     ReformatEpub,
-    DecryptEpub,
-    EncryptEpub,
     WebpToImg,
     ImageCompress,
     ImageToWebp,
@@ -23,8 +21,6 @@ impl TaskType {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ReformatEpub => "reformat_epub",
-            Self::DecryptEpub => "decrypt_epub",
-            Self::EncryptEpub => "encrypt_epub",
             Self::WebpToImg => "webp_to_img",
             Self::ImageCompress => "image_compress",
             Self::ImageToWebp => "image_to_webp",

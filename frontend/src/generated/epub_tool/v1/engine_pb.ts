@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file epub_tool/v1/engine.proto.
  */
 export const file_epub_tool_v1_engine: GenFile = /*@__PURE__*/
-  fileDesc("ChllcHViX3Rvb2wvdjEvZW5naW5lLnByb3RvEgxlcHViX3Rvb2wudjEiDgoMRW1wdHlPcHRpb25zIsIBChRJbWFnZUNvbXByZXNzT3B0aW9ucxIZCgxqcGVnX3F1YWxpdHkYASABKA1IAIgBARIZCgx3ZWJwX3F1YWxpdHkYAiABKA1IAYgBARIXCgpwbmdfdG9fanBnGAMgASgISAKIAQESGQoMcG5nX3F1YW50aXplGAQgASgISAOIAQFCDwoNX2pwZWdfcXVhbGl0eUIPCg1fd2VicF9xdWFsaXR5Qg0KC19wbmdfdG9fanBnQg8KDV9wbmdfcXVhbnRpemUiZgoWSW1hZ2VDb252ZXJzaW9uT3B0aW9ucxIUCgdxdWFsaXR5GAEgASgNSACIAQESGQoMcG5nX3F1YW50aXplGAIgASgISAGIAQFCCgoIX3F1YWxpdHlCDwoNX3BuZ19xdWFudGl6ZSI9ChVDaGluZXNlQ29udmVydE9wdGlvbnMSFgoJZGlyZWN0aW9uGAEgASgJSACIAQFCDAoKX2RpcmVjdGlvbiKhAQoTUmVwbGFjZUNvdmVyT3B0aW9ucxJSChJjb3Zlcl9wYXRoX2J5X2ZpbGUYASADKAsyNi5lcHViX3Rvb2wudjEuUmVwbGFjZUNvdmVyT3B0aW9ucy5Db3ZlclBhdGhCeUZpbGVFbnRyeRo2ChRDb3ZlclBhdGhCeUZpbGVFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIr4CCgtUYXNrT3B0aW9ucxIrCgVlbXB0eRgBIAEoCzIaLmVwdWJfdG9vbC52MS5FbXB0eU9wdGlvbnNIABI8Cg5pbWFnZV9jb21wcmVzcxgDIAEoCzIiLmVwdWJfdG9vbC52MS5JbWFnZUNvbXByZXNzT3B0aW9uc0gAEkAKEGltYWdlX2NvbnZlcnNpb24YBCABKAsyJC5lcHViX3Rvb2wudjEuSW1hZ2VDb252ZXJzaW9uT3B0aW9uc0gAEj4KD2NoaW5lc2VfY29udmVydBgFIAEoCzIjLmVwdWJfdG9vbC52MS5DaGluZXNlQ29udmVydE9wdGlvbnNIABI6Cg1yZXBsYWNlX2NvdmVyGAYgASgLMiEuZXB1Yl90b29sLnYxLlJlcGxhY2VDb3Zlck9wdGlvbnNIAEIGCgRraW5kIrUBCg5SdW5UYXNrUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEikKCXRhc2tfdHlwZRgCIAEoDjIWLmVwdWJfdG9vbC52MS5UYXNrVHlwZRITCgtpbnB1dF9maWxlcxgDIAMoCRIXCgpvdXRwdXRfZGlyGAQgASgJSACIAQESKgoHb3B0aW9ucxgFIAEoCzIZLmVwdWJfdG9vbC52MS5UYXNrT3B0aW9uc0INCgtfb3V0cHV0X2RpciKbAQoNRW5naW5lUmVxdWVzdBI3ChBwcm90b2NvbF92ZXJzaW9uGAEgASgOMh0uZXB1Yl90b29sLnYxLlByb3RvY29sVmVyc2lvbhISCgpyZXF1ZXN0X2lkGAIgASgJEjAKCHJ1bl90YXNrGAMgASgLMhwuZXB1Yl90b29sLnYxLlJ1blRhc2tSZXF1ZXN0SABCCwoJb3BlcmF0aW9uIjAKCUZpbGVJc3N1ZRISCgppbnB1dF9maWxlGAEgASgJEg8KB21lc3NhZ2UYAiABKAkiTgoLVGFza1N1bW1hcnkSDQoFdG90YWwYASABKA0SDwoHc3VjY2VzcxgCIAEoDRIOCgZmYWlsZWQYAyABKA0SDwoHc2tpcHBlZBgEIAEoDSLcAQoKVGFza1Jlc3VsdBIKCgJvaxgBIAEoCBIOCgZzdGF0dXMYAiABKAkSDwoHb3V0cHV0cxgDIAMoCRInCgZlcnJvcnMYBCADKAsyFy5lcHViX3Rvb2wudjEuRmlsZUlzc3VlEigKB3NraXBwZWQYBSADKAsyFy5lcHViX3Rvb2wudjEuRmlsZUlzc3VlEioKB3N1bW1hcnkYBiABKAsyGS5lcHViX3Rvb2wudjEuVGFza1N1bW1hcnkSFQoIbG9nX3BhdGgYByABKAlIAIgBAUILCglfbG9nX3BhdGgixQIKCVRhc2tFdmVudBINCgVldmVudBgBIAEoCRIPCgd0YXNrX2lkGAIgASgJEg4KBnN0YXR1cxgDIAEoCRIQCghwcm9ncmVzcxgEIAEoARIPCgdtZXNzYWdlGAUgASgJEhkKDGN1cnJlbnRfZmlsZRgGIAEoCUgAiAEBEhoKDWN1cnJlbnRfaW5kZXgYByABKA1IAYgBARIYCgt0b3RhbF9maWxlcxgIIAEoDUgCiAEBEhgKC291dHB1dF9wYXRoGAkgASgJSAOIAQESDQoFbGV2ZWwYCiABKAkSKAoGcmVzdWx0GAsgASgLMhguZXB1Yl90b29sLnYxLlRhc2tSZXN1bHRCDwoNX2N1cnJlbnRfZmlsZUIQCg5fY3VycmVudF9pbmRleEIOCgxfdG90YWxfZmlsZXNCDgoMX291dHB1dF9wYXRoIpQBCgtFbmdpbmVFdmVudBI3ChBwcm90b2NvbF92ZXJzaW9uGAEgASgOMh0uZXB1Yl90b29sLnYxLlByb3RvY29sVmVyc2lvbhISCgpyZXF1ZXN0X2lkGAIgASgJEi0KCnRhc2tfZXZlbnQYAyABKAsyFy5lcHViX3Rvb2wudjEuVGFza0V2ZW50SABCCQoHcGF5bG9hZCJOCgtFbmdpbmVFcnJvchIMCgRjb2RlGAEgASgJEg8KB21lc3NhZ2UYAiABKAkSFAoHZGV0YWlscxgDIAEoCUgAiAEBQgoKCF9kZXRhaWxzIsUBCg5FbmdpbmVSZXNwb25zZRI3ChBwcm90b2NvbF92ZXJzaW9uGAEgASgOMh0uZXB1Yl90b29sLnYxLlByb3RvY29sVmVyc2lvbhISCgpyZXF1ZXN0X2lkGAIgASgJEi8KC3Rhc2tfcmVzdWx0GAMgASgLMhguZXB1Yl90b29sLnYxLlRhc2tSZXN1bHRIABIqCgVlcnJvchgFIAEoCzIZLmVwdWJfdG9vbC52MS5FbmdpbmVFcnJvckgAQgkKB3BheWxvYWQqTAoPUHJvdG9jb2xWZXJzaW9uEiAKHFBST1RPQ09MX1ZFUlNJT05fVU5TUEVDSUZJRUQQABIXChNQUk9UT0NPTF9WRVJTSU9OX1YxEAEqjAIKCFRhc2tUeXBlEhkKFVRBU0tfVFlQRV9VTlNQRUNJRklFRBAAEhsKF1RBU0tfVFlQRV9SRUZPUk1BVF9FUFVCEAESGgoWVEFTS19UWVBFX0RFQ1JZUFRfRVBVQhACEhoKFlRBU0tfVFlQRV9FTkNSWVBUX0VQVUIQAxIZChVUQVNLX1RZUEVfV0VCUF9UT19JTUcQBhIcChhUQVNLX1RZUEVfSU1BR0VfQ09NUFJFU1MQBxIbChdUQVNLX1RZUEVfSU1BR0VfVE9fV0VCUBAIEh0KGVRBU0tfVFlQRV9DSElORVNFX0NPTlZFUlQQCRIbChdUQVNLX1RZUEVfUkVQTEFDRV9DT1ZFUhAKYgZwcm90bzM");
+  fileDesc("ChllcHViX3Rvb2wvdjEvZW5naW5lLnByb3RvEgxlcHViX3Rvb2wudjEiDgoMRW1wdHlPcHRpb25zIsIBChRJbWFnZUNvbXByZXNzT3B0aW9ucxIZCgxqcGVnX3F1YWxpdHkYASABKA1IAIgBARIZCgx3ZWJwX3F1YWxpdHkYAiABKA1IAYgBARIXCgpwbmdfdG9fanBnGAMgASgISAKIAQESGQoMcG5nX3F1YW50aXplGAQgASgISAOIAQFCDwoNX2pwZWdfcXVhbGl0eUIPCg1fd2VicF9xdWFsaXR5Qg0KC19wbmdfdG9fanBnQg8KDV9wbmdfcXVhbnRpemUiZgoWSW1hZ2VDb252ZXJzaW9uT3B0aW9ucxIUCgdxdWFsaXR5GAEgASgNSACIAQESGQoMcG5nX3F1YW50aXplGAIgASgISAGIAQFCCgoIX3F1YWxpdHlCDwoNX3BuZ19xdWFudGl6ZSI9ChVDaGluZXNlQ29udmVydE9wdGlvbnMSFgoJZGlyZWN0aW9uGAEgASgJSACIAQFCDAoKX2RpcmVjdGlvbiKhAQoTUmVwbGFjZUNvdmVyT3B0aW9ucxJSChJjb3Zlcl9wYXRoX2J5X2ZpbGUYASADKAsyNi5lcHViX3Rvb2wudjEuUmVwbGFjZUNvdmVyT3B0aW9ucy5Db3ZlclBhdGhCeUZpbGVFbnRyeRo2ChRDb3ZlclBhdGhCeUZpbGVFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIr4CCgtUYXNrT3B0aW9ucxIrCgVlbXB0eRgBIAEoCzIaLmVwdWJfdG9vbC52MS5FbXB0eU9wdGlvbnNIABI8Cg5pbWFnZV9jb21wcmVzcxgCIAEoCzIiLmVwdWJfdG9vbC52MS5JbWFnZUNvbXByZXNzT3B0aW9uc0gAEkAKEGltYWdlX2NvbnZlcnNpb24YAyABKAsyJC5lcHViX3Rvb2wudjEuSW1hZ2VDb252ZXJzaW9uT3B0aW9uc0gAEj4KD2NoaW5lc2VfY29udmVydBgEIAEoCzIjLmVwdWJfdG9vbC52MS5DaGluZXNlQ29udmVydE9wdGlvbnNIABI6Cg1yZXBsYWNlX2NvdmVyGAUgASgLMiEuZXB1Yl90b29sLnYxLlJlcGxhY2VDb3Zlck9wdGlvbnNIAEIGCgRraW5kIrUBCg5SdW5UYXNrUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEikKCXRhc2tfdHlwZRgCIAEoDjIWLmVwdWJfdG9vbC52MS5UYXNrVHlwZRITCgtpbnB1dF9maWxlcxgDIAMoCRIXCgpvdXRwdXRfZGlyGAQgASgJSACIAQESKgoHb3B0aW9ucxgFIAEoCzIZLmVwdWJfdG9vbC52MS5UYXNrT3B0aW9uc0INCgtfb3V0cHV0X2RpciKbAQoNRW5naW5lUmVxdWVzdBI3ChBwcm90b2NvbF92ZXJzaW9uGAEgASgOMh0uZXB1Yl90b29sLnYxLlByb3RvY29sVmVyc2lvbhISCgpyZXF1ZXN0X2lkGAIgASgJEjAKCHJ1bl90YXNrGAMgASgLMhwuZXB1Yl90b29sLnYxLlJ1blRhc2tSZXF1ZXN0SABCCwoJb3BlcmF0aW9uIjAKCUZpbGVJc3N1ZRISCgppbnB1dF9maWxlGAEgASgJEg8KB21lc3NhZ2UYAiABKAkiTgoLVGFza1N1bW1hcnkSDQoFdG90YWwYASABKA0SDwoHc3VjY2VzcxgCIAEoDRIOCgZmYWlsZWQYAyABKA0SDwoHc2tpcHBlZBgEIAEoDSLcAQoKVGFza1Jlc3VsdBIKCgJvaxgBIAEoCBIOCgZzdGF0dXMYAiABKAkSDwoHb3V0cHV0cxgDIAMoCRInCgZlcnJvcnMYBCADKAsyFy5lcHViX3Rvb2wudjEuRmlsZUlzc3VlEigKB3NraXBwZWQYBSADKAsyFy5lcHViX3Rvb2wudjEuRmlsZUlzc3VlEioKB3N1bW1hcnkYBiABKAsyGS5lcHViX3Rvb2wudjEuVGFza1N1bW1hcnkSFQoIbG9nX3BhdGgYByABKAlIAIgBAUILCglfbG9nX3BhdGgixQIKCVRhc2tFdmVudBINCgVldmVudBgBIAEoCRIPCgd0YXNrX2lkGAIgASgJEg4KBnN0YXR1cxgDIAEoCRIQCghwcm9ncmVzcxgEIAEoARIPCgdtZXNzYWdlGAUgASgJEhkKDGN1cnJlbnRfZmlsZRgGIAEoCUgAiAEBEhoKDWN1cnJlbnRfaW5kZXgYByABKA1IAYgBARIYCgt0b3RhbF9maWxlcxgIIAEoDUgCiAEBEhgKC291dHB1dF9wYXRoGAkgASgJSAOIAQESDQoFbGV2ZWwYCiABKAkSKAoGcmVzdWx0GAsgASgLMhguZXB1Yl90b29sLnYxLlRhc2tSZXN1bHRCDwoNX2N1cnJlbnRfZmlsZUIQCg5fY3VycmVudF9pbmRleEIOCgxfdG90YWxfZmlsZXNCDgoMX291dHB1dF9wYXRoIpQBCgtFbmdpbmVFdmVudBI3ChBwcm90b2NvbF92ZXJzaW9uGAEgASgOMh0uZXB1Yl90b29sLnYxLlByb3RvY29sVmVyc2lvbhISCgpyZXF1ZXN0X2lkGAIgASgJEi0KCnRhc2tfZXZlbnQYAyABKAsyFy5lcHViX3Rvb2wudjEuVGFza0V2ZW50SABCCQoHcGF5bG9hZCJOCgtFbmdpbmVFcnJvchIMCgRjb2RlGAEgASgJEg8KB21lc3NhZ2UYAiABKAkSFAoHZGV0YWlscxgDIAEoCUgAiAEBQgoKCF9kZXRhaWxzIsUBCg5FbmdpbmVSZXNwb25zZRI3ChBwcm90b2NvbF92ZXJzaW9uGAEgASgOMh0uZXB1Yl90b29sLnYxLlByb3RvY29sVmVyc2lvbhISCgpyZXF1ZXN0X2lkGAIgASgJEi8KC3Rhc2tfcmVzdWx0GAMgASgLMhguZXB1Yl90b29sLnYxLlRhc2tSZXN1bHRIABIqCgVlcnJvchgFIAEoCzIZLmVwdWJfdG9vbC52MS5FbmdpbmVFcnJvckgAQgkKB3BheWxvYWQqTAoPUHJvdG9jb2xWZXJzaW9uEiAKHFBST1RPQ09MX1ZFUlNJT05fVU5TUEVDSUZJRUQQABIXChNQUk9UT0NPTF9WRVJTSU9OX1YxEAEq1AEKCFRhc2tUeXBlEhkKFVRBU0tfVFlQRV9VTlNQRUNJRklFRBAAEhsKF1RBU0tfVFlQRV9SRUZPUk1BVF9FUFVCEAESGQoVVEFTS19UWVBFX1dFQlBfVE9fSU1HEAQSHAoYVEFTS19UWVBFX0lNQUdFX0NPTVBSRVNTEAUSGwoXVEFTS19UWVBFX0lNQUdFX1RPX1dFQlAQBhIdChlUQVNLX1RZUEVfQ0hJTkVTRV9DT05WRVJUEAcSGwoXVEFTS19UWVBFX1JFUExBQ0VfQ09WRVIQCGIGcHJvdG8z");
 
 /**
  * @generated from message epub_tool.v1.EmptyOptions
@@ -194,25 +194,25 @@ export type TaskOptions = Message<"epub_tool.v1.TaskOptions"> & {
     case: "empty";
   } | {
     /**
-     * @generated from field: epub_tool.v1.ImageCompressOptions image_compress = 3;
+     * @generated from field: epub_tool.v1.ImageCompressOptions image_compress = 2;
      */
     value: ImageCompressOptions;
     case: "imageCompress";
   } | {
     /**
-     * @generated from field: epub_tool.v1.ImageConversionOptions image_conversion = 4;
+     * @generated from field: epub_tool.v1.ImageConversionOptions image_conversion = 3;
      */
     value: ImageConversionOptions;
     case: "imageConversion";
   } | {
     /**
-     * @generated from field: epub_tool.v1.ChineseConvertOptions chinese_convert = 5;
+     * @generated from field: epub_tool.v1.ChineseConvertOptions chinese_convert = 4;
      */
     value: ChineseConvertOptions;
     case: "chineseConvert";
   } | {
     /**
-     * @generated from field: epub_tool.v1.ReplaceCoverOptions replace_cover = 6;
+     * @generated from field: epub_tool.v1.ReplaceCoverOptions replace_cover = 5;
      */
     value: ReplaceCoverOptions;
     case: "replaceCover";
@@ -229,22 +229,22 @@ export type TaskOptionsJson = {
   empty?: EmptyOptionsJson;
 
   /**
-   * @generated from field: epub_tool.v1.ImageCompressOptions image_compress = 3;
+   * @generated from field: epub_tool.v1.ImageCompressOptions image_compress = 2;
    */
   imageCompress?: ImageCompressOptionsJson;
 
   /**
-   * @generated from field: epub_tool.v1.ImageConversionOptions image_conversion = 4;
+   * @generated from field: epub_tool.v1.ImageConversionOptions image_conversion = 3;
    */
   imageConversion?: ImageConversionOptionsJson;
 
   /**
-   * @generated from field: epub_tool.v1.ChineseConvertOptions chinese_convert = 5;
+   * @generated from field: epub_tool.v1.ChineseConvertOptions chinese_convert = 4;
    */
   chineseConvert?: ChineseConvertOptionsJson;
 
   /**
-   * @generated from field: epub_tool.v1.ReplaceCoverOptions replace_cover = 6;
+   * @generated from field: epub_tool.v1.ReplaceCoverOptions replace_cover = 5;
    */
   replaceCover?: ReplaceCoverOptionsJson;
 };
@@ -897,45 +897,35 @@ export enum TaskType {
   REFORMAT_EPUB = 1,
 
   /**
-   * @generated from enum value: TASK_TYPE_DECRYPT_EPUB = 2;
+   * @generated from enum value: TASK_TYPE_WEBP_TO_IMG = 4;
    */
-  DECRYPT_EPUB = 2,
+  WEBP_TO_IMG = 4,
 
   /**
-   * @generated from enum value: TASK_TYPE_ENCRYPT_EPUB = 3;
+   * @generated from enum value: TASK_TYPE_IMAGE_COMPRESS = 5;
    */
-  ENCRYPT_EPUB = 3,
+  IMAGE_COMPRESS = 5,
 
   /**
-   * @generated from enum value: TASK_TYPE_WEBP_TO_IMG = 6;
+   * @generated from enum value: TASK_TYPE_IMAGE_TO_WEBP = 6;
    */
-  WEBP_TO_IMG = 6,
+  IMAGE_TO_WEBP = 6,
 
   /**
-   * @generated from enum value: TASK_TYPE_IMAGE_COMPRESS = 7;
+   * @generated from enum value: TASK_TYPE_CHINESE_CONVERT = 7;
    */
-  IMAGE_COMPRESS = 7,
+  CHINESE_CONVERT = 7,
 
   /**
-   * @generated from enum value: TASK_TYPE_IMAGE_TO_WEBP = 8;
+   * @generated from enum value: TASK_TYPE_REPLACE_COVER = 8;
    */
-  IMAGE_TO_WEBP = 8,
-
-  /**
-   * @generated from enum value: TASK_TYPE_CHINESE_CONVERT = 9;
-   */
-  CHINESE_CONVERT = 9,
-
-  /**
-   * @generated from enum value: TASK_TYPE_REPLACE_COVER = 10;
-   */
-  REPLACE_COVER = 10,
+  REPLACE_COVER = 8,
 }
 
 /**
  * @generated from enum epub_tool.v1.TaskType
  */
-export type TaskTypeJson = "TASK_TYPE_UNSPECIFIED" | "TASK_TYPE_REFORMAT_EPUB" | "TASK_TYPE_DECRYPT_EPUB" | "TASK_TYPE_ENCRYPT_EPUB" | "TASK_TYPE_WEBP_TO_IMG" | "TASK_TYPE_IMAGE_COMPRESS" | "TASK_TYPE_IMAGE_TO_WEBP" | "TASK_TYPE_CHINESE_CONVERT" | "TASK_TYPE_REPLACE_COVER";
+export type TaskTypeJson = "TASK_TYPE_UNSPECIFIED" | "TASK_TYPE_REFORMAT_EPUB" | "TASK_TYPE_WEBP_TO_IMG" | "TASK_TYPE_IMAGE_COMPRESS" | "TASK_TYPE_IMAGE_TO_WEBP" | "TASK_TYPE_CHINESE_CONVERT" | "TASK_TYPE_REPLACE_COVER";
 
 /**
  * Describes the enum epub_tool.v1.TaskType.

@@ -7,19 +7,13 @@
     "protocol:generate": "npx --yes @bufbuild/buf@1.72.0 generate && node scripts/normalize_protocol_generated.mjs",
     "protocol:check": "npm run protocol:generate && git diff --exit-code -- frontend/src/generated",
     "dev:frontend": "npm --prefix frontend run dev -- --host",
-    "dev:desktop": "npm run dev:bundle-assets && npm run dev:frontend",
-    "dev:mobile": "npm run dev:frontend",
-    "build:bundle-assets": "npm run build",
-    "build:mobile-assets": "npm run build",
+    "dev:mobile": "npm --prefix frontend run dev:mobile -- --host",
+    "build:mobile-assets": "npm --prefix frontend run build:mobile",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "cargo run --locked --manifest-path xtask/Cargo.toml -- desktop-build",
     "tauri:android:init": "npm run tauri -- android init",
     "tauri:android:dev": "cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-dev android",
     "tauri:android:build": "cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build android",
-    "tauri:ios:init": "npm run tauri -- ios init",
-    "tauri:ios:dev": "cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-dev ios",
-    "tauri:ios:build": "cargo run --locked --manifest-path xtask/Cargo.toml -- mobile-build ios"
+    "tauri:android:check": "npm run tauri -- android build --debug"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.5"

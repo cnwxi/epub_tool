@@ -1,5 +1,5 @@
 use super::{
-    rewrite_engine::{rewrite, supports_rewrite, RewriteMode},
+    rewrite_engine::{rewrite, supports_rewrite},
     workspace::EpubWorkspace,
 };
 use crate::{
@@ -32,7 +32,7 @@ impl EpubTask for ReformatEpubTask {
         _options: &TaskOptions,
         update: &mut dyn FnMut(TaskUpdate),
     ) -> Result<TaskOutcome, String> {
-        rewrite(workspace, RewriteMode::Reformat, &mut |message| {
+        rewrite(workspace, &mut |message| {
             update(TaskUpdate::message(message));
         })?;
         Ok(TaskOutcome::Success)

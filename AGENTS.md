@@ -4,13 +4,11 @@
 
 ## 项目概览
 
-Epub Tool 是面向 EPUB 批量处理的跨平台应用，技术栈为 Tauri 2、Vue 3、TypeScript 与 Rust。Windows、macOS、Linux、Android、iOS 均在应用进程内执行同一个平台无关 Rust 业务核心。
+Epub Tool 是面向 Android 的 EPUB 批量处理应用，技术栈为 Tauri 2、Vue 3、TypeScript 与 Rust。任务在 Android 应用进程内执行统一 Rust 业务核心。
 
 当前任务类型：
 
 - `reformat_epub`
-- `decrypt_epub`
-- `encrypt_epub`
 - `webp_to_img`
 - `image_compress`
 - `image_to_webp`
@@ -24,8 +22,9 @@ Epub Tool 是面向 EPUB 批量处理的跨平台应用，技术栈为 Tauri 2�
 npm ci
 npm --prefix frontend ci
 
-# 完整桌面开发环境
-npm run tauri:dev
+# Android 开发环境
+npm run tauri:android:init -- --ci
+npm run tauri:android:dev
 
 # 仅前端；没有 Tauri Runtime，不能执行任务
 npm run dev
@@ -72,7 +71,7 @@ Vue / generated TypeScript protobuf types
 - `proto/epub_tool/v1/engine.proto`：Tauri IPC wire contract 的唯一来源。
 - `src-tauri/src/task_types.rs`：平台无关的 `TaskSpec`、`TaskOptions`、`TaskEvent`、`TaskResult`。
 - `src-tauri/src/rust_backend/`：统一 EPUB 业务核心，按 `epub`、`image`、`text` 分类。
-- `src-tauri/src/runtime/`：全平台进程内运行时、平台能力、路径和资源定位。
+- `src-tauri/src/runtime/`：Android 进程内运行时、平台能力、路径和资源定位。
 - `src-tauri/tests/`：跨模块任务与核心协议集成回归。
 - `xtask/`：移动构建和发布维护工具。
 - `src-tauri/bundle-resources/`：OpenCC 运行资源。
@@ -82,20 +81,16 @@ Vue / generated TypeScript protobuf types
 
 - Protobuf 只属于 IPC 边界。业务服务不得接收 wire message、动态 JSON 或 Tauri 类型。
 - 新任务必须实现统一 `EpubTask`，通过 `TaskSpec`/`TaskOptions` 输入并产生 `TaskEvent`/`TaskResult`。
-- 桌面与移动必须调用同一 `rust_backend`；平台差异只能留在 `runtime`、权限、资源定位与 IPC 层。
-- 所有平台必须通过 `spawn_blocking` 调用同一个进程内 `EngineRuntime`，不得新增任务子进程、sidecar 或动态适配层。
+- Android 必须调用统一 `rust_backend`；平台差异只能留在 `runtime`、权限、资源定位与 IPC 层。
+- Android 必须通过 `spawn_blocking` 调用进程内 `EngineRuntime`，不得新增任务子进程、sidecar 或动态适配层。
 
 ## 平台与发布
 
 | 平台 | 架构 / ABI | 运行方式 | CI 产物 |
 | --- | --- | --- | --- |
-| Windows | x64、arm64 | 进程内 | 本地打包 |
-| macOS | x64、arm64 | 进程内 | 本地打包 |
-| Linux | x64、arm64 | 进程内 | 本地打包 |
 | Android | arm64-v8a、armeabi-v7a、x86、x86_64 | 进程内 | CI 无签名 release APK 编译验证 |
-| iOS | arm64 device、arm64 simulator | 进程内 | 本地打包 |
 
-Android release 签名、iOS device archive/IPA、商店上传、公证与生产代码签名需要外部凭据；没有凭据时只能声明编译验证，不能声明签名发布成功。
+Android release 签名与商店上传需要外部凭据；没有凭据时只能声明编译验证，不能声明签名发布成功。
 
 ## 行为约定
 
@@ -104,7 +99,6 @@ Android release 签名、iOS device archive/IPA、商店上传、公证与生产
 - 输入名已经包含当前任务后缀时跳过，不重复处理。
 - `task.started` 是首个任务事件，`task.finished` 是最后一个事件并携带完整结果。
 - `app-state.json` 已被忽略；损坏时备份为 `.corrupt-{timestamp}` 后重置。
-- 文件加解密只处理 EPUB 内文件名与资源引用混淆，不处理 DRM。
 
 ## 功能扩展与文案
 

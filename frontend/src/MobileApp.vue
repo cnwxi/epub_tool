@@ -8,8 +8,6 @@ import type { EngineEvent, QueuedFile, TaskRequest, TaskResult, TaskType } from 
 
 const tasks: Array<{ type: TaskType; label: string; description: string }> = [
   { type: "reformat_epub", label: "文件重构", description: "重构 EPUB 目录与引用。" },
-  { type: "decrypt_epub", label: "文件解密", description: "还原 EPUB 内部文件名与资源引用。" },
-  { type: "encrypt_epub", label: "文件加密", description: "混淆 EPUB 内部文件名与资源引用。" },
   { type: "image_compress", label: "图片压缩", description: "压缩内嵌图片，减小文件体积。" },
   { type: "webp_to_img", label: "WebP 转图片", description: "将 WebP 资源转换为常规图片格式。" },
   { type: "image_to_webp", label: "图片转 WebP", description: "将内嵌图片转换为 WebP。" },
@@ -17,10 +15,8 @@ const tasks: Array<{ type: TaskType; label: string; description: string }> = [
   { type: "chinese_convert", label: "简繁转换", description: "转换 EPUB 中的可见中文文本。" },
 ];
 
-const taskTypeByWire: Record<TaskType, string> = {
+const taskTypeByWire: Partial<Record<TaskType, string>> = {
   reformat_epub: "TASK_TYPE_REFORMAT_EPUB",
-  decrypt_epub: "TASK_TYPE_DECRYPT_EPUB",
-  encrypt_epub: "TASK_TYPE_ENCRYPT_EPUB",
   image_compress: "TASK_TYPE_IMAGE_COMPRESS",
   webp_to_img: "TASK_TYPE_WEBP_TO_IMG",
   image_to_webp: "TASK_TYPE_IMAGE_TO_WEBP",
@@ -30,9 +26,6 @@ const taskTypeByWire: Record<TaskType, string> = {
 
 const {
   exportOutput,
-  isMobileRuntime,
-  isTauriRuntime,
-  refreshPlatformCapabilities,
   resolveInputSources,
   runTask: runEngineTask,
   stageSourceForTask,
@@ -44,8 +37,6 @@ const files = ref<QueuedFile[]>([]);
 const logs = ref<string[]>([]);
 const result = ref<TaskResult | null>(null);
 const running = ref(false);
-const dragActive = ref(false);
-const browserFileInput = ref<HTMLInputElement | null>(null);
 const selectedTask = computed(() => tasks.find((task) => task.type === activeTask.value)!);
 const hasCoverForAllFiles = computed(() => files.value.length > 0 && files.value.every((file) => file.coverPath));
 const canRun = computed(() => files.value.length > 0 && (activeTask.value !== "replace_cover" || hasCoverForAllFiles.value));
@@ -57,7 +48,12 @@ const addFiles = (paths: string[]) => {
   const added = paths
     .map((path) => path.trim())
     .filter((path) => path && !existing.has(path))
-    .map((path) => ({ path, name: path.split(/[\\/]/).pop() || path, coverPath: "", coverPreviewUrl: "" }));
+    .map((path) => ({
+      path,
+      name: path.split(/[\\/]/).pop() || path,
+      coverPath: "",
+      coverPreviewUrl: "",
+    }));
   files.value.push(...added);
 };
 
@@ -65,34 +61,19 @@ const resolveAndAddFiles = async (paths: string[]) => {
   const inputs = paths.map((path) => path.trim()).filter(Boolean);
   if (!inputs.length) return;
   try {
-    addFiles(isTauriRuntime() ? await resolveInputSources(inputs) : inputs);
+    addFiles(await resolveInputSources(inputs));
   } catch (error) {
     logs.value.push(`添加文件失败：${toErrorMessage(error)}`);
   }
 };
 
 const pickFiles = async () => {
-  if (!isTauriRuntime()) {
-    browserFileInput.value?.click();
-    return;
-  }
   const selected = await open({
     multiple: true,
     directory: false,
     filters: [{ name: "EPUB", extensions: ["epub"] }],
   });
   if (selected) await resolveAndAddFiles(Array.isArray(selected) ? selected : [selected]);
-};
-
-const onBrowserFileInput = (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  addFiles(Array.from(input.files ?? []).map((file) => file.name));
-  input.value = "";
-};
-
-const handleDrop = (droppedFiles: File[]) => {
-  const paths = droppedFiles.map((file) => (file as File & { path?: string }).path ?? file.name);
-  void resolveAndAddFiles(paths);
 };
 
 const clearFiles = () => {
@@ -106,10 +87,6 @@ const clearResult = () => {
 };
 
 const pickCover = async () => {
-  if (!isTauriRuntime()) {
-    logs.value.push("更换封面需要在应用中从系统文件选择器选择图片。");
-    return;
-  }
   const selected = await open({
     multiple: false,
     directory: false,
@@ -168,7 +145,6 @@ const runTask = async () => {
 };
 
 const exportResult = async (sourcePath: string) => {
-  if (!isMobileRuntime()) return;
   const destination = await save({
     defaultPath: sourcePath.split(/[\\/]/).pop() || "processed.epub",
     filters: [{ name: "EPUB", extensions: ["epub"] }],
@@ -183,8 +159,7 @@ const exportResult = async (sourcePath: string) => {
 };
 
 onMounted(async () => {
-  await refreshPlatformCapabilities();
-  if (isMobileRuntime()) await resolveAndAddFiles(await takeOpenedSources());
+  await resolveAndAddFiles(await takeOpenedSources());
 });
 </script>
 
@@ -197,8 +172,7 @@ onMounted(async () => {
     <nav class="task-tabs" aria-label="任务类型">
       <button v-for="task in tasks" :key="task.type" type="button" :class="{ active: activeTask === task.type }" @click="activeTask = task.type">{{ task.label }}</button>
     </nav>
-    <DropZone :is-active="dragActive" :file-count="files.length" :is-mobile-runtime="isMobileRuntime()" @drag-state="dragActive = $event" @drop-files="handleDrop" @pick-files="pickFiles" @clear="clearFiles" />
-    <input ref="browserFileInput" type="file" accept=".epub" multiple hidden @change="onBrowserFileInput" />
+    <DropZone :file-count="files.length" @pick-files="pickFiles" @clear="clearFiles" />
     <section class="workspace mobile-workspace">
       <article class="panel mobile-task-panel">
         <div class="panel-head"><div><p class="eyebrow">当前任务</p><h2>{{ selectedTask.label }}</h2></div></div>
@@ -217,7 +191,7 @@ onMounted(async () => {
         </div>
         <p class="muted">成功 {{ result.summary.success }} 项，失败 {{ result.summary.failed }} 项。</p>
         <p v-if="result.outputs.length" class="mobile-save-hint">处理已完成，请点击下方“导出”按钮并选择保存位置。</p>
-        <div v-if="result.outputs.length" class="mobile-output-list"><button v-for="output in result.outputs" :key="output" type="button" class="ghost-btn" :disabled="!isMobileRuntime()" @click="exportResult(output)">{{ isMobileRuntime() ? `导出 ${output.split(/[\\/]/).pop()}` : output.split(/[\\/]/).pop() }}</button></div>
+        <div v-if="result.outputs.length" class="mobile-output-list"><button v-for="output in result.outputs" :key="output" type="button" class="ghost-btn" @click="exportResult(output)">{{ `导出 ${output.split(/[\\/]/).pop()}` }}</button></div>
       </article>
       <article class="panel mobile-log-panel">
         <div class="panel-head">

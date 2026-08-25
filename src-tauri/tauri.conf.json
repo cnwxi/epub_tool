@@ -1,62 +1,24 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Epub Tool NewUI",
+  "productName": "Epub Tool",
   "identifier": "com.cnwxi.epubtool.newui",
-  "version": "26.8.11",
+  "version": "26.8.25",
   "build": {
-    "beforeDevCommand": {
-      "cwd": "..",
-      "script": "npm run dev:desktop"
-    },
-    "beforeBuildCommand": {
-      "cwd": "..",
-      "script": "npm run build:bundle-assets"
-    },
+    "beforeDevCommand": { "cwd": "..", "script": "npm run dev:mobile" },
+    "beforeBuildCommand": { "cwd": "..", "script": "npm run build:mobile-assets" },
     "devUrl": "http://localhost:5173",
     "frontendDist": "../frontend/dist"
   },
   "app": {
     "withGlobalTauri": false,
-    "windows": [
-      {
-        "label": "main",
-        "title": "Epub Tool NewUI",
-        "width": 1440,
-        "height": 920,
-        "minWidth": 960,
-        "minHeight": 700,
-        "resizable": true,
-        "transparent": true,
-        "decorations": true
-      }
-    ],
-    "macOSPrivateApi": true,
-    "security": {
-      "capabilities": ["main-capability"]
-    }
+    "windows": [{ "label": "main", "title": "Epub Tool", "transparent": false, "decorations": true }],
+    "security": { "capabilities": ["main-capability"] }
   },
   "bundle": {
-    "active": true,
-    "targets": "all",
+    "active": false,
     "resources": {
       "bundle-resources/opencc/*": "opencc/"
     },
-    "fileAssociations": [
-      {
-        "name": "EPUB 电子书",
-        "ext": ["epub"],
-        "mimeType": "application/epub+zip",
-        "role": "Editor"
-      }
-    ],
-    "icon": [
-      "../assets/img/icon.png",
-      "../assets/img/icon.ico",
-      "../assets/img/icon.icns"
-    ],
-    "macOS": {
-      "signingIdentity": "-",
-      "hardenedRuntime": false
-    }
+    "icon": ["../assets/img/icon.png"]
   }
 }

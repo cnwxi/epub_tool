@@ -13,13 +13,11 @@ enum ProtocolVersion {
 enum TaskType {
   TASK_TYPE_UNSPECIFIED = 0;
   TASK_TYPE_REFORMAT_EPUB = 1;
-  TASK_TYPE_DECRYPT_EPUB = 2;
-  TASK_TYPE_ENCRYPT_EPUB = 3;
-  TASK_TYPE_WEBP_TO_IMG = 6;
-  TASK_TYPE_IMAGE_COMPRESS = 7;
-  TASK_TYPE_IMAGE_TO_WEBP = 8;
-  TASK_TYPE_CHINESE_CONVERT = 9;
-  TASK_TYPE_REPLACE_COVER = 10;
+  TASK_TYPE_WEBP_TO_IMG = 4;
+  TASK_TYPE_IMAGE_COMPRESS = 5;
+  TASK_TYPE_IMAGE_TO_WEBP = 6;
+  TASK_TYPE_CHINESE_CONVERT = 7;
+  TASK_TYPE_REPLACE_COVER = 8;
 }
 
 message EmptyOptions {}
@@ -47,10 +45,10 @@ message ReplaceCoverOptions {
 message TaskOptions {
   oneof kind {
     EmptyOptions empty = 1;
-    ImageCompressOptions image_compress = 3;
-    ImageConversionOptions image_conversion = 4;
-    ChineseConvertOptions chinese_convert = 5;
-    ReplaceCoverOptions replace_cover = 6;
+    ImageCompressOptions image_compress = 2;
+    ImageConversionOptions image_conversion = 3;
+    ChineseConvertOptions chinese_convert = 4;
+    ReplaceCoverOptions replace_cover = 5;
   }
 }
 

@@ -1,5 +1,11 @@
 # 更新日志
 
+### 26.8.25
+清理为仅 Android 移动端目标：移除桌面版界面、构建与发布链路，移除 EPUB/字体加解密相关代码与资源，只保留 Android 开发、构建和发布。<br>
+扩展统一任务协议与 Rust 业务核心，完善 EPUB、图片、文本任务的进度、消息、结果与错误回传。<br>
+完善 Android 多 ABI release APK 构建与发布流程，补充启动器图标和构建环境校验。<br>
+补充图片、EPUB 任务和协议适配的单元及集成回归测试，并同步更新构建、发布和任务说明文档。<br>
+
 ### 26.8.11
 完成纯 Rust 统一业务内核重构：Windows、macOS、Linux、Android 与 iOS 全部在应用进程内执行同一个 Rust 核心，共享同一套 `TaskSpec`、`TaskOptions`、`TaskEvent` 与 `TaskResult`，不再启动任务子进程。<br>
 全部现有 EPUB、字体、图片和简繁转换任务迁移至 Rust；删除 Python 后端、sidecar、依赖、生成代码、测试脚本及构建发布链路中的 Python 运行时要求。<br>

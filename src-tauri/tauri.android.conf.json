@@ -10,21 +10,12 @@
     }
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Epub Tool NewUI",
-        "transparent": false,
-        "decorations": true
-      }
-    ]
+    "windows": [{ "label": "main", "title": "Epub Tool", "transparent": false, "decorations": true }]
   },
   "bundle": {
+    "active": true,
     "android": {
       "minSdkVersion": 24
-    },
-    "resources": {
-      "bundle-resources/opencc/*": "opencc/"
     }
   }
 }

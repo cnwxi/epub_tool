@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "dev": "vite --mode mobile",
+    "build": "vue-tsc --noEmit && vite build --mode mobile",
     "preview": "vite preview"
   },
   "dependencies": {

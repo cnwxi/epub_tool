@@ -76,10 +76,7 @@ fn task_options(
         .and_then(|options| options.kind.as_ref())
         .ok_or_else(|| "任务请求的 options 未指定类型".to_string())?;
     match (task_type, kind) {
-        (
-            TaskType::ReformatEpub | TaskType::DecryptEpub | TaskType::EncryptEpub,
-            task_options::Kind::Empty(_),
-        ) => Ok(TaskOptions::Empty),
+        (TaskType::ReformatEpub, task_options::Kind::Empty(_)) => Ok(TaskOptions::Empty),
         (TaskType::ImageCompress, task_options::Kind::ImageCompress(options)) => {
             Ok(TaskOptions::Image(ImageTaskOptions {
                 quality: None,
@@ -139,8 +136,6 @@ fn parse_chinese_direction(value: &str) -> Result<ChineseConversionDirection, St
 fn task_type(value: i32) -> Result<TaskType, String> {
     match WireTaskType::try_from(value).ok() {
         Some(WireTaskType::ReformatEpub) => Ok(TaskType::ReformatEpub),
-        Some(WireTaskType::DecryptEpub) => Ok(TaskType::DecryptEpub),
-        Some(WireTaskType::EncryptEpub) => Ok(TaskType::EncryptEpub),
         Some(WireTaskType::WebpToImg) => Ok(TaskType::WebpToImg),
         Some(WireTaskType::ImageCompress) => Ok(TaskType::ImageCompress),
         Some(WireTaskType::ImageToWebp) => Ok(TaskType::ImageToWebp),
@@ -167,10 +162,10 @@ mod tests {
     use crate::engine_protocol::v1::{task_options, EmptyOptions, TaskOptions as WireTaskOptions};
 
     #[test]
-    fn converts_wire_request_to_typed_task_spec() {
+    fn rejects_mismatched_option_kind() {
         let request = RunTaskRequest {
             task_id: "task-1".to_string(),
-            task_type: WireTaskType::ReformatEpub as i32,
+            task_type: WireTaskType::ImageCompress as i32,
             input_files: vec!["book.epub".to_string()],
             output_dir: Some("output".to_string()),
             options: Some(WireTaskOptions {
@@ -178,13 +173,11 @@ mod tests {
             }),
         };
 
-        let converted = task_spec(&request).expect("request should convert");
-        assert_eq!(converted.task_type, TaskType::ReformatEpub);
-        assert_eq!(converted.options, TaskOptions::Empty);
+        assert!(task_spec(&request).is_err());
     }
 
     #[test]
-    fn rejects_mismatched_option_kind() {
+    fn accepts_matching_empty_option() {
         let request = RunTaskRequest {
             task_id: "task-1".to_string(),
             task_type: WireTaskType::ReformatEpub as i32,

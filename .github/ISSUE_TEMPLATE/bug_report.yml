@@ -13,9 +13,11 @@ body:
       description: 请选择出现问题时执行的任务类型。
       options:
         - reformat
-        - decrypt
-        - encrypt
-        - transfer_img
+        - image_compress
+        - webp_to_img
+        - image_to_webp
+        - replace_cover
+        - chinese_convert
     validations:
       required: true
   - type: textarea
