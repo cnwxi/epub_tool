@@ -22,22 +22,19 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| {
+    app.run(|_app_handle, _event| {
         #[cfg(mobile)]
-        if let tauri::RunEvent::Opened { urls } = event {
+        if let tauri::RunEvent::Opened { urls } = _event {
             use tauri::Emitter;
 
             let opened_sources = urls
                 .into_iter()
                 .map(|url| url.to_string())
                 .collect::<Vec<_>>();
-            app_handle
+            _app_handle
                 .state::<OpenedSources>()
                 .extend(opened_sources.iter().cloned());
-            let _ = app_handle.emit("opened", opened_sources);
+            let _ = _app_handle.emit("opened", opened_sources);
         }
-
-        #[cfg(not(mobile))]
-        let _ = (app_handle, event);
     });
 }

@@ -1,4 +1,0 @@
-[env]
-# libz-sys deliberately omits its include path on Android because zlib comes
-# from the NDK. woff still requires DEP_Z_INCLUDE to compile its WOFF1 shim.
-DEP_Z_INCLUDE = { value = "../build-support/zlib", relative = true }
