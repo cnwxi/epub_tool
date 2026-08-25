@@ -14,6 +14,7 @@ const formatFileName = (path: string): string => path.split(/[\\/]/).pop() ?? pa
 const emit = defineEmits<{
   (event: "open-log"): void;
   (event: "clear-log"): void;
+  (event: "clear-result"): void;
   (event: "open-output-folder", path: string): void;
 }>();
 </script>
@@ -55,6 +56,9 @@ const emit = defineEmits<{
           <p class="eyebrow">结果</p>
           <h3>最近一次执行摘要</h3>
         </div>
+        <button class="ghost-btn task-action-btn" type="button" :disabled="!result" @click="emit('clear-result')">
+          清空
+        </button>
       </div>
       <div v-if="!result" class="result-empty">还没有可展示的执行结果。</div>
       <div v-else class="result-block glass-soft">

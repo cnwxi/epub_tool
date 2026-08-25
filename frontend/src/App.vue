@@ -101,6 +101,10 @@ const clearFiles = () => {
   logs.value = [];
 };
 
+const clearResult = () => {
+  result.value = null;
+};
+
 const pickCover = async () => {
   if (!isTauriRuntime()) {
     logs.value.push("更换封面需要在应用中从系统文件选择器选择图片。");
@@ -197,18 +201,34 @@ onMounted(async () => {
     <input ref="browserFileInput" type="file" accept=".epub" multiple hidden @change="onBrowserFileInput" />
     <section class="workspace mobile-workspace">
       <article class="panel mobile-task-panel">
-        <div class="panel-head"><div><p class="eyebrow">当前任务</p><h2>{{ selectedTask.label }}</h2></div><button type="button" class="primary-btn" :disabled="running || !canRun" @click="runTask">{{ running ? "处理中…" : "开始执行" }}</button></div>
+        <div class="panel-head"><div><p class="eyebrow">当前任务</p><h2>{{ selectedTask.label }}</h2></div></div>
         <p class="muted">{{ selectedTask.description }} 已选择 {{ files.length }} 个 EPUB 文件。</p>
+        <div class="mobile-task-actions"><button type="button" class="primary-btn" :disabled="running || !canRun" @click="runTask">{{ running ? "处理中…" : "开始执行" }}</button></div>
         <div v-if="activeTask === 'replace_cover'" class="mobile-cover-action"><button type="button" class="secondary-btn" @click="pickCover">选择统一封面</button><span>{{ hasCoverForAllFiles ? "已为当前队列指定封面" : "请先为当前队列选择封面" }}</span></div>
         <ul v-if="files.length" class="mobile-file-list" aria-label="已选择文件"><li v-for="file in files" :key="file.path">{{ file.name }}</li></ul>
       </article>
       <article v-if="result" class="panel mobile-result-panel">
-        <div class="panel-head"><h2>处理结果</h2><span class="status-pill">{{ result.status }}</span></div>
+        <div class="panel-head">
+          <h2>处理结果</h2>
+          <div class="mobile-panel-actions">
+            <span class="status-pill">{{ result.status }}</span>
+            <button type="button" class="ghost-btn" @click="clearResult">清空</button>
+          </div>
+        </div>
         <p class="muted">成功 {{ result.summary.success }} 项，失败 {{ result.summary.failed }} 项。</p>
         <p v-if="result.outputs.length" class="mobile-save-hint">处理已完成，请点击下方“导出”按钮并选择保存位置。</p>
         <div v-if="result.outputs.length" class="mobile-output-list"><button v-for="output in result.outputs" :key="output" type="button" class="ghost-btn" :disabled="!isMobileRuntime()" @click="exportResult(output)">{{ isMobileRuntime() ? `导出 ${output.split(/[\\/]/).pop()}` : output.split(/[\\/]/).pop() }}</button></div>
       </article>
-      <article class="panel mobile-log-panel"><div class="panel-head"><h2>处理日志</h2><button type="button" class="ghost-btn" @click="logs = []">清空</button></div><div class="log-list"><p v-for="(log, index) in logs" :key="index">{{ log }}</p><p v-if="!logs.length" class="muted">暂无日志。</p></div></article>
+      <article class="panel mobile-log-panel">
+        <div class="panel-head">
+          <div><p class="eyebrow">执行记录</p><h2>处理日志</h2></div>
+          <button type="button" class="ghost-btn" :disabled="!logs.length" @click="logs = []">清空</button>
+        </div>
+        <div class="log-list">
+          <p v-for="(log, index) in logs" :key="index">{{ log }}</p>
+          <p v-if="!logs.length" class="muted">暂无日志。</p>
+        </div>
+      </article>
     </section>
   </main>
 </template>

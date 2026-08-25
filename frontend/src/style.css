@@ -3286,7 +3286,7 @@ input {
 .task-tabs button.active {
   border-color: transparent;
   background: #20304d;
-  box-shadow: 0 8px 18px rgba(32, 48, 77, 0.2);
+  box-shadow: none;
   color: #fff;
 }
 
@@ -3322,8 +3322,57 @@ input {
   padding: 18px;
 }
 
+/* Keep the mobile workspace cards on one visual system. */
+.mobile-app .dropzone,
+.mobile-app .panel {
+  border-radius: var(--layout-radius-xl);
+  background: var(--layout-surface-bg);
+  box-shadow: var(--layout-shadow-surface);
+}
+
+.mobile-app .dropzone h2,
+.mobile-app .panel h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.mobile-app .dropzone .muted,
+.mobile-app .panel .muted {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.mobile-task-panel .panel-head {
+  display: block;
+  margin-bottom: 0;
+}
+
+.mobile-task-panel .panel-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-task-panel .panel-head .eyebrow {
+  line-height: 1.25;
+}
+
+.mobile-task-panel .panel-head h2 {
+  line-height: 1.2;
+}
+
 .mobile-task-panel .primary-btn {
   min-width: 116px;
+}
+
+.mobile-task-actions {
+  display: flex;
+  margin-top: 14px;
+}
+
+.mobile-task-actions .primary-btn {
+  width: 100%;
 }
 
 .mobile-file-list,
@@ -3371,14 +3420,30 @@ input {
 }
 
 .mobile-log-panel .log-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
   max-height: min(30dvh, 280px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .mobile-log-panel .log-list p {
+  padding: 10px 12px;
+  border: 1px solid var(--glass-soft-border);
+  border-radius: var(--layout-radius-sm);
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.45;
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.mobile-log-panel .log-list p.muted {
+  border: 0;
+  background: transparent;
+  text-align: center;
 }
 
 @media (max-width: 480px) {
@@ -3389,7 +3454,7 @@ input {
   }
 
   .mobile-app-header {
-    align-items: flex-start;
+    align-items: center;
   }
 
   .mobile-app .panel-head {
@@ -3405,20 +3470,53 @@ input {
 .mobile-result-panel .panel-head,
 .mobile-log-panel .panel-head {
   align-items: center;
+  margin-bottom: 8px;
+}
+
+.mobile-log-panel .panel-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-log-panel .panel-head .eyebrow {
+  line-height: 1.25;
+}
+
+.mobile-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .mobile-result-panel .status-pill,
+.mobile-result-panel .mobile-panel-actions > .ghost-btn,
 .mobile-log-panel .panel-head > .ghost-btn {
   align-self: center;
   flex: 0 0 auto;
-  height: 44px;
-  min-height: 44px;
+  min-height: 40px;
+  height: 40px;
   white-space: nowrap;
 }
 
 .mobile-result-panel .status-pill {
-  height: 32px;
-  min-height: 32px;
+  padding: 8px 12px;
+}
+
+.mobile-result-panel .mobile-panel-actions > .ghost-btn,
+.mobile-log-panel .panel-head > .ghost-btn {
+  padding: 8px 14px;
+}
+
+.mobile-result-panel .panel-head h2,
+.mobile-log-panel .panel-head h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.mobile-task-panel > .muted {
+  margin-top: 8px;
 }
 
 .mobile-save-hint {
